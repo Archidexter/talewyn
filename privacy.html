@@ -26,11 +26,12 @@
 </head>
 <body>
 <h1>AD.Talewyn — политика конфиденциальности</h1>
-<p class="muted">Обновлено: 14 июля 2026</p>
+<p class="muted">Обновлено: 16 июля 2026</p>
 
 <p>AD.Talewyn — домашняя библиотека и читалка. Приложение
-<strong>не собирает, не хранит и не передаёт персональные данные</strong>,
-не содержит рекламы и аналитики, не требует регистрации.</p>
+<strong>не собирает и не хранит персональные данные</strong>, не содержит
+рекламы и аналитики, не требует регистрации. Часть функций обращается
+к внешним сервисам — что именно и куда передаётся, описано ниже.</p>
 
 <h2>Данные остаются на устройстве</h2>
 <p>Книги, прогресс чтения, выделения, заметки, отзывы и настройки хранятся
@@ -39,20 +40,40 @@
 он не отправляется.</p>
 
 <h2>Озвучка</h2>
-<p>Функция озвучки использует системный синтез речи устройства — текст при
-этом не покидает устройство. При желании можно подключить собственный сервер
-голосов в домашней сети; обмен идёт только между вашим устройством и вашим
-сервером.</p>
+<p>В приложении два способа озвучки.</p>
+<p>— <strong>Онлайн-голоса «Дмитрий» и «Светлана»</strong> (нейросетевой синтез
+Microsoft) — <strong>включены по умолчанию</strong>. Чтобы получить звук,
+приложение передаёт <strong>текст книги серверам Microsoft</strong>
+(speech.platform.bing.com) по мере чтения — предложение за предложением. Вместе
+с текстом Microsoft получает ваш IP-адрес. Приложение не передаёт ни имени
+файла, ни названия книги, ни идентификаторов пользователя или устройства.
+Обработка выполняется на стороне Microsoft и подчиняется её правилам:
+<a href="https://privacy.microsoft.com/privacystatement">privacy.microsoft.com</a>.</p>
+<p>— <strong>Голос устройства</strong> (системный синтез Android): текст не
+покидает устройство. Если вы не хотите передавать текст наружу — выберите
+«Голос устройства» в списке голосов.</p>
 
-<h2>Действия по вашему запросу</h2>
-<p>Две функции обращаются к внешним сервисам, и только когда вы сами их
-вызываете:</p>
-<p>— <strong>Перевод</strong>: выделенный фрагмент текста отправляется
-сервису перевода (Google Translate или MyMemory), чтобы вернуть перевод.</p>
-<p>— <strong>Поиск описания книги</strong>: название книги отправляется
-в открытые каталоги (Википедия, ФантЛаб, Google Books, Open Library).</p>
-<p>В обоих случаях запрос не содержит никаких идентификаторов пользователя
-или устройства, и приложение ничего не сохраняет на внешних серверах.</p>
+<h2>Обращения к внешним сервисам</h2>
+<p>Кроме озвучки онлайн-голосами (см. выше), приложение обращается наружу
+в следующих случаях:</p>
+<p>— <strong>Перевод</strong>: выбранный вами текст — выделенный фрагмент или
+текст целой главы — отправляется сервису перевода. Сначала используется Google
+Translate (translate.googleapis.com). Если он недоступен, текст уходит на ваш
+собственный сервер (если вы настроили его параметром <code>?tts=</code>),
+а затем — в MyMemory (api.mymemory.translated.net).</p>
+<p>— <strong>Поиск описания книги</strong>: название книги, а для Google Books
+также имя автора, отправляются в открытые каталоги (Википедия, ФантЛаб,
+Google Books, Open Library).</p>
+<p>— <strong>Проверка наличия интернета</strong>: чтобы понять, доступны ли
+онлайн-голоса, приложение при запуске и далее периодически запрашивает служебную
+страницу Google (<code>www.gstatic.com/generate_204</code>). Запрос не содержит
+никаких ваших данных. Это единственное обращение, которое происходит без вашего
+действия.</p>
+<p>Ни один из этих запросов не содержит вашего имени, учётной записи,
+рекламного идентификатора или идентификатора устройства — приложение их просто
+не имеет. Как и при любом обращении в интернет, принимающая сторона видит ваш
+IP-адрес. Приложение не создаёт вашего профиля и ничего не сохраняет на внешних
+серверах.</p>
 
 <h2>Вопросы</h2>
 <p>Напишите: <a href="mailto:spirihin2012@gmail.com">spirihin2012@gmail.com</a></p>
@@ -60,11 +81,12 @@
 <hr>
 
 <h1>AD.Talewyn — Privacy Policy</h1>
-<p class="muted">Last updated: July 14, 2026</p>
+<p class="muted">Last updated: July 16, 2026</p>
 
-<p>AD.Talewyn is a home library and reading app. The app
-<strong>does not collect, store, or share any personal data</strong>,
-contains no ads or analytics, and requires no account.</p>
+<p>AD.Talewyn is a home library and reading app. The app <strong>does not
+collect or store personal data</strong>, contains no ads or analytics, and
+requires no account. Some features contact external services — what is sent
+and where is described below.</p>
 
 <h2>Your data stays on your device</h2>
 <p>Books, reading progress, highlights, notes, reviews and settings are
@@ -73,20 +95,39 @@ your device that stays with you; it is never uploaded anywhere
 automatically.</p>
 
 <h2>Narration</h2>
-<p>Text-to-speech uses your device's system speech synthesis — the text
-never leaves the device. Optionally, you can connect your own voice server
-on your home network; traffic flows only between your device and your
-server.</p>
+<p>The app offers two narration modes.</p>
+<p>— <strong>Online voices “Dmitry” and “Svetlana”</strong> (Microsoft neural
+synthesis) — <strong>enabled by default</strong>. To produce audio, the app
+sends <strong>the text of your book to Microsoft servers</strong>
+(speech.platform.bing.com) as you read, sentence by sentence. Microsoft also
+receives your IP address. The app sends no file name, no book title, and no
+user or device identifiers. Processing happens on Microsoft’s side and is
+governed by its privacy statement:
+<a href="https://privacy.microsoft.com/privacystatement">privacy.microsoft.com</a>.</p>
+<p>— <strong>Device voice</strong> (Android system speech synthesis): the text
+never leaves your device. If you prefer nothing to leave your device, choose
+“Device voice” in the voice list.</p>
 
-<h2>Actions you explicitly request</h2>
-<p>Two features contact external services, and only when you invoke them:</p>
-<p>— <strong>Translation</strong>: the selected text fragment is sent to a
-translation service (Google Translate or MyMemory) to return a
-translation.</p>
-<p>— <strong>Book description search</strong>: the book title is sent to
-open catalogues (Wikipedia, FantLab, Google Books, Open Library).</p>
-<p>In both cases the request carries no user or device identifiers, and the
-app stores nothing on external servers.</p>
+<h2>External services</h2>
+<p>Besides online-voice narration (see above), the app reaches out in these
+cases:</p>
+<p>— <strong>Translation</strong>: the text you choose — a selected fragment or
+a whole chapter — is sent to a translation service. Google Translate
+(translate.googleapis.com) is tried first. If it is unavailable, the text goes
+to your own server (if you configured one via <code>?tts=</code>), and then to
+MyMemory (api.mymemory.translated.net).</p>
+<p>— <strong>Book description search</strong>: the book title — and, for Google
+Books, the author name — is sent to open catalogues (Wikipedia, FantLab,
+Google Books, Open Library).</p>
+<p>— <strong>Connectivity check</strong>: to know whether online voices are
+available, the app requests a Google service page
+(<code>www.gstatic.com/generate_204</code>) at startup and periodically
+afterwards. The request carries none of your data. This is the only request
+made without a direct action from you.</p>
+<p>None of these requests contain your name, account, advertising ID, or device
+identifier — the app simply does not have them. As with any internet request,
+the receiving service sees your IP address. The app builds no profile about you
+and stores nothing on external servers.</p>
 
 <h2>Contact</h2>
 <p>Email: <a href="mailto:spirihin2012@gmail.com">spirihin2012@gmail.com</a></p>

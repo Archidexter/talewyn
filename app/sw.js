@@ -2,9 +2,9 @@
 /* AD.Talewyn — офлайн-оболочка. Книги живут в IndexedDB, здесь кэшируем
    только файлы приложения. Стратегия — network-first: при живом сервере
    всегда свежие файлы, без сети — копия из кэша. */
-const CACHE = 'talewyn-v137';
+const CACHE = 'talewyn-v138';
 const SHELL = [
-  './', './index.html', './app.css?v=134', './app.js?v=136', './importers.js?v=20', './edge-tts.js?v=1',
+  './', './index.html', './app.css?v=134', './app.js?v=137', './importers.js?v=20', './edge-tts.js?v=1',
   './jsmediatags.min.js?v=1', './fonts.css?v=9',
   './fonts/spectral-normal-400-cyrillic.woff2', './fonts/spectral-normal-400-latin.woff2',
   './fonts/spectral-normal-500-cyrillic.woff2', './fonts/spectral-normal-500-latin.woff2',

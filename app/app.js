@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.4';
+const APP_VERSION = '1.0.5';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -1190,21 +1190,17 @@ function refreshSelChecks() {
     // один выбранный — галочка; несколько — порядковые «цифорки»
     if (badge) badge.textContent = pos < 0 ? '' : (selIds.length > 1 ? String(pos + 1) : '✓');
   });
-  const cnt = $('#sel-count'); if (cnt) cnt.textContent = T('selectedN', { n: selIds.length });
-  const del = $('#sel-del'); if (del) del.disabled = !selIds.length;
 }
 function enterSelMode(kind, firstId) {
   selMode = true; selKind = kind; selIds.length = 0;
   if (firstId) selIds.push(firstId);
-  document.body.classList.add('sel-mode');
-  const bar = $('#sel-bar'); if (bar) bar.hidden = false;
+  document.body.classList.add('sel-mode');   // показывает чекбоксы и красную кнопку-мусорку
   refreshSelChecks();
 }
 function exitSelMode() {
   if (!selMode) return;
   selMode = false; selIds.length = 0;
   document.body.classList.remove('sel-mode');
-  const bar = $('#sel-bar'); if (bar) bar.hidden = true;
   document.querySelectorAll('.book-card.sel, .ab-card.sel').forEach(c => c.classList.remove('sel'));
 }
 function toggleSel(id) {
@@ -1216,7 +1212,7 @@ function toggleSel(id) {
 }
 // тап по карточке в режиме выбора — переключить её (true = обработали, гасим обычное поведение)
 function selClick(e) {
-  if (e.target.closest('#sel-bar')) return false;
+  if (e.target.closest('#add-fab')) return false;
   if (performance.now() - lpFiredAt < 700) return true;   // это отпускание долгого нажатия — игнор
   const card = e.target.closest('.book-card, .ab-card');
   if (card) {
@@ -1588,6 +1584,7 @@ async function doImport(files) {
   if (importBusy || !files || !files.length) return;
   importBusy = true;
   let added = 0, addedAudio = 0;
+  const archiveAudioSets = [];   // архивы с аудио: каждый → отдельная аудиокнига
   // аудиофайлы уходят отдельным путём: все выбранные разом = одна аудиокнига
   const audioFiles = files.filter(f => AUDIO_EXT.test(f.name) || (f.type || '').startsWith('audio/'));
   const bookFiles = files.filter(f => !audioFiles.includes(f));
@@ -1604,6 +1601,8 @@ async function doImport(files) {
       }
       const res = await Importers.importFile(file,
         frac => showProgress(T('importing', { n: file.name }), frac));
+      // архив с аудио — все дорожки в одну аудиокнигу (обработаем ниже, вместе с аудио)
+      if (res && res.kind === 'audio-archive') { archiveAudioSets.push(res); continue; }
       // архив может вернуть НЕСКОЛЬКО книг — нормализуем к списку
       const list = Array.isArray(res) ? res : [res];
       for (const data of list) {
@@ -1633,6 +1632,20 @@ async function doImport(files) {
     } catch (e) {
       if (isQuota(e)) { quotaToastAt = 0; quotaToast(); }
       else showToast(T('importFail', { n: audioFiles[0].name, e: e.message }));
+      await new Promise(r => setTimeout(r, 1200));
+    }
+  }
+  // аудиокниги из архивов: каждый архив — отдельная аудиокнига (все дорожки внутри = одна книга)
+  for (const set of archiveAudioSets) {
+    showProgress(T('importing', { n: set.name }), null);
+    await new Promise(r => setTimeout(r, 60));
+    try {
+      const rec = await importAudiobook(set.files, frac => showProgress(T('importing', { n: set.name }), frac));
+      addedAudio++;
+      showToast(T('imported', { n: rec.title }));
+    } catch (e) {
+      if (isQuota(e)) { quotaToastAt = 0; quotaToast(); }
+      else showToast(T('importFail', { n: set.name, e: e.message }));
       await new Promise(r => setTimeout(r, 1200));
     }
   }
@@ -2183,19 +2196,15 @@ async function hydrateImages(bookId) {
 // плавная смена шапки главы: крошки/заголовок/счётчик гаснут и появляются НА МЕСТЕ,
 // не уезжая вместе с текстом при свайпе (задача 2)
 function crossfadeChapterHead() {
-  const els = [$('#reader-crumbs'), $('#chapter-title'), $('#chapter-meta')];
-  for (const el of els) {
+  // fade — через CSS-АНИМАЦИЮ, а не inline transition. Иначе перебивался бы штатный
+  // transition: top/height у #reader-crumbs, и он рассинхронивался бы с шапкой при
+  // скролле — между ними открывалась щель с проглядывающим текстом (задача 6).
+  for (const el of [$('#reader-crumbs'), $('#chapter-title'), $('#chapter-meta')]) {
     if (!el) continue;
-    el.style.transition = 'none';
-    el.style.opacity = '0';
+    el.classList.remove('head-fade');
+    void el.offsetWidth;   // рефлоу — чтобы анимация перезапустилась
+    el.classList.add('head-fade');
   }
-  requestAnimationFrame(() => {
-    for (const el of els) {
-      if (!el) continue;
-      el.style.transition = 'opacity .34s ease';
-      el.style.opacity = '1';
-    }
-  });
 }
 
 async function openChapter(bookId, idx) {
@@ -2230,6 +2239,9 @@ async function openChapter(bookId, idx) {
   if (token !== navToken) return;
 
   state.chapter = ch;
+  // уже в читалке → это смена главы, а не вход: тогда НЕ переигрываем анимацию входа
+  // всей вьюхи (иначе мигали бы все панели). Меняются только названия — через crossfade.
+  const wasInReader = !$('#reader-view').hidden;
   $('#library-view').hidden = true;
   $('#shelf-view').hidden = true;
   syncAddFab();
@@ -2263,7 +2275,7 @@ async function openChapter(bookId, idx) {
     firstP.classList.add('dropcap');
   renderNav(ch);
   updateTitle();
-  enterView($('#reader-view'));
+  if (!wasInReader) enterView($('#reader-view'));   // анимация входа — только при ВХОДЕ, не при смене главы
   updateWakeLock();
 
   const saved = state.progress.map[idx];
@@ -2871,20 +2883,35 @@ function splitSentences(text) {
   return out;
 }
 
+// Разбор на предложения с ТОЧНЫМ base = позиция в el.textContent (та же система, что у
+// caretOffsetAt по тапу). Раньше предложения резались по innerText, а base искался через
+// textContent.indexOf(нормализованной строки) — из-за trim/склейки коротких строка часто
+// не находилась (base=-1 или смещался), и тап попадал не в то предложение (задача 5).
 function ttsCollect() {
   const paras = [...document.querySelectorAll(
     '#chapter-body p, #chapter-body h3, #chapter-body h4, #chapter-body blockquote')]
-    .filter(el => el.innerText.trim().length > 1);
+    .filter(el => el.textContent.trim().length > 1);
   tts.paraCount = paras.length;
   const items = [];
+  const re = /[^.!?…]+[.!?…]+[»")\]]*\s*|[^.!?…]+$/g;
   paras.forEach((el, pi) => {
     const full = el.textContent;
-    let cursor = 0;
-    for (const s of splitSentences(el.innerText)) {
-      const base = full.indexOf(s, cursor);
-      if (base >= 0) cursor = base + s.length;
-      items.push({ para: pi, el, text: s, base });
+    const groups = [];
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(full))) {
+      const raw = m[0];
+      const text = raw.trim();
+      if (text) {
+        const base = m.index + (raw.length - raw.trimStart().length);   // позиция первого символа предложения
+        const prev = groups[groups.length - 1];
+        // короткие предложения склеиваем в одно (как прежде), но base группы — от ПЕРВОГО куска
+        if (prev && (text.length < 30 || prev.text.length < 30)) prev.text += ' ' + text;
+        else groups.push({ base, text });
+      }
+      if (m.index === re.lastIndex) re.lastIndex++;   // страховка от зацикливания
     }
+    for (const g of groups) items.push({ para: pi, el, text: g.text, base: g.base });
   });
   return items;
 }
@@ -5599,8 +5626,7 @@ function bindUI() {
       enterSelMode(kind, cardIdOf(card));
     });
   }
-  $('#sel-cancel')?.addEventListener('click', exitSelMode);
-  $('#sel-del')?.addEventListener('click', deleteSelected);
+  $('#fab-del')?.addEventListener('click', deleteSelected);   // красная кнопка-мусорка в стопке FAB
   bindAudioUI();
   // вкладки главной панели: «Книги» и «Аудиокниги»
   $('#shelf-tabs').addEventListener('click', e => {
@@ -5680,7 +5706,8 @@ function bindUI() {
 
   document.body.addEventListener('click', e => {
     // режим мультивыбора: тап по карточке переключает выбор, а не открывает/удаляет
-    if (selMode) { if (!e.target.closest('#sel-bar')) { e.preventDefault(); selClick(e); } return; }
+    // (кнопки в стопке FAB — мусорка/добавить — обрабатываются своими слушателями)
+    if (selMode) { if (!e.target.closest('#add-fab')) { e.preventDefault(); selClick(e); } return; }
     // картинки в книге — неинтерактивны: тап по ним НЕ открывает их на весь экран,
     // а листает страницу (удобно для манги и комиксов). Лупу по тапу убрали намеренно.
     // полка: открыть книгу / удалить книгу / продолжить чтение

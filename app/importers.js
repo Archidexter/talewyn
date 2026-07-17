@@ -695,6 +695,11 @@ const IMG_EXT = /\.(jpe?g|png|gif|webp|avif|bmp)$/i;
 // НЕ только epub/fb2 — любой поддерживаемый файл прогоняем через importFile.
 const BOOK_INNER = /\.(fb2|epub|txt|pdf|mobi|azw3?|prc|docx|html?|xhtml|fbook)$/i;
 const isJunkPath = n => /(^|\/)__MACOSX\//.test(n) || /(^|\/)\._/.test(n) || /\/$/.test(n);
+// аудио внутри архива: все дорожки (в т.ч. из подпапок) сводятся в ОДНУ аудиокнигу
+const AUDIO_INNER = /\.(mp3|m4a|m4b|aac|ogg|oga|opus|flac|wav|wma)$/i;
+const AUDIO_MIME = { mp3: 'audio/mpeg', m4a: 'audio/mp4', m4b: 'audio/mp4', aac: 'audio/aac',
+  ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg', flac: 'audio/flac', wav: 'audio/wav', wma: 'audio/x-ms-wma' };
+const audioMime = n => AUDIO_MIME[(String(n).split('.').pop() || '').toLowerCase()] || 'audio/mpeg';
 // импортировать книжные файлы, уже извлечённые из архива (каждый — File/Blob).
 // Возвращает массив книг (может быть пустым); нечитаемые файлы молча пропускаем.
 async function importInnerBooks(files, onProgress) {
@@ -934,6 +939,12 @@ async function importArchiveComic(file, fname) {
     if (books.length === 1) return books[0];
     if (books.length) return books;
   }
+  // аудио внутри архива (в т.ч. в подпапках) → ОДНА аудиокнига из всех дорожек
+  const audioFiles = flat
+    .filter(e => AUDIO_INNER.test(e.path) && !isJunkPath(e.path))
+    .sort((a, b) => naturalSort(a.path, b.path))
+    .map(e => new File([e.file], e.path.split('/').pop(), { type: audioMime(e.path) }));
+  if (audioFiles.length) return { kind: 'audio-archive', files: audioFiles, name: fname };
   const imgs = flat
     .filter(e => IMG_EXT.test(e.path) && !/(^|\/)__MACOSX\//.test(e.path) && !/(^|\/)\._/.test(e.path))
     .sort((a, b) => naturalSort(a.path, b.path));
@@ -1024,8 +1035,19 @@ async function importFile(file, onProgress) {
       if (books.length === 1) return books[0];
       if (books.length) return books;
     }
+    // аудио внутри архива (в т.ч. в подпапках) → ОДНА аудиокнига из всех дорожек
+    const audioNames = zip.names.filter(n => AUDIO_INNER.test(n) && !isJunkPath(n)).sort((a, b) => naturalSort(a, b));
+    if (audioNames.length) {
+      const files = [];
+      for (const n of audioNames) {
+        const u8 = await zip.read(n);
+        const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
+        files.push(new File([ab], n.split('/').pop(), { type: audioMime(n) }));
+      }
+      return { kind: 'audio-archive', files, name: file.name };
+    }
     if (zip.names.some(n => IMG_EXT.test(n))) return importCbz(zip, file.name, prog);  // .cbz / манга
-    throw new Error('в архиве нет поддерживаемых книг или изображений');
+    throw new Error('в архиве нет поддерживаемых книг, аудио или изображений');
   }
   // MOBI / AZW3: сигнатура BOOKMOBI на смещении 60 (или по расширению)
   const mobiSig = buf.byteLength >= 68 ? td.decode(new Uint8Array(buf, 60, 8)) : '';

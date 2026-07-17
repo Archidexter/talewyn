@@ -10,7 +10,7 @@
 if(th==='auto')th=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <link rel="stylesheet" href="fonts.css?v=9">
-<link rel="stylesheet" href="app.css?v=135">
+<link rel="stylesheet" href="app.css?v=136">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -112,23 +112,17 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
      входа с transform, а transform на предке ломает position: fixed — элемент начинает
      считать координаты от предка, и кружки ездили вместе с полкой. -->
 <div id="add-fab" hidden>
+  <button id="fab-del" class="fab-mini fab-del" title="Удалить выбранное" aria-label="Удалить выбранное">
+    <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+      <g class="trash-lid"><path d="M4 7h16"/><path d="M9.5 7V5.3a1.3 1.3 0 0 1 1.3-1.3h2.4a1.3 1.3 0 0 1 1.3 1.3V7"/></g>
+      <path d="M6.4 7.5 7.2 19.4a1.6 1.6 0 0 0 1.6 1.5h6.4a1.6 1.6 0 0 0 1.6-1.5L17.6 7.5"/>
+    </svg>
+  </button>
   <button id="url-btn" class="fab-mini" data-i18n-title="urlAdd" title="По ссылке" aria-label="По ссылке">
     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>
   </button>
   <button id="import-btn" class="fab-main" data-i18n-title="addFile" title="Добавить файл" aria-label="Добавить файл">
     <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-  </button>
-</div>
-
-<!-- Панель мультивыбора на полке: появляется по долгому нажатию на карточку. Снаружи
-     #shelf-view намеренно — как #add-fab (transform предка ломает position: fixed). -->
-<div id="sel-bar" hidden>
-  <button id="sel-cancel" class="sel-bar-btn" title="Отмена" aria-label="Отмена">
-    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
-  </button>
-  <span id="sel-count" class="sel-count"></span>
-  <button id="sel-del" class="sel-bar-btn sel-del" title="Удалить" aria-label="Удалить" disabled>
-    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></svg>
   </button>
 </div>
 
@@ -619,7 +613,7 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
   </div>
 </div>
 
-<script src="importers.js?v=21"></script>
+<script src="importers.js?v=22"></script>
 <script src="jsmediatags.min.js?v=1"></script><!-- теги/обложки аудиокниг (ID3/MP4) -->
 <!-- прямой edge-tts (нейроголоса Microsoft) без сервера — модуль ставит глобал.
      В WebView первый импорт иногда упирается в ещё не готовый кэш SW — повторяем. -->
@@ -638,6 +632,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=138"></script>
+<script src="app.js?v=139"></script>
 </body>
 </html>

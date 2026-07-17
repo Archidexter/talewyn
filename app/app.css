@@ -1613,10 +1613,13 @@ body.sel-mode #add-fab .fab-del { display: grid; animation: fab-del-in .3s cubic
 .tts-timer.on { color: var(--gild); border-color: color-mix(in srgb, var(--gild) 40%, transparent); }
 .tts-timer.on .timer-icon { display: none; }
 .tts-timer.on .timer-num { display: inline; }
+/* текстовой главе резерв под панель нужен — чтобы последнюю строку можно было доскроллить
+   ВЫШЕ панели. Раньше был :has(#tts-bar.tucked) с уменьшением до 20px — он менял padding
+   при каждом сворачивании панели на скролле, отчего страница дёргалась/лагала. Убран. */
 body.tts-on .chapter { padding-bottom: calc(232px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px))); }
-/* аудиопанель свёрнута (свайпом/грипом) — резервировать под неё 232px не нужно, иначе
-   в конце главы зияет пустота. Реколл-реформат идёт ниже вьюпорта, для читателя незаметен. */
-body.tts-on:has(#tts-bar.tucked) .chapter { padding-bottom: calc(20px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px))); }
+/* PDF/сканы (изображение + скрытый текст): резерв НЕ нужен — панель просто накрывает низ
+   картинки, а не толкает её вверх (иначе снизу зияла пустота, и при скролле были глючи). */
+body.tts-on .chapter:has(.pdf-text) { padding-bottom: calc(14px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px))); }
 /* при озвучке подсвечиваются только два слоя: слово (пилюля) заметно,
    предложение — едва; рамки вокруг абзаца нет */
 .chapter-body .speaking { background: none; border-radius: 0; box-shadow: none; }

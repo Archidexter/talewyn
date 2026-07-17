@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.9';
+const APP_VERSION = '1.0.10';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -2960,10 +2960,24 @@ function ttsCollect() {
       }
       if (m.index === re.lastIndex) re.lastIndex++;   // страховка от зацикливания
     }
-    for (const g of groups) items.push({ para: pi, el, text: g.text, base: g.base, end: g.end });
+    for (const g of groups) {
+      if (g.text.length <= TTS_MAXLEN) { items.push({ para: pi, el, text: g.text, base: g.base, end: g.end }); continue; }
+      // страховка: слишком длинный кусок (напр. PDF-страница без пунктуации в одном абзаце)
+      // режем по словам — иначе нативный/нейро-движок TTS может подавиться и уронить приложение
+      let b = g.base, acc = '';
+      for (const w of g.text.split(/(\s+)/)) {
+        if (acc.length + w.length > TTS_MAXLEN && acc.trim()) {
+          items.push({ para: pi, el, text: acc.trim(), base: b, end: b + acc.length });
+          b += acc.length; acc = '';
+        }
+        acc += w;
+      }
+      if (acc.trim()) items.push({ para: pi, el, text: acc.trim(), base: b, end: b + acc.length });
+    }
   });
   return items;
 }
+const TTS_MAXLEN = 480;   // предел длины одного куска для синтеза (нативный Android TTS ~4000, берём с запасом)
 
 // Какое предложение (индекс в items) под точкой тапа — по РЕАЛЬНЫМ прямоугольникам его
 // текста, а не по caretRangeFromPoint. Последний врёт на выключке (justify) в Android-WebView,

@@ -1089,9 +1089,9 @@ html.t-dark .chapter-body img { opacity: .9; }
 .reader-fabnav {
   position: fixed; z-index: 46;
   left: 0; right: 0;
-  /* СТРОГО ПОД аудиопанелью: её низ на 136px, ставим стрелки на 72px — гарантированно
-     ниже, без пересечения. Выше нижнего края экрана, ближе к центру (20%/80% ширины). */
-  bottom: calc(72px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));
+  /* ниже аудиопанели (её низ 136px), ближе к нижнему краю. Опущены на высоту кнопки (44px)
+     + ещё её четверть (11px) от прежних 72px → 17px. По центру ширины (20%/80%). */
+  bottom: calc(17px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));
   display: flex; justify-content: space-between; align-items: center;
   padding-left: calc(20% - 22px);
   padding-right: calc(20% - 22px);

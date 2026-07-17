@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.3';
+const APP_VERSION = '1.0.4';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -215,6 +215,7 @@ const I18N = {
     quotaFull: 'Закончилось место на устройстве. Удалите ненужные книги или освободите память — иначе прогресс и заметки не сохранятся.',
     saveFail: 'Не удалось сохранить: {e}',
     deleteBookQ: 'Удалить книгу «{x}» вместе с прогрессом чтения?',
+    selectedN: 'Выбрано: {n}', deleteSelQ: 'Удалить выбранное ({n}) вместе с прогрессом?', deletedN: 'Удалено: {n}',
     bookDeleted: 'Книга удалена',
     dlgOk: 'ОК', dlgCancel: 'Отмена', dlgDelete: 'Удалить', dlgReset: 'Сбросить',
     dlgMark: 'Отметить', dlgUnmark: 'Снять',
@@ -348,6 +349,7 @@ const I18N = {
     quotaFull: 'The device is out of storage. Delete some books or free up space — otherwise progress and notes will not be saved.',
     saveFail: 'Could not save: {e}',
     deleteBookQ: 'Delete “{x}” along with its reading progress?',
+    selectedN: 'Selected: {n}', deleteSelQ: 'Delete selected ({n}) along with progress?', deletedN: 'Deleted: {n}',
     bookDeleted: 'Book deleted',
     dlgOk: 'OK', dlgCancel: 'Cancel', dlgDelete: 'Delete', dlgReset: 'Reset',
     dlgMark: 'Mark', dlgUnmark: 'Clear',
@@ -825,6 +827,7 @@ async function deleteBook(id) {
 
 // системная «назад»/свайп от края: закрыть открытую шторку → иначе на уровень выше
 window.__appBack = () => {
+  if (selMode) { exitSelMode(); return true; }   // «назад» сначала выходит из мультивыбора
   if (confirmOpen()) { closeConfirm(false); return true; }
   if (!$('#lightbox').hidden) { closeLightbox(); return true; }
   for (const [ov, close] of [['settings-overlay', closeSettings], ['info-overlay', closeInfo], ['note-overlay', closeNoteSheet],
@@ -1086,6 +1089,7 @@ async function renderShelf() {
       <button class="cover" data-open="${b.id}">${face}
         ${pct ? `<span class="cover-pct">${pct}%</span>` : ''}
         <span class="cover-track"><span class="cover-fill" style="width:${pct}%"></span></span>
+        <span class="sel-check" aria-hidden="true"></span>
       </button>
       <div class="book-meta">
         <div class="book-title">${esc(b.title)}</div>
@@ -1165,6 +1169,90 @@ function renderShelfFooter() {
   // версия ушла в меню «О приложении»; в подвале — только счётчик книг
   $('#shelf-footer').innerHTML =
     state.books.length ? `<p>${T('booksN', { n: state.books.length })}</p>` : '';
+}
+
+// ══════════════════ мультивыбор на полке (долгое нажатие → удалить пачкой) ══════════════════
+let selMode = false;
+let selKind = 'books';            // какая вкладка выбирается: 'books' | 'audio'
+const selIds = [];                // выбранные id по порядку (порядок = номер в кружке)
+let lpFiredAt = 0;                // отметка долгого нажатия — чтобы съесть клик-отпускание
+
+const cardIdOf = card => card.classList.contains('ab-card') ? card.dataset.abId : card.dataset.book;
+const selCards = () => selKind === 'audio'
+  ? document.querySelectorAll('#tab-audio .ab-card')
+  : document.querySelectorAll('#shelf-grid .book-card');
+
+function refreshSelChecks() {
+  selCards().forEach(card => {
+    const pos = selIds.indexOf(cardIdOf(card));
+    card.classList.toggle('sel', pos >= 0);
+    const badge = card.querySelector('.sel-check');
+    // один выбранный — галочка; несколько — порядковые «цифорки»
+    if (badge) badge.textContent = pos < 0 ? '' : (selIds.length > 1 ? String(pos + 1) : '✓');
+  });
+  const cnt = $('#sel-count'); if (cnt) cnt.textContent = T('selectedN', { n: selIds.length });
+  const del = $('#sel-del'); if (del) del.disabled = !selIds.length;
+}
+function enterSelMode(kind, firstId) {
+  selMode = true; selKind = kind; selIds.length = 0;
+  if (firstId) selIds.push(firstId);
+  document.body.classList.add('sel-mode');
+  const bar = $('#sel-bar'); if (bar) bar.hidden = false;
+  refreshSelChecks();
+}
+function exitSelMode() {
+  if (!selMode) return;
+  selMode = false; selIds.length = 0;
+  document.body.classList.remove('sel-mode');
+  const bar = $('#sel-bar'); if (bar) bar.hidden = true;
+  document.querySelectorAll('.book-card.sel, .ab-card.sel').forEach(c => c.classList.remove('sel'));
+}
+function toggleSel(id) {
+  if (!id) return;
+  const i = selIds.indexOf(id);
+  if (i >= 0) selIds.splice(i, 1); else selIds.push(id);
+  if (!selIds.length) { exitSelMode(); return; }   // сняли последний — выходим из режима
+  refreshSelChecks();
+}
+// тап по карточке в режиме выбора — переключить её (true = обработали, гасим обычное поведение)
+function selClick(e) {
+  if (e.target.closest('#sel-bar')) return false;
+  if (performance.now() - lpFiredAt < 700) return true;   // это отпускание долгого нажатия — игнор
+  const card = e.target.closest('.book-card, .ab-card');
+  if (card) {
+    const kind = card.classList.contains('ab-card') ? 'audio' : 'books';
+    if (kind === selKind) toggleSel(cardIdOf(card));
+  }
+  return true;
+}
+// тихое удаление аудиокниги (deleteAudiobook — с подтверждением и перерисовкой, для пачки не годится)
+async function dropAudiobook(id) {
+  if (ab && ab.rec && ab.rec.id === id) {
+    abPause();
+    if (ab._url) { try { URL.revokeObjectURL(ab._url); } catch {} }
+    ab = null; pushMedia(); $('#audio-view').hidden = true;
+  }
+  await dbDel('audiotracks', bookRange(id));
+  await dbDel('audiobooks', id);
+  await dbDel('kv', 'aprog:' + id);
+  await dbDel('kv', 'review:' + id);
+  if (abCoverUrls.has(id)) { try { URL.revokeObjectURL(abCoverUrls.get(id)); } catch {} abCoverUrls.delete(id); }
+}
+async function deleteSelected() {
+  if (!selIds.length) return;
+  const n = selIds.length, kind = selKind, ids = selIds.slice();
+  if (!(await uiConfirm(T('deleteSelQ', { n }), { yes: t('dlgDelete'), danger: true }))) return;
+  exitSelMode();
+  if (kind === 'audio') {
+    for (const id of ids) { try { await dropAudiobook(id); } catch {} }
+    await loadAudiobooks();
+    renderAudioShelf();
+  } else {
+    for (const id of ids) { try { await deleteBook(id); } catch {} }
+    state.books = state.books.filter(b => !ids.includes(b.id));
+    await renderShelf();
+  }
+  showToast(T('deletedN', { n }));
 }
 
 // ── панель фильтров: строится по книгам, меняет список в реальном времени, плавно раскрывается ──
@@ -1319,6 +1407,7 @@ let shelfTab = 'books';
 function setShelfTab(tab) {
   const next = tab === 'audio' ? 'audio' : 'books';
   const changed = next !== shelfTab;
+  if (changed) exitSelMode();   // смена вкладки сбрасывает мультивыбор
   shelfTab = next;
   // при переключении вкладки закрываем открытый фильтр (у вкладок он разный)
   const fbtn = $('#filter-btn');
@@ -1513,14 +1602,18 @@ async function doImport(files) {
         added += (await restoreLibrary(file)).added;
         continue;
       }
-      const data = await Importers.importFile(file,
+      const res = await Importers.importFile(file,
         frac => showProgress(T('importing', { n: file.name }), frac));
-      const key = bookKey(data);
-      if (seenKeys.has(key)) { showToast(T('dupBook', { n: data.title })); continue; }
-      seenKeys.add(key);
-      await storeBook(data);
-      added++;
-      showToast(T('imported', { n: data.title }));
+      // архив может вернуть НЕСКОЛЬКО книг — нормализуем к списку
+      const list = Array.isArray(res) ? res : [res];
+      for (const data of list) {
+        const key = bookKey(data);
+        if (seenKeys.has(key)) { showToast(T('dupBook', { n: data.title })); continue; }
+        seenKeys.add(key);
+        await storeBook(data);
+        added++;
+        showToast(T('imported', { n: data.title }));
+      }
     } catch (e) {
       // у QuotaExceededError пустое message — «Не получилось добавить книгу: » ни о чём
       // не говорит, а починить нехватку места человек как раз может
@@ -2087,6 +2180,24 @@ async function hydrateImages(bookId) {
   }
 }
 
+// плавная смена шапки главы: крошки/заголовок/счётчик гаснут и появляются НА МЕСТЕ,
+// не уезжая вместе с текстом при свайпе (задача 2)
+function crossfadeChapterHead() {
+  const els = [$('#reader-crumbs'), $('#chapter-title'), $('#chapter-meta')];
+  for (const el of els) {
+    if (!el) continue;
+    el.style.transition = 'none';
+    el.style.opacity = '0';
+  }
+  requestAnimationFrame(() => {
+    for (const el of els) {
+      if (!el) continue;
+      el.style.transition = 'opacity .34s ease';
+      el.style.opacity = '1';
+    }
+  });
+}
+
 async function openChapter(bookId, idx) {
   const token = ++navToken;
   if (!pendingAutoplay) ttsStop();
@@ -2126,9 +2237,13 @@ async function openChapter(bookId, idx) {
   $('#reader-view').hidden = false;
   $('#readbar').classList.remove('loading');
   $('#reader-header').classList.remove('hidden');
+  $('#reader-fabnav')?.classList.remove('hidden');   // показать кнопки навигации при открытии главы
   setCrumbs(ch.vol || ch.crumb || state.book.title);
   $('#chapter-meta').innerHTML = '<div class="cm-row"><span class="cm-line cm-l"></span><svg class="cm-star" viewBox="-13 -13 26 26" fill="currentColor"><path d="M0 -10 2.9 -2.9 10 0 2.9 2.9 0 10-2.9 2.9-10 0-2.9-2.9Z"/></svg><span class="cm-line cm-r"></span></div><div class="cm-ctr">' + esc(T('meta', { i: ch.index, t: ch.total })) + '</div>';
   $('#chapter-title').textContent = ch.title;
+  // шапка главы (крошки · заголовок · счётчик) отвязана от текста: при смене главы она
+  // не едет со свайпом, а плавно затухает и появляется (задача 2)
+  crossfadeChapterHead();
   $('#chapter-body').innerHTML = ch.html;
   for (const img of document.querySelectorAll('#chapter-body img')) {
     img.loading = 'lazy';
@@ -2204,19 +2319,14 @@ async function openChapter(bookId, idx) {
 const chHash = idx => '#/b/' + state.book.id + '/c/' + idx;
 
 function renderNav(ch) {
-  const cur = state.byIdx.get(ch.idx);
-  const btn = (el, idx, dir) => {
-    const item = idx != null ? state.byIdx.get(idx) : null;
+  // кнопки — стрелки-иконки (SVG статичен в разметке), меняем только доступность и переход
+  const set = (el, idx) => {
+    if (!el) return;
     el.disabled = idx == null;
-    if (idx == null) { el.innerHTML = ''; el.onclick = null; return; }
-    const volNote = item && cur && item.crumb !== cur.crumb && item.crumb
-      ? `<span class="nav-vol">${esc(item.crumb.split(' · ').pop())}</span>` : '';
-    el.innerHTML = `<span class="nav-dir">${dir}</span>${volNote}
-      <span class="nav-title">${esc(item ? item.title : '')}</span>`;
-    el.onclick = () => { location.hash = chHash(idx); };
+    el.onclick = idx == null ? null : () => { location.hash = chHash(idx); };
   };
-  btn($('#prev-btn'), ch.prev_idx, '← ' + t('back'));
-  btn($('#next-btn'), ch.next_idx, t('next') + ' →');
+  set($('#prev-btn'), ch.prev_idx);
+  set($('#next-btn'), ch.next_idx);
 }
 
 let lastY = 0;
@@ -2227,8 +2337,9 @@ addEventListener('scroll', () => {
   const frac = curFrac();
   updateReadbar(frac);
   const hdr = $('#reader-header');
-  if (y > 64 && y - lastY > 6) hdr.classList.add('hidden');
-  else if (lastY - y > 6 || y < 64) hdr.classList.remove('hidden');
+  const fab = $('#reader-fabnav');
+  if (y > 64 && y - lastY > 6) { hdr.classList.add('hidden'); if (fab) fab.classList.add('hidden'); }
+  else if (lastY - y > 6 || y < 64) { hdr.classList.remove('hidden'); if (fab) fab.classList.remove('hidden'); }
   lastY = y;
 
   const ch = state.chapter;
@@ -3618,9 +3729,10 @@ async function renderAudioShelf() {
       const rv = abRevs[r.id];
       const stars = rv && rv.stars ? STAR.repeat(rv.stars) : '';
       // структура как у книги: обложка — кнопка (даёт нажатие-отклик), крестик — соседний элемент
-      return `<div class="ab-card">
+      return `<div class="ab-card" data-ab-id="${esc(r.id)}">
         <button class="ab-card-cover" data-ab="${esc(r.id)}">${url ? `<img src="${url}" alt="">` : '<span>♪</span>'}
-          ${pct ? `<span class="cover-pct">${pct}%</span>` : ''}</button>
+          ${pct ? `<span class="cover-pct">${pct}%</span>` : ''}
+          <span class="sel-check" aria-hidden="true"></span></button>
         <div class="ab-card-title">${esc(r.title)}</div>
         ${stars ? `<div class="book-stars">${stars}</div>` : ''}
         <div class="ab-card-author">${esc(r.author || '')}</div>
@@ -5443,6 +5555,8 @@ function bindUI() {
   });
   // клики по карточкам аудиокниг (продолжить / открыть / удалить)
   $('#tab-audio').addEventListener('click', e => {
+    // режим мультивыбора: тап по аудио-карточке переключает выбор (гасим до body-обработчика)
+    if (selMode) { e.stopPropagation(); selClick(e); return; }
     const del = e.target.closest('[data-abdel]');
     if (del) { e.stopPropagation(); deleteAudiobook(del.dataset.abdel); return; }
     const cont = e.target.closest('[data-abcont]');
@@ -5450,6 +5564,43 @@ function bindUI() {
     const card = e.target.closest('[data-ab]');
     if (card) location.hash = '#/a/' + card.dataset.ab;
   });
+
+  // долгое нажатие по карточке полки → режим мультивыбора (touch); правый клик — на десктопе
+  {
+    let lpTimer = null, lpStart = null;
+    const shelfShown = () => !$('#shelf-view').hidden;
+    const cancelLp = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } };
+    addEventListener('touchstart', e => {
+      if (!shelfShown() || selMode || e.touches.length !== 1) return;
+      const card = e.target.closest('.book-card, .ab-card');
+      if (!card) return;
+      lpStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      lpTimer = setTimeout(() => {
+        lpTimer = null; lpFiredAt = performance.now();
+        const kind = card.classList.contains('ab-card') ? 'audio' : 'books';
+        enterSelMode(kind, cardIdOf(card));
+        if (navigator.vibrate) { try { navigator.vibrate(15); } catch {} }
+      }, 500);
+    }, { passive: true });
+    addEventListener('touchmove', e => {
+      if (!lpTimer) return;
+      const p = e.touches[0];
+      if (Math.hypot(p.clientX - lpStart.x, p.clientY - lpStart.y) > 10) cancelLp();
+    }, { passive: true });
+    addEventListener('touchend', cancelLp, { passive: true });
+    addEventListener('touchcancel', cancelLp, { passive: true });
+    addEventListener('contextmenu', e => {
+      if (!shelfShown() || selMode) return;
+      const card = e.target.closest('.book-card, .ab-card');
+      if (!card) return;
+      e.preventDefault();
+      lpFiredAt = performance.now();
+      const kind = card.classList.contains('ab-card') ? 'audio' : 'books';
+      enterSelMode(kind, cardIdOf(card));
+    });
+  }
+  $('#sel-cancel')?.addEventListener('click', exitSelMode);
+  $('#sel-del')?.addEventListener('click', deleteSelected);
   bindAudioUI();
   // вкладки главной панели: «Книги» и «Аудиокниги»
   $('#shelf-tabs').addEventListener('click', e => {
@@ -5528,6 +5679,8 @@ function bindUI() {
   });
 
   document.body.addEventListener('click', e => {
+    // режим мультивыбора: тап по карточке переключает выбор, а не открывает/удаляет
+    if (selMode) { if (!e.target.closest('#sel-bar')) { e.preventDefault(); selClick(e); } return; }
     // картинки в книге — неинтерактивны: тап по ним НЕ открывает их на весь экран,
     // а листает страницу (удобно для манги и комиксов). Лупу по тапу убрали намеренно.
     // полка: открыть книгу / удалить книгу / продолжить чтение
@@ -5702,7 +5855,9 @@ function bindUI() {
   const swipeBlocked = () =>
     $('#reader-view').hidden || !$('#settings-sheet').hidden || !$('#lightbox').hidden
     || !$('#note-sheet').hidden || !$('#tr-sheet').hidden || !$('#sel-toolbar').hidden;
-  const art = () => $('.chapter');
+  // свайп двигает ТОЛЬКО тело главы — заголовок/мета/крошки остаются на месте
+  // и меняются затуханием (задача 2), а не уезжают вместе с текстом
+  const art = () => $('#chapter-body');
   addEventListener('touchstart', e => {
     sw = null;
     if (swipeBlocked() || e.touches.length !== 1) return;

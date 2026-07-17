@@ -10,7 +10,7 @@
 if(th==='auto')th=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <link rel="stylesheet" href="fonts.css?v=9">
-<link rel="stylesheet" href="app.css?v=134">
+<link rel="stylesheet" href="app.css?v=135">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -120,6 +120,18 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
   </button>
 </div>
 
+<!-- Панель мультивыбора на полке: появляется по долгому нажатию на карточку. Снаружи
+     #shelf-view намеренно — как #add-fab (transform предка ломает position: fixed). -->
+<div id="sel-bar" hidden>
+  <button id="sel-cancel" class="sel-bar-btn" title="Отмена" aria-label="Отмена">
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+  </button>
+  <span id="sel-count" class="sel-count"></span>
+  <button id="sel-del" class="sel-bar-btn sel-del" title="Удалить" aria-label="Удалить" disabled>
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></svg>
+  </button>
+</div>
+
 <!-- ══════════ Книга: оглавление ══════════ -->
 <main id="library-view" hidden>
   <header class="lib-header">
@@ -210,11 +222,19 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     <h1 class="chapter-title" id="chapter-title"></h1>
     <div class="chapter-meta" id="chapter-meta"></div>
     <div class="chapter-body" id="chapter-body"></div>
-    <nav class="chapter-nav">
-      <button id="prev-btn" class="nav-btn"></button>
-      <button id="next-btn" class="nav-btn nav-next"></button>
-    </nav>
   </article>
+
+  <!-- Навигация по главам вынесена из текста: закреплена внизу экрана, «плавает» над
+       текстом, только стрелки. Прячется вниз при прокрутке вперёд (см. обработчик scroll).
+       ID кнопок прежние — к ним обращаются edge-nav и клавиши-стрелки. -->
+  <nav class="reader-fabnav" id="reader-fabnav">
+    <button class="fabnav-btn" id="prev-btn" data-i18n-title="prevChT" title="Предыдущая глава" aria-label="Предыдущая глава">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+    </button>
+    <button class="fabnav-btn" id="next-btn" data-i18n-title="nextChT" title="Следующая глава" aria-label="Следующая глава">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+    </button>
+  </nav>
 </div>
 
 <!-- ══════════ Аудиокнига: плеер ══════════ -->
@@ -599,7 +619,7 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
   </div>
 </div>
 
-<script src="importers.js?v=20"></script>
+<script src="importers.js?v=21"></script>
 <script src="jsmediatags.min.js?v=1"></script><!-- теги/обложки аудиокниг (ID3/MP4) -->
 <!-- прямой edge-tts (нейроголоса Microsoft) без сервера — модуль ставит глобал.
      В WebView первый импорт иногда упирается в ещё не готовый кэш SW — повторяем. -->
@@ -618,6 +638,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=137"></script>
+<script src="app.js?v=138"></script>
 </body>
 </html>

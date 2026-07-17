@@ -753,7 +753,7 @@ html.t-light .ch-row.current .ch-name, html.t-sepia .ch-row.current .ch-name { c
   }
 }
 .ab-card-cover img { width: 100%; height: 100%; object-fit: cover; }
-.ab-card-cover > span:not(.cover-pct) { font-size: 44px; color: color-mix(in srgb, var(--gild) 55%, transparent); }
+.ab-card-cover > span:not(.cover-pct):not(.sel-check) { font-size: 44px; color: color-mix(in srgb, var(--gild) 55%, transparent); }
 .ab-card-title { margin-top: 8px; font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.25;
   white-space: nowrap; overflow: hidden; text-align: center; }   /* одна строка (бегущая, если длинно) */
 .ab-card-author { font-size: 12px; color: var(--dim); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -969,7 +969,7 @@ body:has(#reader-view:not([hidden])) #toast {
   padding: 84px 20px 40px;
   /* +полоса с названием тома/главы: она теперь под шапкой, а не внутри неё */
   padding-top: calc(84px + var(--crumbs-h) + max(env(safe-area-inset-top, 0px), var(--sat, 0px)));
-  padding-bottom: calc(40px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));
+  padding-bottom: calc(14px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));
   padding-left: max(20px, max(env(safe-area-inset-left, 0px), var(--sal, 0px)));
   padding-right: max(20px, max(env(safe-area-inset-right, 0px), var(--sar, 0px)));
   transition: max-width .28s ease;
@@ -1147,12 +1147,12 @@ body.sel-mode #add-fab .fab-del { display: grid; animation: fab-del-in .3s cubic
 @keyframes fab-del-in { from { transform: translateX(160%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 .fab-del .trash-lid { transform-origin: 19px 7px; transition: transform .2s cubic-bezier(.3, 1.5, .5, 1); }
 .fab-del:active { filter: brightness(1.1); border-color: #ff8080; }
-.fab-del:active .trash-lid { transform: rotate(-26deg) translateY(-.5px); }
-/* явная анимация нажатия: кнопка «клюёт», крышка мусорки откидывается и закрывается */
+.fab-del:active .trash-lid { transform: rotate(26deg) translateY(-1px); }   /* крышка поднимается ВВЕРХ */
+/* явная анимация нажатия: кнопка «клюёт», крышка мусорки поднимается и опускается */
 .fab-del.pressing { animation: fab-del-press .3s ease; }
 .fab-del.pressing .trash-lid { animation: trash-open .44s ease; }
 @keyframes fab-del-press { 0%, 100% { transform: scale(1); } 45% { transform: scale(.82); } }
-@keyframes trash-open { 0% { transform: rotate(0); } 40% { transform: rotate(-32deg) translateY(-1px); } 100% { transform: rotate(0); } }
+@keyframes trash-open { 0% { transform: rotate(0); } 40% { transform: rotate(32deg) translateY(-1.5px); } 100% { transform: rotate(0); } }
 
 /* кастомный выбор языка перевода — в стиле приложения, с анимацией */
 .lang-pick { position: relative; flex: 1 1 170px; max-width: 220px; }
@@ -1611,6 +1611,9 @@ body.sel-mode #add-fab .fab-del { display: grid; animation: fab-del-in .3s cubic
 .tts-timer.on .timer-icon { display: none; }
 .tts-timer.on .timer-num { display: inline; }
 body.tts-on .chapter { padding-bottom: calc(232px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px))); }
+/* аудиопанель свёрнута (свайпом/грипом) — резервировать под неё 232px не нужно, иначе
+   в конце главы зияет пустота. Реколл-реформат идёт ниже вьюпорта, для читателя незаметен. */
+body.tts-on:has(#tts-bar.tucked) .chapter { padding-bottom: calc(20px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px))); }
 /* при озвучке подсвечиваются только два слоя: слово (пилюля) заметно,
    предложение — едва; рамки вокруг абзаца нет */
 .chapter-body .speaking { background: none; border-radius: 0; box-shadow: none; }
@@ -1658,6 +1661,7 @@ body.tts-on .chapter { padding-bottom: calc(232px + max(env(safe-area-inset-bott
   position: fixed; left: 50%; translate: -50% 0; z-index: 62;
   /* НАД стрелками навигации (их верх ~116px), чтобы панели не перекрывались */
   bottom: calc(132px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));
+  transition: bottom .3s cubic-bezier(.2, .8, .3, 1);   /* плавно едет вверх/вниз при появлении аудиопанели */
   user-select: none; -webkit-user-select: none;   /* тап по панели не сбрасывает выделение книги */
   display: flex; flex-direction: column; gap: 8px;
   /* ширина и скругление как у панели озвучки — панели должны читаться как одна семья.

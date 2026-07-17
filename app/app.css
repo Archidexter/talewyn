@@ -120,7 +120,6 @@ body {
   font-family: var(--font-ui); font-size: 15.5px; line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   transition: background .25s, color .25s;
-  overflow-x: clip;   /* свайп-слайд главы (translateX) обрезается по краю, не даёт странице ехать вбок */
 }
 button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; padding: 0; }
 /* ссылки тоже: у <a> подсветка тапа своя, и без сброса кнопки-ссылки (Boosty/Telegram/
@@ -1512,9 +1511,10 @@ body.sel-mode #add-fab .fab-del { display: grid; animation: fab-del-in .3s cubic
   box-shadow: 0 14px 40px rgb(0 0 0 / .42);
   overflow: hidden;                       /* внутреннее свечение обрезается по капсуле */
   transition: border-radius .28s ease, transform .32s cubic-bezier(.2, .8, .3, 1), opacity .26s ease;
-  animation: slide-up .25s ease;
 }
-/* второй этап сворачивания: вся панель уезжает за нижнюю грань экрана */
+/* появление И уход — через .tucked + transition (надёжно, в обе стороны): панель стартует
+   из-под нижней грани и выезжает на место, а при закрытии уезжает туда же. CSS-animation
+   slide-up убрана — она не перезапускалась при display:none→flex, и показ был резким. */
 #tts-bar.tucked { transform: translateY(calc(100% + 30px)); opacity: 0; pointer-events: none; }
 /* ── плеер v3, одна компактная строка: голос·стоп | назад·плей·вперёд | таймер·скорость ── */
 .tts-transport { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 3px 0 2px; flex-wrap: nowrap; }

@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.12';
+const APP_VERSION = '1.0.13';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -2281,8 +2281,10 @@ async function openChapter(bookId, idx) {
   $('#audio-view').hidden = true;
   $('#reader-view').hidden = false;
   $('#readbar').classList.remove('loading');
-  $('#reader-header').classList.remove('hidden');
-  $('#reader-fabnav')?.classList.remove('hidden');   // показать кнопки навигации при открытии главы
+  if (!wasInReader) {   // при ВХОДЕ в читалку показываем шапку/стрелки; при листании — НЕ трогаем,
+    $('#reader-header').classList.remove('hidden');   // иначе они принудительно выезжают и «скачут»
+    $('#reader-fabnav')?.classList.remove('hidden');
+  }
   // Обновляем и мигаем ТОЛЬКО то, что реально изменилось — иначе шапка дёргается на каждом
   // листании (том обычно тот же, звезда/линии постоянны, «621» одно на книгу).
   const crumbText = ch.vol || ch.crumb || state.book.title;
@@ -3220,8 +3222,18 @@ function ttsStart(fromEl = null, charOffset = 0, boundary = null) {
   tts.active = true;
   tts.neuralFails = 0;
   tts.pos = pos;
-  $('#tts-bar').hidden = false;
-  $('#tts-bar').classList.remove('tucked');   // если пряталась — показываем снова (слайд снизу)
+  {
+    const bar = $('#tts-bar');
+    const wasHidden = bar.hidden;
+    bar.hidden = false;
+    if (wasHidden) {                          // плавный выезд снизу: старт из-под грани → на место
+      bar.classList.add('tucked');
+      void bar.offsetWidth;                   // зафиксировать стартовое (нижнее) положение
+      requestAnimationFrame(() => bar.classList.remove('tucked'));
+    } else {
+      bar.classList.remove('tucked');
+    }
+  }
   document.body.classList.add('tts-on');
   $('#tts-rate-value').textContent = (Number.isInteger(settings.ttsRate) ? settings.ttsRate.toFixed(1) : String(settings.ttsRate)) + '×';
   ttsPlayFrom(pos);
@@ -6047,9 +6059,12 @@ function bindUI() {
     sw.dx = d;
     const a = art();
     if (a) {
+      // НЕ двигаем тело по горизонтали — иначе оно вылезает за край, вьюпорт дёргается и
+      // фиксированные иконки (шапка/стрелки) прыгают. Свайп — чистый crossfade: тело гаснет
+      // по мере протяжки, на отпускании доугасает и появляется новая глава.
       a.style.transition = 'none';
-      a.style.transform = `translateX(${d * 0.35}px)`;   // демпфируем сдвиг — лёгкий намёк, а не разлёт
-      a.style.opacity = String(Math.max(0.5, 1 - Math.abs(d) / (innerWidth * 1.3)));
+      a.style.transform = '';
+      a.style.opacity = String(Math.max(0.5, 1 - Math.abs(d) / (innerWidth * 1.1)));
     }
     e.preventDefault();
   }, { passive: false });

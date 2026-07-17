@@ -1027,12 +1027,15 @@ function filtersActive() {
   const f = shelfFilters;
   return !!(f.q || f.author || f.genre || f.status.size);
 }
-// жанр книги: сохранённый при импорте, иначе выводим из названия+описания
-// (чтобы у книг, добавленных до появления жанров, он тоже определялся)
+// жанр книги: сохранённый при импорте, иначе выводим из названия+описания.
+// «Другое»/пусто переоцениваем каждый раз — у книг, импортированных со старой
+// (более скудной) mapGenre жанр записан как «Другое», и одна правка mapGenre их
+// бы не тронула: сохранённое значение возвращалось как есть. Содержательный
+// сохранённый жанр не перетираем — только повышаем «Другое»/пусто до конкретного.
 function bookGenre(b) {
-  if (b.genre) return b.genre;
+  if (b.genre && b.genre !== 'Другое') return b.genre;
   const m = Importers.mapGenre && Importers.mapGenre((b.title || '') + ' ' + (b.annotation || ''));
-  return m || '';
+  return (m && m !== 'Другое') ? m : (b.genre || m || '');
 }
 function filteredBooks() {
   const f = shelfFilters;
@@ -5420,6 +5423,23 @@ function bindUI() {
   $('#confirm-modal').addEventListener('click', e => {
     if (!e.target.closest('.confirm-card')) closeConfirm(false);
   });
+  // iOS Safari: у файловых input'ов с accept="*/*" система предлагает «Снять фото
+  // или видео», а с "audio/*" — «Записать аудио»; то и другое запрашивает камеру и
+  // микрофон. Формат приложение определяет по содержимому, а не по расширению, поэтому
+  // на iOS сужаем accept до конкретных расширений — открывается выбор в «Файлах», без
+  // камеры и микрофона. Обложку (#cover-input, image/*) не трогаем: там нужен доступ к
+  // «Фотоплёнке». На Android/ПК всё остаётся как было ("*/*" ничего лишнего не просит).
+  {
+    const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent)
+      || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+    if (isIOS) {
+      const setAccept = (sel, val) => { const el = $(sel); if (el) el.accept = val; };
+      setAccept('#file-input',
+        '.epub,.fb2,.zip,.fbook,.pdf,.txt,.html,.htm,.xhtml,.docx,.mobi,.azw,.azw3,.prc,.cbz,.cbr,.cb7,.cbt');
+      setAccept('#audio-file-input', '.mp3,.m4a,.m4b,.aac,.ogg,.opus,.flac,.wav');
+      setAccept('#restore-input', '.tlib');
+    }
+  }
   // импорт: кнопка, выбор файла, перетаскивание
   $('#import-btn').addEventListener('click', () => $('#file-input').click());
   $('#url-btn').addEventListener('click', importFromUrl);

@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.10';
+const APP_VERSION = '1.0.11';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -2583,15 +2583,29 @@ function currentMedia() {
 function mediaLoadArt(id, blob) {
   if (!id || !(blob instanceof Blob) || mediaArt.id === id) return;
   mediaArt = { id, b64: '' };
-  const fr = new FileReader();
-  fr.onload = () => {
+  // Обложку УМЕНЬШАЕМ до ~512px перед base64. Иначе большая картинка (напр. страница PDF,
+  // отрендеренная в ~1600px JPEG ≈ 1МБ) даёт base64 >1МБ, и нативный мост падает с
+  // TransactionTooLargeException при старте foreground-сервиса (лимит Binder-парсела ~1МБ).
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  img.onload = () => {
+    URL.revokeObjectURL(url);
     if (mediaArt.id !== id) return;                       // книгу успели сменить
-    const s = String(fr.result);
-    mediaArt.b64 = s.slice(s.indexOf(',') + 1);
+    try {
+      const MAX = 512;
+      const k = Math.min(1, MAX / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+      const w = Math.max(1, Math.round((img.naturalWidth || MAX) * k));
+      const h = Math.max(1, Math.round((img.naturalHeight || MAX) * k));
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      const d = c.toDataURL('image/jpeg', 0.8);
+      mediaArt.b64 = d.slice(d.indexOf(',') + 1);
+    } catch { mediaArt.b64 = ''; }
     pushMedia();                                          // обложка доехала — обновляем карточку
   };
-  fr.onerror = () => {};
-  try { fr.readAsDataURL(blob); } catch {}
+  img.onerror = () => { URL.revokeObjectURL(url); };
+  try { img.src = url; } catch { URL.revokeObjectURL(url); }
 }
 
 function pushMedia() {
@@ -2603,10 +2617,12 @@ function pushMedia() {
     if (m.cover instanceof Blob) mediaLoadArt(m.id, m.cover);
     else if (mediaArt.id !== m.id) mediaArt = { id: m.id, b64: '' };
     if (!br.update) { if (m.playing && br.start) br.start(); else if (br.stop) br.stop(); return; }
+    // страховка от TransactionTooLargeException: слишком большой арт вообще не отправляем
+    const art = (mediaArt.b64 && mediaArt.b64.length < 700000) ? mediaArt.b64 : '';
     br.update(JSON.stringify({
       playing: m.playing, title: m.title, artist: m.artist, album: m.album,
       canPrev: m.canPrev, canNext: m.canNext,
-      art: mediaArt.b64, artKey: String(mediaArt.id || ''),
+      art, artKey: String(mediaArt.id || ''),
     }));
   } catch { /* мост недоступен */ }
 }

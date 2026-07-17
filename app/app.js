@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.8';
+const APP_VERSION = '1.0.9';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -834,7 +834,7 @@ window.__appBack = () => {
       ['tr-overlay', closeTrSheet], ['annot-overlay', closeAnnotSheet], ['review-overlay', closeReviewSheet]]) {
     if (!$('#' + ov).hidden) { close(); return true; }
   }
-  if (!$('#sel-toolbar').hidden) { $('#sel-toolbar').hidden = true; try { getSelection().removeAllRanges(); } catch {} return true; }
+  if (!$('#sel-toolbar').hidden) { hideSelToolbar(); try { getSelection().removeAllRanges(); } catch {} return true; }
   if (typeof langPickers !== 'undefined' && langPickers.some(c => c._menu && c._menu.classList.contains('open'))) {
     closeLangMenus(); return true;
   }
@@ -2835,10 +2835,17 @@ function buildVoicePicker() {
     menu.style.left = bar.left + 'px';
     menu.style.right = 'auto';
     menu.style.top = 'auto';
-    menu.style.bottom = (innerHeight - bar.top + 8) + 'px';         // 8px над капсулой
-    menu.style.maxHeight = Math.min(bar.top - 16, innerHeight * 0.72) + 'px';
+    let bottomPx = innerHeight - bar.top + 8;                       // 8px над аудиопанелью
+    const st = $('#sel-toolbar');                                   // если открыта панель выделения — над НЕЙ
+    if (st && !st.hidden && !st.classList.contains('leaving')) {
+      const sr = st.getBoundingClientRect();
+      if (sr.height) bottomPx = Math.max(bottomPx, innerHeight - sr.top + 8);
+    }
+    menu.style.bottom = bottomPx + 'px';
+    menu.style.maxHeight = Math.min(innerHeight - bottomPx - 16, innerHeight * 0.72) + 'px';
     menu.style.overflowY = 'auto';
   };
+  menu._place = place;   // чтобы двигать меню при появлении/уходе панели выделения
   const close = () => { menu.classList.remove('open'); trigger.setAttribute('aria-expanded', 'false'); };
   let toggledAt = 0;
   trigger.addEventListener('click', e => {
@@ -3271,6 +3278,29 @@ function hideTtsBar() {
   setTimeout(() => {
     if (bar.classList.contains('tucked') && !tts.active) { bar.hidden = true; bar.classList.remove('tucked'); }
   }, 340);
+}
+// панель выделения («закладок»): появляется через slide-toast, а уходит ПЛАВНО вниз (.leaving),
+// а не пропадает резко. Плюс двигает открытое меню голоса под себя.
+function showSelToolbar() {
+  const el = $('#sel-toolbar');
+  if (!el) return;
+  el.classList.remove('leaving');
+  el.hidden = false;
+  repositionVoiceMenu(true);
+}
+function hideSelToolbar() {
+  const el = $('#sel-toolbar');
+  if (!el || el.hidden) return;
+  el.classList.add('leaving');
+  repositionVoiceMenu(false);
+  setTimeout(() => { if (el.classList.contains('leaving')) { el.hidden = true; el.classList.remove('leaving'); } }, 220);
+}
+// перепозиционировать открытое меню голоса под текущие панели (плавно — у него transition: bottom)
+function repositionVoiceMenu(delayed) {
+  const m = document.querySelector('.voice-menu.open');
+  if (!m || !m._place) return;
+  if (delayed) setTimeout(() => { if (m.classList.contains('open')) m._place(); }, 210);   // после слайд-ина панели
+  else m._place();
 }
 function ttsStop() {
   if (!tts.active) return;
@@ -4357,7 +4387,7 @@ async function addNote(color, withEditor) {
   state.chNotes.push(rec);
   renderNoteHighlights();
   getSelection().removeAllRanges();
-  $('#sel-toolbar').hidden = true;
+  hideSelToolbar();
   if (withEditor) openNoteSheet(rec);
   return rec;
 }
@@ -4366,7 +4396,7 @@ async function addNote(color, withEditor) {
 async function eraseSelectionMarks() {
   const info = selectionInfo() || selCache;
   getSelection().removeAllRanges();
-  $('#sel-toolbar').hidden = true;
+  hideSelToolbar();
   if (!info) return;
   const hits = (state.chNotes || []).filter(n => info.start < n.end && info.end > n.start);
   if (!hits.length) { showToast(t('noMarkHere')); return; }
@@ -6065,7 +6095,7 @@ function bindUI() {
         && $('#tr-sheet').hidden && $('#annot-sheet').hidden && $('#review-sheet').hidden
         ? selectionInfo() : null;
       selCache = info;
-      $('#sel-toolbar').hidden = !info;
+      if (info) showSelToolbar(); else hideSelToolbar();
     }, 200);
   });
   $('#sel-toolbar').addEventListener('pointerdown', e => {
@@ -6077,7 +6107,7 @@ function bindUI() {
     if (e.target.closest('#sel-tr')) {
       const s = String(getSelection()) || (selCache && selCache.text) || '';
       getSelection().removeAllRanges();
-      $('#sel-toolbar').hidden = true;
+      hideSelToolbar();
       openTrSheet(s);
       return;
     }
@@ -6096,7 +6126,7 @@ function bindUI() {
     pre.setEnd(range.startContainer, range.startOffset);
     const offset = pre.toString().length;
     const boundary = { node: range.startContainer, off: range.startOffset };
-    $('#sel-toolbar').hidden = true;
+    hideSelToolbar();
     sel.removeAllRanges();
     ttsStop();
     ttsStart(el, offset, boundary);   // точная граница выделения — надёжнее смещения

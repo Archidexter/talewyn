@@ -954,6 +954,10 @@ body:has(#reader-view:not([hidden])) #toast {
 }
 .reader-crumbs .crumbs-track { display: inline-block; white-space: nowrap; will-change: transform; }
 .reader-crumbs.marquee { text-align: left; }   /* бегущая строка стартует от левого края */
+/* плавная смена шапки главы (крошки/заголовок/счётчик) — только opacity, через анимацию,
+   чтобы НЕ перебивать transition: top/height у крошек (их синхрон с шапкой при скролле) */
+@keyframes head-fade-in { from { opacity: 0; } to { opacity: 1; } }
+.head-fade { animation: head-fade-in .34s ease; }
 
 .chapter {
   position: relative;   /* система координат караоке-подсветки */
@@ -961,7 +965,7 @@ body:has(#reader-view:not([hidden])) #toast {
   padding: 84px 20px 40px;
   /* +полоса с названием тома/главы: она теперь под шапкой, а не внутри неё */
   padding-top: calc(84px + var(--crumbs-h) + max(env(safe-area-inset-top, 0px), var(--sat, 0px)));
-  padding-bottom: calc(76px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));
+  padding-bottom: calc(40px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));
   padding-left: max(20px, max(env(safe-area-inset-left, 0px), var(--sal, 0px)));
   padding-right: max(20px, max(env(safe-area-inset-right, 0px), var(--sar, 0px)));
   transition: max-width .28s ease;
@@ -1080,10 +1084,11 @@ html.t-dark .chapter-body img { opacity: .9; }
 .reader-fabnav {
   position: fixed; z-index: 46;
   left: 0; right: 0;
-  bottom: calc(14px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));
+  bottom: calc(12% + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));   /* выше нижнего края */
   display: flex; justify-content: space-between; align-items: center;
-  padding-left: max(14px, max(env(safe-area-inset-left, 0px), var(--sal, 0px)));
-  padding-right: max(14px, max(env(safe-area-inset-right, 0px), var(--sar, 0px)));
+  /* ближе к центру: центры кнопок примерно на 20% и 80% ширины (кнопка 44px) */
+  padding-left: calc(20% - 22px);
+  padding-right: calc(20% - 22px);
   pointer-events: none;   /* панель прозрачна для тапов — кликаются только сами кнопки */
   transition: transform .28s ease, opacity .28s ease;
 }
@@ -1122,27 +1127,18 @@ body.sel-mode .book-del, body.sel-mode .ab-del { display: none; }   /* в реж
 body.sel-mode .book-card.sel .cover,
 body.sel-mode .ab-card.sel .ab-card-cover { outline: 2.5px solid var(--gild); outline-offset: 1px; }
 
-/* верхняя панель режима выбора */
-.sel-bar {
-  position: fixed; top: 0; left: 0; right: 0; z-index: 62;
-  display: flex; align-items: center; gap: 12px;
-  height: calc(52px + max(env(safe-area-inset-top, 0px), var(--sat, 0px)));
-  padding: max(env(safe-area-inset-top, 0px), var(--sat, 0px)) max(14px, max(env(safe-area-inset-right, 0px), var(--sar, 0px))) 0 max(14px, max(env(safe-area-inset-left, 0px), var(--sal, 0px)));
-  background: color-mix(in srgb, var(--bg) 92%, transparent);
-  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--border);
+/* красная кнопка-мусорка в стопке FAB — такой же кружок, как «по ссылке», но с красноватой
+   заливкой; видна только в режиме выбора. Крышка мусорки приоткрывается при нажатии. */
+.fab-del {
+  display: none;
+  color: #ff8080;
+  border: 1px solid color-mix(in srgb, #e5484d 55%, var(--border-strong));
+  background: color-mix(in srgb, #e5484d 22%, var(--elev));
 }
-.sel-bar[hidden] { display: none; }
-.sel-count { flex: 1; font-weight: 700; font-size: 15px; color: var(--text); }
-.sel-bar-btn {
-  width: 40px; height: 40px; border-radius: 11px; flex: none;
-  display: inline-flex; align-items: center; justify-content: center;
-  color: var(--text); background: transparent; border: none;
-  transition: transform .1s, color .15s;
-}
-.sel-bar-btn:active { transform: scale(.9); }
-.sel-del { color: var(--danger, #e5484d); }
-.sel-del:disabled { opacity: .4; }
+body.sel-mode .fab-del { display: grid; }
+.fab-del:active { filter: brightness(1.1); border-color: #ff8080; }
+.fab-del .trash-lid { transform-origin: 19px 7px; transition: transform .2s cubic-bezier(.3, 1.5, .5, 1); }
+.fab-del:active .trash-lid { transform: rotate(-26deg) translateY(-.5px); }   /* крышка откидывается */
 
 /* кастомный выбор языка перевода — в стиле приложения, с анимацией */
 .lang-pick { position: relative; flex: 1 1 170px; max-width: 220px; }

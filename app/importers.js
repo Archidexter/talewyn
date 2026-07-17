@@ -691,6 +691,22 @@ async function importFbook(buf) {
 // ══════════════════════ CBZ / манга / комиксы ══════════════════════
 // Архив изображений (.cbz и просто zip с картинками): каждая картинка — «страница».
 const IMG_EXT = /\.(jpe?g|png|gif|webp|avif|bmp)$/i;
+// книжные форматы, которые может содержать архив (zip/rar/7z): из архива достаём
+// НЕ только epub/fb2 — любой поддерживаемый файл прогоняем через importFile.
+const BOOK_INNER = /\.(fb2|epub|txt|pdf|mobi|azw3?|prc|docx|html?|xhtml|fbook)$/i;
+const isJunkPath = n => /(^|\/)__MACOSX\//.test(n) || /(^|\/)\._/.test(n) || /\/$/.test(n);
+// импортировать книжные файлы, уже извлечённые из архива (каждый — File/Blob).
+// Возвращает массив книг (может быть пустым); нечитаемые файлы молча пропускаем.
+async function importInnerBooks(files, onProgress) {
+  const out = [];
+  for (const f of files) {
+    try {
+      const r = await importFile(f, onProgress);
+      if (Array.isArray(r)) out.push(...r); else if (r) out.push(r);
+    } catch { /* один битый файл не должен рушить импорт остальных */ }
+  }
+  return out;
+}
 const naturalSort = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
 async function importCbz(zip, fname, onProgress) {
   const names = zip.names
@@ -909,6 +925,15 @@ async function importArchiveComic(file, fname) {
       else if (val && typeof val === 'object') walk(val, p);
     }
   })(tree, '');
+  // архив может содержать не картинки, а книги (rar/7z/cbt с fb2/epub/txt/…) — их и импортируем
+  const bookFiles = flat
+    .filter(e => BOOK_INNER.test(e.path) && !isJunkPath(e.path))
+    .map(e => e.file instanceof File ? e.file : new File([e.file], e.path.split('/').pop()));
+  if (bookFiles.length) {
+    const books = await importInnerBooks(bookFiles);
+    if (books.length === 1) return books[0];
+    if (books.length) return books;
+  }
   const imgs = flat
     .filter(e => IMG_EXT.test(e.path) && !/(^|\/)__MACOSX\//.test(e.path) && !/(^|\/)\._/.test(e.path))
     .sort((a, b) => naturalSort(a.path, b.path));
@@ -986,13 +1011,21 @@ async function importFile(file, onProgress) {
     const zip = await unzip(buf);
     if (zip.has('word/document.xml')) return importDocx(buf, file.name);   // DOCX
     if (zip.has('META-INF/container.xml')) return importEpub(buf);
-    const inner = zip.names.find(n => /\.fb2$/i.test(n)); // .fb2.zip
-    if (inner) {
-      const data = await zip.read(inner);
-      return importFb2(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
+    // архив книг (в т.ч. .fb2.zip): извлекаем КАЖДЫЙ поддерживаемый файл, не только fb2
+    const innerNames = zip.names.filter(n => BOOK_INNER.test(n) && !isJunkPath(n));
+    if (innerNames.length) {
+      const files = [];
+      for (const n of innerNames) {
+        const u8 = await zip.read(n);
+        const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
+        files.push(new File([ab], n.split('/').pop()));
+      }
+      const books = await importInnerBooks(files, prog);
+      if (books.length === 1) return books[0];
+      if (books.length) return books;
     }
     if (zip.names.some(n => IMG_EXT.test(n))) return importCbz(zip, file.name, prog);  // .cbz / манга
-    throw new Error('в архиве нет ни EPUB, ни FB2');
+    throw new Error('в архиве нет поддерживаемых книг или изображений');
   }
   // MOBI / AZW3: сигнатура BOOKMOBI на смещении 60 (или по расширению)
   const mobiSig = buf.byteLength >= 68 ? td.decode(new Uint8Array(buf, 60, 8)) : '';

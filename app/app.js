@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.11';
+const APP_VERSION = '1.0.12';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -6048,8 +6048,8 @@ function bindUI() {
     const a = art();
     if (a) {
       a.style.transition = 'none';
-      a.style.transform = `translateX(${d}px)`;
-      a.style.opacity = String(Math.max(0.45, 1 - Math.abs(d) / (innerWidth * 1.5)));
+      a.style.transform = `translateX(${d * 0.35}px)`;   // демпфируем сдвиг — лёгкий намёк, а не разлёт
+      a.style.opacity = String(Math.max(0.5, 1 - Math.abs(d) / (innerWidth * 1.3)));
     }
     e.preventDefault();
   }, { passive: false });
@@ -6505,16 +6505,14 @@ function bindSeg(segId, key) {
   });
 }
 
-// уезд текущей главы + въезд следующей с противоположной стороны
+// Смена главы по свайпу: тело ГАСНЕТ НА МЕСТЕ (crossfade), без уезда за экран. Уезд
+// translateX(±W) заставлял тело «улетать» вбок, а на возврате/подмене — скакать. Теперь
+// плавно гаснет там, где остановился палец, а openChapter вернёт transform в 0 и проявит
+// новую главу (body-fade). Горизонтального «улёта» и рывков больше нет.
 function commitSwipe(a, dir, navFn) {
-  const W = innerWidth;
-  a.style.transition = 'transform .18s ease, opacity .18s ease';
-  a.style.transform = `translateX(${dir * W}px)`;
+  a.style.transition = 'opacity .16s ease';   // transform НЕ трогаем — тело гаснет там, где палец
   a.style.opacity = '0';
-  // раньше здесь «въезжал» СТАРЫЙ контент, а openChapter async подменял его позже — виден
-  // щелчок. Теперь просто грузим главу: openChapter сбросит следы свайпа и плавно проявит
-  // новое тело (body-fade), без подмены на лету.
-  setTimeout(navFn, 170);
+  setTimeout(navFn, 150);
 }
 
 function bindStep(minusId, plusId, key, min, max, step, digits) {

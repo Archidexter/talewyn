@@ -89,11 +89,11 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
 
     <div id="shelf-grid"></div>
 
-    <input id="file-input" type="file" hidden multiple accept="*/*">
+    <input id="file-input" type="file" hidden multiple accept=".epub,.fb2,.zip,.fbook,.pdf,.txt,.html,.htm,.xhtml,.docx,.mobi,.azw,.azw3,.prc,.cbz,.cbr,.cb7,.cbt">
 
     <footer class="lib-footer" id="shelf-footer"></footer>
   </div>
-  <input id="audio-file-input" type="file" hidden multiple accept="audio/*,.mp3,.m4a,.m4b,.aac,.ogg,.opus,.flac,.wav">
+  <input id="audio-file-input" type="file" hidden multiple accept=".mp3,.m4a,.m4b,.aac,.ogg,.opus,.flac,.wav">
 
 
   <div id="tab-audio" hidden>
@@ -378,7 +378,7 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     <button id="restore-btn" class="tool-btn">
       <span data-i18n="restoreT">Восстановить из копии</span>
     </button>
-    <input id="restore-input" type="file" hidden accept="*/*">
+    <input id="restore-input" type="file" hidden accept=".tlib">
     <button id="reset-progress-btn" class="danger-btn" data-i18n="reset" hidden>Сбросить прогресс этой книги</button>
   </div>
 </div>

@@ -5423,23 +5423,13 @@ function bindUI() {
   $('#confirm-modal').addEventListener('click', e => {
     if (!e.target.closest('.confirm-card')) closeConfirm(false);
   });
-  // iOS Safari: у файловых input'ов с accept="*/*" система предлагает «Снять фото
-  // или видео», а с "audio/*" — «Записать аудио»; то и другое запрашивает камеру и
-  // микрофон. Формат приложение определяет по содержимому, а не по расширению, поэтому
-  // на iOS сужаем accept до конкретных расширений — открывается выбор в «Файлах», без
-  // камеры и микрофона. Обложку (#cover-input, image/*) не трогаем: там нужен доступ к
-  // «Фотоплёнке». На Android/ПК всё остаётся как было ("*/*" ничего лишнего не просит).
-  {
-    const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent)
-      || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
-    if (isIOS) {
-      const setAccept = (sel, val) => { const el = $(sel); if (el) el.accept = val; };
-      setAccept('#file-input',
-        '.epub,.fb2,.zip,.fbook,.pdf,.txt,.html,.htm,.xhtml,.docx,.mobi,.azw,.azw3,.prc,.cbz,.cbr,.cb7,.cbt');
-      setAccept('#audio-file-input', '.mp3,.m4a,.m4b,.aac,.ogg,.opus,.flac,.wav');
-      setAccept('#restore-input', '.tlib');
-    }
-  }
+  // accept у файловых input'ов сознательно сужен до конкретных расширений прямо в HTML
+  // (#file-input/#audio-file-input/#restore-input). Причина: при accept="*/*" или "audio/*"
+  // мобильные браузеры (в т.ч. Brave/Chrome на Android и Safari на iOS) добавляют в пикер
+  // «Снять фото/видео» и «Записать аудио» — а это запрос камеры и микрофона. Формат книги
+  // приложение определяет по СОДЕРЖИМОМУ, а не по расширению, поэтому сужение ничего не
+  // ломает: перетаскивание и импорт по-прежнему принимают файл любой природы. Обложке
+  // (#cover-input, image/*) камера нужна по делу — «сфотографировать обложку», её не трогаем.
   // импорт: кнопка, выбор файла, перетаскивание
   $('#import-btn').addEventListener('click', () => $('#file-input').click());
   $('#url-btn').addEventListener('click', importFromUrl);

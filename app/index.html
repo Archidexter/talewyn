@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="ru" class="t-light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AD.Talewyn</title>
+<meta name="theme-color" content="#f4ecdd">
+<script>/* тема до загрузки CSS; IIFE — чтобы var не утекали в глобалы */
+(function(){try{var s=JSON.parse(localStorage.getItem('talewyn-settings')||'{}');var th=s.theme||'auto';
+if(th==='auto')th=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.className='t-'+th;}catch(e){}})();</script>
+<link rel="stylesheet" href="fonts.css?v=9">
+<link rel="stylesheet" href="app.css?v=134">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<!-- iOS: запуск с домашнего экрана в полноэкранном standalone (без адресной строки Safari).
+     status-bar-style=black-translucent — контент уходит под статус-бар, отступы держит
+     env(safe-area-inset-*) в app.css. apple-*-title — подпись значка на домашнем экране. -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Talewyn">
+<!-- Заставка рисуется ДО загрузки app.css — стили инлайном намеренно: иначе между
+     первым кадром и приходом стилей мелькает голая вёрстка. Тема уже выбрана скриптом
+     выше, поэтому фон совпадает с приложением и стыка не видно. -->
+<style>
+  #boot-splash {
+    position: fixed; inset: 0; z-index: 999;
+    display: flex; align-items: center; justify-content: center;
+    background: #1c2015;
+    transition: opacity .28s ease;
+  }
+  html.t-light #boot-splash { background: #f3efe3; }
+  html.t-sepia #boot-splash { background: #ece0c8; }
+  html.t-teal  #boot-splash { background: #142428; }
+  #boot-splash.gone { opacity: 0; pointer-events: none; }
+  /* Размер и место — ровно как у системной заставки, чтобы переход между ними не читался
+     как смена экрана. Система рисует значок на полотне 288dp, у нас поля 24% с каждой
+     стороны (styles.xml) — остаётся 288 × 0.52 = 150dp, то есть 150 CSS-пикселей.
+     Подписи нет намеренно: у системной заставки её тоже нет, и текст выдавал бы стык. */
+  #boot-splash .bs-logo {
+    width: 150px; height: 150px;
+    background: #d9b978;   /* тот же золотой, что у значка системной заставки */
+    -webkit-mask: url(logo.png) center / contain no-repeat;
+    mask: url(logo.png) center / contain no-repeat;
+  }
+</style>
+</head>
+<body>
+<div id="boot-splash">
+  <span class="bs-logo" aria-hidden="true"></span>
+</div>
+<div id="readbar" hidden><div id="readbar-fill"></div></div>
+<input id="cover-input" type="file" hidden accept="image/*"><!-- выбор своей обложки книги/аудиокниги -->
+
+<!-- ══════════ Полка ══════════ -->
+<main id="shelf-view">
+  <header class="lib-header shelf-head">
+    <div class="lib-title-row">
+      <span class="brand-logo" aria-hidden="true"></span>
+      <h1 class="brand"><span class="brand-ad">AD.</span>Talewyn</h1>
+      <button class="icon-btn" id="filter-btn" data-i18n-title="filtersT" title="Фильтры">
+        <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8.2V20l-4-2v-4.8z"/></svg>
+      </button>
+      <button class="icon-btn" id="info-btn" data-i18n-title="infoT" title="О приложении">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.4 9.2a2.7 2.7 0 0 1 5.1 1.1c0 1.8-2.6 2.5-2.6 2.7"/><path d="M12 17h.01"/></svg>
+      </button>
+      <button class="icon-btn" id="shelf-settings-btn" data-i18n-title="settingsT" title="Настройки">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.98 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.65 8.98a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01A1.7 1.7 0 0 0 10.05 3.1V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.56 1.03z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- две вкладки главной панели: тексты и (в разработке) аудиокниги -->
+  <div class="shelf-tabs" id="shelf-tabs" role="tablist">
+    <button class="shelf-tab active" data-tab="books" role="tab" data-i18n-title="tabBooks" title="Книги" aria-label="Книги">
+      <svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.6C10.1 5.2 7.2 4.6 4 5v12.6c3.2-.4 6.1.2 8 1.6 1.9-1.4 4.8-2 8-1.6V5c-3.2-.4-6.1.2-8 1.6z"/><path d="M12 6.6v12.6"/></svg>
+    </button>
+    <button class="shelf-tab" data-tab="audio" role="tab" data-i18n-title="tabAudio" title="Аудиокниги" aria-label="Аудиокниги">
+      <svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14v-2a9 9 0 0 1 18 0v2"/><path d="M3 14a2 2 0 0 1 2-2h1a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M21 14a2 2 0 0 0-2-2h-1a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2z"/></svg>
+    </button>
+  </div>
+
+  <div id="tab-books">
+    <div id="shelf-continue"></div>
+
+    <div id="shelf-filters" hidden></div>
+
+    <div id="shelf-grid"></div>
+
+    <input id="file-input" type="file" hidden multiple accept="*/*">
+
+    <footer class="lib-footer" id="shelf-footer"></footer>
+  </div>
+  <input id="audio-file-input" type="file" hidden multiple accept="audio/*,.mp3,.m4a,.m4b,.aac,.ogg,.opus,.flac,.wav">
+
+
+  <div id="tab-audio" hidden>
+    <!-- порядок как у книг: сначала «Продолжить слушать», под ним фильтры, затем полка -->
+    <div id="audio-continue"></div>
+    <div id="audio-filters" class="shelf-filters" hidden></div>
+    <div id="audio-content"></div>
+  </div>
+
+</main>
+
+<!-- Добавление — плавающим слоем поверх полки: одно и то же на обеих вкладках, при
+     переключении не двигается. Файл-инпут принимает всё, doImport сам разводит аудио
+     и текст, поэтому отдельной кнопки для аудиокниг не нужно.
+     Живёт СНАРУЖИ #shelf-view намеренно: у полки при каждом показе играет анимация
+     входа с transform, а transform на предке ломает position: fixed — элемент начинает
+     считать координаты от предка, и кружки ездили вместе с полкой. -->
+<div id="add-fab" hidden>
+  <button id="url-btn" class="fab-mini" data-i18n-title="urlAdd" title="По ссылке" aria-label="По ссылке">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>
+  </button>
+  <button id="import-btn" class="fab-main" data-i18n-title="addFile" title="Добавить файл" aria-label="Добавить файл">
+    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+</div>
+
+<!-- ══════════ Книга: оглавление ══════════ -->
+<main id="library-view" hidden>
+  <header class="lib-header">
+    <div class="lib-title-row">
+      <button class="icon-btn" id="shelf-btn" data-i18n-title="toShelf" title="К полке">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <div class="lib-title-block">
+        <h1 id="book-title"></h1>
+        <p class="lib-subtitle" id="book-author"></p>
+      </div>
+      <button class="icon-btn" id="lib-settings-btn" data-i18n-title="settingsT" title="Настройки">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.98 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.65 8.98a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01A1.7 1.7 0 0 0 10.05 3.1V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.56 1.03z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div id="book-annot"></div>
+
+  <div id="continue-card"></div>
+
+  <div class="search-wrap">
+    <svg class="search-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+    <input id="search-input" type="search" data-i18n-ph="searchPh" placeholder="Поиск по книге…" autocomplete="off" enterkeyhint="search">
+  </div>
+
+  <div class="book-tools">
+    <!-- только иконки: подписи дублировали и без того понятные значки и жались в три строки -->
+    <button id="notes-btn" class="tool-btn" data-i18n-title="notesBtn" title="Заметки" aria-label="Заметки">
+      <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3.5h10a1.5 1.5 0 0 1 1.5 1.5v14a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 19V5A1.5 1.5 0 0 1 7 3.5z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>
+      <span id="notes-count" class="tool-count"></span>
+    </button>
+    <button id="bm-list-btn" class="tool-btn" data-i18n-title="bmBtn" title="Закладки" aria-label="Закладки">
+      <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3.8h11a1 1 0 0 1 1 1v15.4l-6.5-4.3-6.5 4.3V4.8a1 1 0 0 1 1-1z"/></svg>
+      <span id="bm-count" class="tool-count"></span>
+    </button>
+    <button id="review-btn" class="tool-btn" data-i18n-title="reviewBtn" title="Мой отзыв" aria-label="Мой отзыв">
+      <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+      <span id="review-stars" class="tool-count stars"></span>
+    </button>
+  </div>
+  <div id="bm-list" hidden></div>
+
+  <nav id="part-chips" aria-label="Быстрый переход" hidden></nav>
+  <div id="search-results" hidden></div>
+  <div id="notes-list" hidden></div>
+  <nav id="toc" aria-label="Оглавление"></nav>
+
+  <footer class="lib-footer" id="lib-footer"></footer>
+</main>
+
+<!-- ══════════ Читалка ══════════ -->
+<div id="reader-view" hidden>
+  <header class="reader-header" id="reader-header">
+    <button class="icon-btn" id="back-btn" data-i18n-title="backT" title="К оглавлению">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <button class="icon-btn" id="bm-btn" data-i18n-title="bmT" title="Закладка">
+      <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3.8h11a1 1 0 0 1 1 1v15.4l-6.5-4.3-6.5 4.3V4.8a1 1 0 0 1 1-1z"/></svg>
+    </button>
+    <button class="icon-btn" id="scroll-btn" data-i18n-title="autoScrollT" title="Автопрокрутка">
+      <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v16"/><path d="m6.5 14.5 5.5 5.5 5.5-5.5"/><path d="M5 3.5h14"/></svg>
+      <span class="scroll-num" id="scroll-num"></span>
+    </button>
+    <button class="icon-btn" id="tts-btn" data-i18n-title="listenT" title="Слушать главу">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14v-2a9 9 0 0 1 18 0v2"/><path d="M3 14a2 2 0 0 1 2-2h1a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M21 14a2 2 0 0 0-2-2h-1a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2z"/></svg>
+    </button>
+    <button class="icon-btn" id="tr-btn" data-i18n-title="trHdrT" title="Перевод главы">
+      <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a13.5 13.5 0 0 1 0 18a13.5 13.5 0 0 1 0-18z"/></svg>
+    </button>
+    <button class="icon-btn" id="reader-settings-btn" data-i18n-title="settingsT" title="Настройки">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </header>
+  <!-- Названия тома/главы вынесены из шапки на свой уровень: наверху остаются только
+       кнопки, с которыми взаимодействуют. Тост тоже опущен ниже, чтобы не перекрывать. -->
+  <div class="reader-crumbs" id="reader-crumbs"></div>
+
+  <button class="edge-nav edge-prev" id="edge-prev" data-i18n-title="prevChT" title="Предыдущая глава" aria-label="Предыдущая глава">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+  </button>
+  <button class="edge-nav edge-next" id="edge-next" data-i18n-title="nextChT" title="Следующая глава" aria-label="Следующая глава">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+  </button>
+
+  <article class="chapter">
+    <div id="karaoke-pill" hidden></div>
+    <h1 class="chapter-title" id="chapter-title"></h1>
+    <div class="chapter-meta" id="chapter-meta"></div>
+    <div class="chapter-body" id="chapter-body"></div>
+    <nav class="chapter-nav">
+      <button id="prev-btn" class="nav-btn"></button>
+      <button id="next-btn" class="nav-btn nav-next"></button>
+    </nav>
+  </article>
+</div>
+
+<!-- ══════════ Аудиокнига: плеер ══════════ -->
+<div id="audio-view" hidden>
+  <header class="reader-header" id="audio-header">
+    <button class="icon-btn" id="audio-back" data-i18n-title="toShelf" title="К полке" aria-label="Назад">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+    </button>
+    <div class="reader-crumbs" id="ab-crumbs"></div>
+    <button class="icon-btn" id="ab-edit" data-i18n-title="editT" title="Редактировать" aria-label="Редактировать">
+      <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+    </button>
+  </header>
+  <div id="ab-glow" aria-hidden="true"></div>
+  <div class="ab-player">
+    <div class="ab-cover" id="ab-cover">
+      <div class="ab-cover-face" id="ab-cover-face"><span class="ab-cover-fallback">♪</span></div>
+    </div>
+    <div class="ab-title" id="ab-title"></div>
+    <div class="ab-author" id="ab-author"></div>
+    <div class="ab-desc" id="ab-desc" hidden></div>
+    <div class="book-tools ab-tools">
+      <!-- иконки те же, что у книг: одинаковая функция — одинаковый значок -->
+      <button id="ab-notes-btn" class="tool-btn" data-i18n-title="notesBtn" title="Заметки" aria-label="Заметки">
+        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3.5h10a1.5 1.5 0 0 1 1.5 1.5v14a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 19V5A1.5 1.5 0 0 1 7 3.5z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>
+        <span id="ab-notes-count" class="tool-count"></span>
+      </button>
+      <button id="ab-review-btn" class="tool-btn" data-i18n-title="reviewBtn" title="Мой отзыв" aria-label="Мой отзыв">
+        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>
+        <span id="ab-review-stars" class="tool-count stars"></span>
+      </button>
+    </div>
+    <div class="ab-seek">
+      <input type="range" id="ab-seek" min="0" max="1000" value="0" step="1" aria-label="Позиция">
+      <!-- название трека живёт в одной строке с таймингами; длинное — едет бегущей строкой -->
+      <div class="ab-times">
+        <span id="ab-cur">0:00</span>
+        <div class="ab-trackline"><span id="ab-track-title"></span></div>
+        <span id="ab-total">0:00</span>
+      </div>
+    </div>
+    <div class="ab-controls">
+      <button class="tbtn rd" id="ab-prev" title="Предыдущий трек" aria-label="Предыдущий трек">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><rect x="5" y="5" width="2.4" height="14" rx="1.2"/><path d="M20 5.5v13l-10-6.5z"/></svg>
+      </button>
+      <button class="tbtn rd ab-skip" id="ab-back15" title="Назад 15с" aria-label="Назад 15 секунд"><span>−15</span></button>
+      <span class="play-wrap ab-play-wrap">
+        <button class="play-btn" id="ab-play" title="Пауза/продолжить"></button>
+      </span>
+      <button class="tbtn rd ab-skip" id="ab-fwd15" title="Вперёд 15с" aria-label="Вперёд 15 секунд"><span>+15</span></button>
+      <button class="tbtn rd" id="ab-next" title="Следующий трек" aria-label="Следующий трек">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><rect x="16.6" y="5" width="2.4" height="14" rx="1.2"/><path d="M4 5.5v13l10-6.5z"/></svg>
+      </button>
+    </div>
+    <div class="ab-extra">
+      <!-- сон слева, скорость справа -->
+      <button class="tbtn rd tts-timer" id="ab-timer" title="Таймер сна">
+        <svg class="timer-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 13.2A8.5 8.5 0 1 1 10.8 3.5a6.6 6.6 0 0 0 9.7 9.7z"/></svg>
+        <span class="timer-num" id="ab-timer-num"></span>
+      </button>
+      <button class="ab-tracks-btn" id="ab-tracks-btn"><span data-i18n="abTracks">Треки</span> <span id="ab-tracks-count"></span></button>
+      <button class="tbtn rd tts-speed" id="ab-speed" title="Скорость"><span id="ab-rate-value"></span></button>
+    </div>
+    <div class="ab-tracklist" id="ab-tracklist" hidden></div>
+  </div>
+</div>
+
+<!-- ══════════ Настройки ══════════ -->
+<div id="settings-overlay" class="sheet-scrim" hidden></div>
+<div id="settings-sheet" class="sheet" hidden role="dialog" aria-label="Настройки чтения">
+  <div class="sheet-grip"></div>
+  <div class="set-section" data-i18n="theme">Тема</div>
+
+  <div class="v3row fullrow">
+    <div class="themes" id="seg-theme">
+      <button class="swatch" data-v="light" title="Светлая"><span class="dot light"></span></button>
+      <button class="swatch" data-v="sepia" title="Сепия"><span class="dot sepia"></span></button>
+      <button class="swatch" data-v="dark" title="Тёмная"><span class="dot dark"></span></button>
+      <button class="swatch" data-v="teal" title="Витраж"><span class="dot teal"></span></button>
+      <button class="swatch" data-v="royal" title="Ночь"><span class="dot royal"></span></button>
+      <button class="swatch" data-v="bordo" title="Бордо"><span class="dot bordo"></span></button>
+      <button class="swatch" data-v="black" title="Чёрная"><span class="dot black"></span></button>
+    </div>
+  </div>
+
+  <div class="set-section" data-i18n="textSec">Текст</div>
+  <!-- единый живой пример: шрифт + размер + интервал + выравнивание разом -->
+  <div class="v3preview settings-preview" id="settings-preview" data-i18n="readerPrev">Тихий вечер опустился на город, и в тёплых окнах один за другим загорались огни. Дорога вела через старый лес, где солнечный свет мягко пробивался сквозь листву.</div>
+
+  <div class="v3row fullrow">
+    <div class="chips" id="seg-align">
+      <button class="chip ichip" data-v="left"><svg width="30" height="16" viewBox="0 0 30 16"><line class="ln" x1="1" y1="3" x2="29" y2="3"/><line class="ln" x1="1" y1="8" x2="20" y2="8"/><line class="ln" x1="1" y1="13" x2="25" y2="13"/></svg><span class="cap" data-i18n="leftA">По левому</span></button>
+      <button class="chip ichip" data-v="justify"><svg width="30" height="16" viewBox="0 0 30 16"><line class="ln" x1="1" y1="3" x2="29" y2="3"/><line class="ln" x1="1" y1="8" x2="29" y2="8"/><line class="ln" x1="1" y1="13" x2="29" y2="13"/></svg><span class="cap" data-i18n="justify">По ширине</span></button>
+      <button class="chip ichip" data-v="right"><svg width="30" height="16" viewBox="0 0 30 16"><line class="ln" x1="1" y1="3" x2="29" y2="3"/><line class="ln" x1="10" y1="8" x2="29" y2="8"/><line class="ln" x1="5" y1="13" x2="29" y2="13"/></svg><span class="cap" data-i18n="rightA">По правому</span></button>
+    </div>
+  </div>
+
+  <div class="v3row fullrow">
+    <div class="chips" id="seg-font">
+      <button class="chip fontchip" data-v="serif"><span class="glyph serif">Аа</span><span class="cap">Spectral</span></button>
+      <button class="chip fontchip" data-v="sans"><span class="glyph sans">Аа</span><span class="cap">Nunito</span></button>
+      <button class="chip fontchip" data-v="lora"><span class="glyph lora">Аа</span><span class="cap">Lora</span></button>
+    </div>
+  </div>
+
+  <div class="v3srow">
+    <div class="v3srow-head">
+      <span class="v3lbl" data-i18n="size">Размер</span>
+      <span class="v3val" id="size-value"></span>
+    </div>
+    <div class="v3slider">
+      <button class="v3step" id="size-minus" aria-label="Меньше">−</button>
+      <input type="range" id="size-range" min="14" max="26" step="1" aria-label="Размер текста">
+      <button class="v3step" id="size-plus" aria-label="Больше">+</button>
+    </div>
+  </div>
+
+  <div class="v3srow">
+    <div class="v3srow-head">
+      <span class="v3lbl" data-i18n="lh">Интервал</span>
+      <span class="v3val" id="lh-value"></span>
+    </div>
+    <div class="v3slider">
+      <button class="v3step" id="lh-minus" aria-label="Меньше">−</button>
+      <input type="range" id="lh-range" min="1.4" max="2" step="0.05" aria-label="Межстрочный интервал">
+      <button class="v3step" id="lh-plus" aria-label="Больше">+</button>
+    </div>
+  </div>
+
+  <div class="v3row" id="width-group">
+    <span class="v3lbl" data-i18n="width">Ширина</span>
+    <div class="chips" id="seg-width">
+      <button class="chip ichip" data-v="narrow"><svg width="26" height="16" viewBox="0 0 26 16"><line class="ln" x1="9" y1="4" x2="17" y2="4"/><line class="ln" x1="9" y1="8" x2="17" y2="8"/><line class="ln" x1="9" y1="12" x2="17" y2="12"/></svg><span class="cap" data-i18n="narrow">Узкая</span></button>
+      <button class="chip ichip" data-v="medium"><svg width="26" height="16" viewBox="0 0 26 16"><line class="ln" x1="5" y1="4" x2="21" y2="4"/><line class="ln" x1="5" y1="8" x2="21" y2="8"/><line class="ln" x1="5" y1="12" x2="21" y2="12"/></svg><span class="cap" data-i18n="medium">Средняя</span></button>
+      <button class="chip ichip" data-v="wide"><svg width="26" height="16" viewBox="0 0 26 16"><line class="ln" x1="2" y1="4" x2="24" y2="4"/><line class="ln" x1="2" y1="8" x2="24" y2="8"/><line class="ln" x1="2" y1="12" x2="24" y2="12"/></svg><span class="cap" data-i18n="wide">Широкая</span></button>
+    </div>
+  </div>
+
+  <div class="set-section" data-i18n="trLangLbl">Переводчик</div>
+  <div class="v3row fullrow">
+    <div class="tr-controls">
+      <button class="chip tr-auto" id="tr-auto" data-i18n="trAuto">Авто</button>
+      <div class="tr-picker-wrap" id="tr-picker-wrap">
+        <div class="tr-picker" id="tr-picker" role="listbox" aria-label="Язык перевода"><div class="tr-picker-list" id="tr-picker-list"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="set-section" data-i18n="secApp">Приложение</div>
+  <div class="v3row fullrow">
+    <div class="chips" id="seg-lang">
+      <button class="chip" data-v="ru">Русский</button>
+      <button class="chip" data-v="en">English</button>
+    </div>
+  </div>
+  <div class="set-section" data-i18n="secLibrary">Библиотека</div>
+  <div class="set-group backup-row">
+    <button id="backup-btn" class="tool-btn" hidden>
+      <span data-i18n="backupT">Сохранить копию библиотеки</span>
+    </button>
+    <button id="restore-btn" class="tool-btn">
+      <span data-i18n="restoreT">Восстановить из копии</span>
+    </button>
+    <input id="restore-input" type="file" hidden accept="*/*">
+    <button id="reset-progress-btn" class="danger-btn" data-i18n="reset" hidden>Сбросить прогресс этой книги</button>
+  </div>
+</div>
+
+<div id="tts-bar" hidden>
+  <div id="tts-glow" aria-hidden="true"></div>
+  <div class="tts-grip" id="tts-grip" title="Свернуть"></div>
+  <!-- вариант 3, одна строка: [голос стоп] · [назад плей вперёд] · [таймер скорость] -->
+  <div class="tts-transport">
+    <div id="tts-voice" class="voice-pick" data-i18n-title="voiceT" aria-label="Голос"></div>
+    <button class="tbtn rd" id="tts-stop" data-i18n-title="stopT" title="Остановить">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>
+    </button>
+    <span class="tts-sep"></span>
+    <button class="tbtn md" id="tts-prev" data-i18n-title="prevParaT" title="Абзац назад">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><rect x="5" y="5" width="2.4" height="14" rx="1.2"/><path d="M20 5.5v13l-10-6.5z"/></svg>
+    </button>
+    <span class="play-wrap">
+      <svg class="play-ring" viewBox="0 0 78 78" aria-hidden="true"><circle cx="39" cy="39" r="35" fill="none" stroke="currentColor" stroke-width="3"/></svg>
+      <button class="play-btn" id="tts-play" data-i18n-title="pauseT" title="Пауза/продолжить"></button>
+    </span>
+    <button class="tbtn md" id="tts-next" data-i18n-title="nextParaT" title="Абзац вперёд">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><rect x="16.6" y="5" width="2.4" height="14" rx="1.2"/><path d="M4 5.5v13l10-6.5z"/></svg>
+    </button>
+    <span class="tts-sep"></span>
+    <button class="tbtn rd tts-timer" id="tts-timer" data-i18n-title="sleepT" title="Таймер сна">
+      <svg class="timer-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 13.2A8.5 8.5 0 1 1 10.8 3.5a6.6 6.6 0 0 0 9.7 9.7z"/></svg>
+      <span class="timer-num" id="tts-timer-num"></span>
+    </button>
+    <button class="tbtn rd tts-speed" id="tts-speed" data-i18n-title="rateT" title="Скорость"><span id="tts-rate-value"></span></button>
+  </div>
+</div>
+
+<!-- перевод слова по двойному тапу: компактный попап у самого слова -->
+<div id="word-pop" hidden>
+  <div class="wp-word" id="wp-word"></div>
+  <div class="wp-tr" id="wp-tr"></div>
+  <button class="wp-more" id="wp-more" data-i18n="wpMore">Подробнее</button>
+</div>
+
+<div id="sel-toolbar" hidden>
+  <div class="sel-row sel-one">
+    <button class="sel-dot c-y" data-c="y" data-i18n-title="markT" title="Выделить цветом"></button>
+    <button class="sel-dot c-g" data-c="g" data-i18n-title="markT" title="Выделить цветом"></button>
+    <button class="sel-dot c-v" data-c="v" data-i18n-title="markT" title="Выделить цветом"></button>
+    <button class="sel-dot c-t" data-c="t" data-i18n-title="markT" title="Выделить цветом"></button>
+    <span class="sel-sep"></span>
+    <button id="sel-tr" class="sel-act" data-i18n-title="trT" title="Перевести" aria-label="Перевести">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a13.5 13.5 0 0 1 0 18a13.5 13.5 0 0 1 0-18z"/></svg>
+      <span class="sel-lbl" data-i18n="trT">Перевести</span>
+    </button>
+    <button id="sel-note" class="sel-act" data-i18n-title="noteT" title="Заметка" aria-label="Заметка">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+      <span class="sel-lbl" data-i18n="noteT">Заметка</span>
+    </button>
+    <button id="sel-speak" class="sel-act" data-i18n-title="listenHere" title="Озвучить" aria-label="Озвучить">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>
+      <span class="sel-lbl" data-i18n="listenHere">Озвучить</span>
+    </button>
+    <span class="sel-sep"></span>
+    <button id="sel-erase" data-i18n-title="eraseT" title="Убрать выделение" aria-label="Убрать выделение">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m20 20-9 0"/><path d="M15.5 4.5 4.9 15.1a2 2 0 0 0 0 2.8l1.6 1.6a2 2 0 0 0 2.8 0L20 8.8a2 2 0 0 0 0-2.9l-1.6-1.6a2 2 0 0 0-2.9 0Z"/><path d="m9 10 5 5"/></svg>
+    </button>
+  </div>
+</div>
+
+<div id="info-overlay" class="sheet-scrim" hidden></div>
+<div id="info-sheet" class="sheet" hidden role="dialog" aria-label="О приложении">
+  <div class="sheet-grip"></div>
+  <span class="brand-logo info-logo" aria-hidden="true"></span>
+  <div class="info-brand"><span class="brand-ad">AD.</span>Talewyn</div>
+  <div class="set-section" data-i18n="infoSocial">Контакты</div><!-- i18n: Контакты/Contacts -->
+  <div class="social-row">
+    <a class="social-link" href="https://boosty.to/ad.tile" target="_blank" rel="noopener noreferrer">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6z" fill="currentColor" stroke="none"/></svg>
+      <span>Boosty</span>
+    </a>
+    <a class="social-link" href="https://t.me/svideteli_kloda" target="_blank" rel="noopener noreferrer">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m22 3-10.5 9.6"/><path d="m22 3-7 18-3.5-8-7.5-3.5z"/></svg>
+      <span>Telegram</span>
+    </a>
+    <a class="social-link" href="https://www.youtube.com/@archidexteror" target="_blank" rel="noopener noreferrer">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="19" height="12" rx="4"/><path d="M10.5 9.3v5.4l4.7-2.7z" fill="currentColor" stroke="none"/></svg>
+      <span>YouTube</span>
+    </a>
+  </div>
+  <div class="set-section" data-i18n="infoLicense">Лицензия и авторство</div>
+  <div class="license-text">
+    <p data-i18n="licApp">AD.Talewyn — приложение для чтения книг.</p>
+    <p data-i18n="licRights">© 2026 Archidexter. Все права на приложение защищены.</p>
+    <p data-i18n="licFiles">Книги и другие файлы, которые вы добавляете, принадлежат их правообладателям. Приложение хранит их только на вашем устройстве и никуда не передаёт.</p>
+  </div>
+  <div class="info-version" id="info-version"></div>
+</div>
+
+<div id="note-overlay" class="sheet-scrim" hidden></div>
+<div id="note-sheet" class="sheet" hidden role="dialog" aria-label="Заметка">
+  <div class="sheet-grip"></div>
+  <blockquote id="note-excerpt"></blockquote>
+  <div class="color-row seg" id="note-colors">
+    <button class="sel-dot c-y" data-c="y"><span class="sw"></span></button>
+    <button class="sel-dot c-g" data-c="g"><span class="sw"></span></button>
+    <button class="sel-dot c-v" data-c="v"><span class="sw"></span></button>
+    <button class="sel-dot c-t" data-c="t"><span class="sw"></span></button>
+  </div>
+  <textarea id="note-text" rows="4" data-i18n-ph="notePh" placeholder="Текст заметки…"></textarea>
+  <div class="sheet-actions">
+    <button id="note-jump" class="ghost-btn slim" hidden>
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>
+      <span data-i18n="noteJump">К моменту</span>
+    </button>
+    <button id="note-delete" class="danger-btn slim" data-i18n="noteDelete">Удалить</button>
+    <button id="note-save" class="primary-btn" data-i18n="noteSave">Сохранить</button>
+  </div>
+</div>
+
+<div id="tr-overlay" class="sheet-scrim" hidden></div>
+<div id="tr-sheet" class="sheet" hidden role="dialog" aria-label="Перевод">
+  <div class="sheet-grip"></div>
+  <div class="set-group">
+    <span class="set-label" data-i18n="trTo">Перевод на</span>
+    <div id="tr-lang-pick" class="lang-pick"></div>
+  </div>
+  <blockquote id="tr-orig"></blockquote>
+  <p id="tr-result"></p>
+  <div class="sheet-actions">
+    <button id="tr-copy" class="ghost-btn" data-i18n="copyOne">Скопировать</button>
+  </div>
+</div>
+
+<div id="annot-overlay" class="sheet-scrim" hidden></div>
+<div id="annot-sheet" class="sheet" hidden role="dialog" aria-label="Описание книги">
+  <div class="sheet-grip"></div>
+  <div class="cover-edit">
+    <div class="cover-edit-thumb" id="annot-cover" aria-hidden="true"></div>
+    <div class="cover-edit-side">
+      <span class="set-label" data-i18n="coverLabel">Обложка</span>
+      <div class="cover-btn-row">
+        <button id="annot-cover-set" class="ghost-btn cover-main-btn" type="button" data-i18n="coverEdit">Изменить</button>
+        <button id="annot-cover-clear" class="ghost-btn cover-main-btn" type="button" data-i18n="coverDel" hidden>Удалить</button>
+        <button id="annot-cover-restore" class="cover-icon-btn" type="button" data-i18n-title="coverReset" title="Вернуть исходную обложку" aria-label="Вернуть исходную обложку" hidden>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v5h-5"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+  <label class="annot-field">
+    <span class="set-label" data-i18n="annotTitleL">Название</span>
+    <input id="annot-title" type="text" class="field" autocomplete="off">
+  </label>
+  <label class="annot-field">
+    <span class="set-label" data-i18n="annotAuthorL">Автор</span>
+    <input id="annot-author" type="text" class="field" autocomplete="off">
+  </label>
+  <label class="annot-field">
+    <span class="set-label" data-i18n="annotDescL">Описание</span>
+    <textarea id="annot-input" rows="6" data-i18n-ph="annotPh" placeholder="О чём эта книга?…"></textarea>
+  </label>
+  <button id="annot-find" class="ghost-btn" data-i18n="annotFindWeb">Найти описание в интернете</button>
+  <div id="annot-results" hidden></div>
+  <div class="sheet-actions">
+    <button id="annot-save" class="primary-btn" data-i18n="noteSave">Сохранить</button>
+  </div>
+</div>
+
+<div id="review-overlay" class="sheet-scrim" hidden></div>
+<div id="review-sheet" class="sheet" hidden role="dialog" aria-label="Мой отзыв">
+  <div class="sheet-grip"></div>
+  <p class="review-book" id="review-book"></p>
+  <div class="star-row" id="star-row">
+    <button>★</button><button>★</button><button>★</button><button>★</button><button>★</button>
+  </div>
+  <textarea id="review-text" rows="5" data-i18n-ph="reviewPh" placeholder="Что вы думаете об этой книге?…"></textarea>
+  <div class="sheet-actions">
+    <button id="review-share" class="ghost-btn" data-i18n="reviewShare">Поделиться</button>
+    <button id="review-save" class="primary-btn" data-i18n="noteSave">Сохранить</button>
+  </div>
+</div>
+
+<!-- заметки аудиокниги (привязаны к таймкоду) -->
+<div id="ab-notes-overlay" class="sheet-scrim" hidden></div>
+<div id="ab-notes-sheet" class="sheet" hidden role="dialog" aria-label="Заметки аудиокниги">
+  <div class="sheet-grip"></div>
+  <div class="ab-notes-head">
+    <p class="review-book" data-i18n="notesBtn">Заметки</p>
+    <div class="ab-notes-actions">
+      <button id="ab-note-add" class="chip">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        <span id="ab-note-add-label">Заметка</span>
+      </button>
+      <button id="ab-notes-copy" class="chip notes-copy-btn" data-i18n-title="copyAll" title="Скопировать все" aria-label="Скопировать все">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>
+      </button>
+    </div>
+  </div>
+  <div id="ab-notes-list"></div>
+</div>
+
+<div id="lightbox" hidden><img id="lightbox-img" alt=""></div>
+<div id="toast" hidden><span id="toast-msg"></span><button id="toast-btn" hidden></button><div id="toast-prog" hidden><i></i></div></div>
+
+<div id="confirm-scrim" class="sheet-scrim" hidden></div>
+<div id="confirm-modal" hidden role="alertdialog" aria-modal="true" aria-labelledby="confirm-msg">
+  <div class="confirm-card">
+    <div class="confirm-orn"><span>◆</span></div>
+    <p id="confirm-msg"></p>
+    <!-- Поле-капсула со значком: появляется только у диалога-запроса (uiPrompt),
+         обычный вопрос его прячет. Значок сразу говорит, что сюда вставляют ссылку. -->
+    <div id="confirm-field" hidden>
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>
+      <input id="confirm-input" type="url" inputmode="url" autocomplete="off"
+             autocapitalize="off" spellcheck="false">
+    </div>
+    <div class="confirm-actions">
+      <button id="confirm-no" class="ghost-btn" type="button">Отмена</button>
+      <button id="confirm-yes" class="primary-btn" type="button">ОК</button>
+    </div>
+  </div>
+</div>
+
+<script src="importers.js?v=19"></script>
+<script src="jsmediatags.min.js?v=1"></script><!-- теги/обложки аудиокниг (ID3/MP4) -->
+<!-- прямой edge-tts (нейроголоса Microsoft) без сервера — модуль ставит глобал.
+     В WebView первый импорт иногда упирается в ещё не готовый кэш SW — повторяем. -->
+<script type="module">
+  (async () => {
+    for (let i = 0; i < 3; i++) {
+      try {
+        const m = await import('./edge-tts.js?v=1');
+        window.TalewynEdgeTTS = m.EdgeTTS;
+        window.dispatchEvent(new Event('edgett-ready'));
+        return;
+      } catch (e) {
+        window.__edgettErr = String((e && e.message) || e);
+        await new Promise(r => setTimeout(r, 800));
+      }
+    }
+  })();
+</script>
+<script src="app.js?v=134"></script>
+</body>
+</html>

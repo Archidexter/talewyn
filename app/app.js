@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.13';
+const APP_VERSION = '1.0.14';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -3398,6 +3398,12 @@ function sleepSet(mins) {
 // палец вверх/вниз — выбор по барабану. Общая механика для скорости и таймера сна.
 function bindWheelDial(btn, cfg) {
   if (!btn) return;
+  // Барабан крутится пальцем — страница под кнопкой ехать НЕ должна. touch-action ставим
+  // прямо здесь, на самом элементе: инлайн перебивает глобальный button{touch-action:
+  // manipulation}, из-за которого браузер решал панорамить страницу ещё ДО pointermove
+  // (и preventDefault опаздывал). Так фикс получают ВСЕ барабаны разом — забыть его для
+  // отдельной кнопки (как было со стрелкой автопрокрутки) больше нельзя.
+  btn.style.touchAction = 'none';
   const ITEM_H = 42, WHEEL_H = 210, CY = WHEEL_H / 2, N = cfg.labels.length;
   let wheel = null, track = null, scrubbing = false, justScrubbed = false, holdT = null,
     baseIdx = 0, selIdx = 0, startX = 0, startY = 0;
@@ -6202,7 +6208,7 @@ function bindUI() {
   // автопрокрутка крутится тем же барабаном, что скорость речи и таймер сна:
   // тап — следующая скорость, зажать и вести палец — выбор из списка
   bindWheelDial($('#scroll-btn'), {
-    labels: SCROLL_SPEEDS.map((v, i) => i === 0 ? t('autoScrollOff') : String(i)),
+    labels: SCROLL_SPEEDS.map((v, i) => String(i)),   // 0 — просто «0», без текста на 3 строки
     getIdx: autoScrollIdx,
     onLive: i => autoScrollSyncUI(i),      // во время кручения — только показываем выбор
     onCommit: i => autoScrollSet(i),

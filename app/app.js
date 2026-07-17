@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.5';
+const APP_VERSION = '1.0.6';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -1099,6 +1099,8 @@ async function renderShelf() {
       <button class="book-del" data-del="${b.id}" title="${t('deleteT')}" aria-label="${t('deleteT')}">✕</button>
     </div>`;
   }).join('');
+  // названия — одной бегущей строкой (проезжает, если не влезает)
+  grid.querySelectorAll('.book-title').forEach(el => setMarquee(el, el.textContent));
   // плавное появление — только у книг, впервые попавших в библиотеку (не при фильтрации/первом рендере)
   if (seenBookIds) {
     grid.querySelectorAll('.book-card').forEach(c => {
@@ -1234,10 +1236,26 @@ async function dropAudiobook(id) {
   await dbDel('kv', 'review:' + id);
   if (abCoverUrls.has(id)) { try { URL.revokeObjectURL(abCoverUrls.get(id)); } catch {} abCoverUrls.delete(id); }
 }
+function pluralRu(n, one, few, many) {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few;
+  return many;
+}
 async function deleteSelected() {
   if (!selIds.length) return;
   const n = selIds.length, kind = selKind, ids = selIds.slice();
-  if (!(await uiConfirm(T('deleteSelQ', { n }), { yes: t('dlgDelete'), danger: true }))) return;
+  // видимая анимация нажатия: кнопка «клюёт», крышка мусорки откидывается
+  const fab = $('#fab-del');
+  if (fab) { fab.classList.remove('pressing'); void fab.offsetWidth; fab.classList.add('pressing'); }
+  await new Promise(r => setTimeout(r, 230));
+  const noun = uiLang() === 'ru'
+    ? (kind === 'audio' ? pluralRu(n, 'аудиокнигу', 'аудиокниги', 'аудиокниг') : pluralRu(n, 'книгу', 'книги', 'книг'))
+    : (kind === 'audio' ? 'audiobook' : 'book') + (n === 1 ? '' : 's');
+  const msg = uiLang() === 'ru'
+    ? `Удалить ${n} ${noun} вместе с прогрессом?`
+    : `Delete ${n} ${noun} along with progress?`;
+  if (!(await uiConfirm(msg, { yes: t('dlgDelete'), danger: true }))) return;
   exitSelMode();
   if (kind === 'audio') {
     for (const id of ids) { try { await dropAudiobook(id); } catch {} }
@@ -2256,7 +2274,10 @@ async function openChapter(bookId, idx) {
   // шапка главы (крошки · заголовок · счётчик) отвязана от текста: при смене главы она
   // не едет со свайпом, а плавно затухает и появляется (задача 2)
   crossfadeChapterHead();
-  $('#chapter-body').innerHTML = ch.html;
+  const bodyEl = $('#chapter-body');
+  bodyEl.style.transition = ''; bodyEl.style.transform = ''; bodyEl.style.opacity = '';   // убрать следы свайпа
+  bodyEl.innerHTML = ch.html;
+  if (wasInReader) { bodyEl.classList.remove('body-fade'); void bodyEl.offsetWidth; bodyEl.classList.add('body-fade'); }
   for (const img of document.querySelectorAll('#chapter-body img')) {
     img.loading = 'lazy';
     img.decoding = 'async';
@@ -2350,6 +2371,8 @@ addEventListener('scroll', () => {
   updateReadbar(frac);
   const hdr = $('#reader-header');
   const fab = $('#reader-fabnav');
+  // прокрутка закрывает открытое меню выбора голоса/языка — иначе оно висит поверх текста
+  if (Math.abs(y - lastY) > 4 && document.querySelector('.lang-menu.open')) closeLangMenus();
   if (y > 64 && y - lastY > 6) { hdr.classList.add('hidden'); if (fab) fab.classList.add('hidden'); }
   else if (lastY - y > 6 || y < 64) { hdr.classList.remove('hidden'); if (fab) fab.classList.remove('hidden'); }
   lastY = y;
@@ -2904,16 +2927,36 @@ function ttsCollect() {
       const text = raw.trim();
       if (text) {
         const base = m.index + (raw.length - raw.trimStart().length);   // позиция первого символа предложения
+        const end = base + text.length;                                 // и конец (точно в textContent)
         const prev = groups[groups.length - 1];
-        // короткие предложения склеиваем в одно (как прежде), но base группы — от ПЕРВОГО куска
-        if (prev && (text.length < 30 || prev.text.length < 30)) prev.text += ' ' + text;
-        else groups.push({ base, text });
+        // склеиваем только совсем короткие обрывки (<12), чтобы тап попадал точнее
+        if (prev && (text.length < 12 || prev.text.length < 12)) { prev.text += ' ' + text; prev.end = end; }
+        else groups.push({ base, end, text });
       }
       if (m.index === re.lastIndex) re.lastIndex++;   // страховка от зацикливания
     }
-    for (const g of groups) items.push({ para: pi, el, text: g.text, base: g.base });
+    for (const g of groups) items.push({ para: pi, el, text: g.text, base: g.base, end: g.end });
   });
   return items;
+}
+
+// Какое предложение (индекс в items) под точкой тапа — по РЕАЛЬНЫМ прямоугольникам его
+// текста, а не по caretRangeFromPoint. Последний врёт на выключке (justify) в Android-WebView,
+// из-за чего озвучка стартовала с рандомного места (задача 5).
+function sentenceItemAtPoint(items, el, x, y) {
+  let best = -1, bestDy = Infinity;
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (it.el !== el || it.base < 0 || !(it.end > it.base)) continue;
+    const r = rangeFromOffsets(el, it.base, it.end);
+    if (!r) continue;
+    for (const rc of r.getClientRects()) {
+      if (y >= rc.top && y <= rc.bottom && x >= rc.left - 2 && x <= rc.right + 2) return i;   // точное попадание
+      const dy = y < rc.top ? rc.top - y : (y > rc.bottom ? y - rc.bottom : 0);
+      if (dy < bestDy) { bestDy = dy; best = i; }   // запас: ближайшая по вертикали строка
+    }
+  }
+  return best;
 }
 
 // счёт тапов по центру страницы: одиночный — шапка (отложенно), двойной — перевод слова
@@ -3085,7 +3128,7 @@ function clearAudioCache() {
   audioCache.clear();
 }
 
-function ttsStart(fromEl = null, charOffset = 0) {
+function ttsStart(fromEl = null, charOffset = 0, boundary = null) {
   unlockAudio();   // тап по абзацу — это жест: сразу снимаем автоплей-замок для нейроголосов
   loadNeuralVoices().then(resolveVoice);
   resolveVoice();
@@ -3095,13 +3138,22 @@ function ttsStart(fromEl = null, charOffset = 0) {
   }
   tts.items = ttsCollect();
   if (!tts.items.length) return;
-  let pos = fromEl
+  let pos = -1;
+  // точнее всего — по ГРАНИЦЕ выделения: ищем предложение, чей DOM-диапазон её содержит
+  if (boundary && fromEl) {
+    pos = tts.items.findIndex(it => {
+      if (it.el !== fromEl || !(it.end > it.base)) return false;
+      const r = rangeFromOffsets(it.el, it.base, it.end);
+      try { return !!r && r.comparePoint(boundary.node, boundary.off) === 0; }
+      catch { return false; }
+    });
+  }
+  if (pos < 0) pos = fromEl
     ? tts.items.findIndex(it => it.el === fromEl)
     : tts.items.findIndex(it => it.el.getBoundingClientRect().bottom > 70);
   if (pos < 0) pos = 0;
-  if (fromEl && charOffset > 0) {
-    // сдвигаемся к последнему предложению абзаца, чьё начало (base — смещение
-    // в el.textContent, та же система координат, что и charOffset) не дальше каретки
+  if (!boundary && fromEl && charOffset > 0) {
+    // запасной путь — по смещению: последнее предложение абзаца, чьё начало не дальше каретки
     while (pos + 1 < tts.items.length
         && tts.items[pos + 1].el === fromEl
         && tts.items[pos + 1].base >= 0
@@ -3771,6 +3823,7 @@ async function renderAudioShelf() {
     const contBox = $('#audio-continue');
     if (contBox) { contBox.innerHTML = contHtml; setupContMarquee(contBox); }
     box.innerHTML = `${gridHtml}${addBtn}`;
+    box.querySelectorAll('.ab-card-title').forEach(el => setMarquee(el, el.textContent));   // одна бегущая строка
   }
 }
 
@@ -5836,15 +5889,12 @@ function bindUI() {
       if (tts.active) {
         const p = e.target.closest(
           '#chapter-body p, #chapter-body h3, #chapter-body h4, #chapter-body blockquote');
-        // тап по КОНКРЕТНОМУ ПРЕДЛОЖЕНИЮ — по точке тапа находим смещение и прыгаем на него
+        // тап по КОНКРЕТНОМУ ПРЕДЛОЖЕНИЮ — ищем по прямоугольникам текста (надёжно на justify)
         if (p && !e.target.closest('.tr-block')) {
-          const off = caretOffsetAt(p, e.clientX, e.clientY);
-          try { getSelection().removeAllRanges(); } catch {}
-          let pos = tts.items.findIndex(it => it.el === p);
-          if (pos >= 0) {
-            while (pos + 1 < tts.items.length && tts.items[pos + 1].el === p
-                && tts.items[pos + 1].base >= 0 && tts.items[pos + 1].base <= off) pos++;
-            ttsPlayFrom(pos); return;
+          const idx = sentenceItemAtPoint(tts.items, p, e.clientX, e.clientY);
+          if (idx >= 0) {
+            try { getSelection().removeAllRanges(); } catch {}
+            ttsPlayFrom(idx); return;
           }
         }
         // тап мимо абзаца при активной озвучке — просто прячем/показываем шапку
@@ -6017,10 +6067,11 @@ function bindUI() {
     pre.selectNodeContents(el);
     pre.setEnd(range.startContainer, range.startOffset);
     const offset = pre.toString().length;
+    const boundary = { node: range.startContainer, off: range.startOffset };
     $('#sel-toolbar').hidden = true;
     sel.removeAllRanges();
     ttsStop();
-    ttsStart(el, offset);
+    ttsStart(el, offset, boundary);   // точная граница выделения — надёжнее смещения
   });
 
   // листы заметки и отзыва
@@ -6369,19 +6420,13 @@ function bindSeg(segId, key) {
 // уезд текущей главы + въезд следующей с противоположной стороны
 function commitSwipe(a, dir, navFn) {
   const W = innerWidth;
-  a.style.transition = 'transform .2s ease, opacity .2s ease';
+  a.style.transition = 'transform .18s ease, opacity .18s ease';
   a.style.transform = `translateX(${dir * W}px)`;
   a.style.opacity = '0';
-  setTimeout(() => {
-    navFn();                                  // грузим новую главу в тот же article
-    a.style.transition = 'none';
-    a.style.transform = `translateX(${-dir * W}px)`;
-    a.style.opacity = '1';
-    requestAnimationFrame(() => {
-      a.style.transition = 'transform .26s cubic-bezier(.2,.8,.3,1), opacity .26s ease';
-      a.style.transform = '';
-    });
-  }, 200);
+  // раньше здесь «въезжал» СТАРЫЙ контент, а openChapter async подменял его позже — виден
+  // щелчок. Теперь просто грузим главу: openChapter сбросит следы свайпа и плавно проявит
+  // новое тело (body-fade), без подмены на лету.
+  setTimeout(navFn, 170);
 }
 
 function bindStep(minusId, plusId, key, min, max, step, digits) {

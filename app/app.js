@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.6';
+const APP_VERSION = '1.0.8';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -471,7 +471,7 @@ function applyLang() {
     renderContinue(); renderChips(); renderToc(); renderFooter();
   } else if (state.chapter) {
     const ch = state.chapter;
-    $('#chapter-meta').innerHTML = '<div class="cm-row"><span class="cm-line cm-l"></span><svg class="cm-star" viewBox="-13 -13 26 26" fill="currentColor"><path d="M0 -10 2.9 -2.9 10 0 2.9 2.9 0 10-2.9 2.9-10 0-2.9-2.9Z"/></svg><span class="cm-line cm-r"></span></div><div class="cm-ctr">' + esc(T('meta', { i: ch.index, t: ch.total })) + '</div>';
+    setChapterMeta(ch.index, ch.total);
     renderNav(ch);
   }
   syncVoiceSelect();
@@ -2211,18 +2211,33 @@ async function hydrateImages(bookId) {
   }
 }
 
-// плавная смена шапки главы: крошки/заголовок/счётчик гаснут и появляются НА МЕСТЕ,
-// не уезжая вместе с текстом при свайпе (задача 2)
-function crossfadeChapterHead() {
-  // fade — через CSS-АНИМАЦИЮ, а не inline transition. Иначе перебивался бы штатный
-  // transition: top/height у #reader-crumbs, и он рассинхронивался бы с шапкой при
-  // скролле — между ними открывалась щель с проглядывающим текстом (задача 6).
-  for (const el of [$('#reader-crumbs'), $('#chapter-title'), $('#chapter-meta')]) {
-    if (!el) continue;
-    el.classList.remove('head-fade');
-    void el.offsetWidth;   // рефлоу — чтобы анимация перезапустилась
-    el.classList.add('head-fade');
+// плавное появление ОДНОГО элемента шапки через CSS-анимацию (не inline transition —
+// иначе перебивался бы transition: top/height у крошек, см. щель при скролле).
+function fadeHead(el) {
+  if (!el) return;
+  el.classList.remove('head-fade');
+  void el.offsetWidth;   // рефлоу — перезапуск анимации
+  el.classList.add('head-fade');
+}
+// Счётчик главы: разделитель (линии + звезда) СТАТИЧЕН — строится один раз и больше не
+// перерисовывается. Из цифр обновляем только изменившиеся (напр. «621» — одно на всю книгу,
+// его не трогаем). Так шапка не дёргается при листании (задача 5.1).
+function setChapterMeta(index, total) {
+  const meta = $('#chapter-meta');
+  if (!meta) return;
+  let ctr = meta.querySelector('.cm-ctr');
+  if (!ctr) {
+    meta.innerHTML = '<div class="cm-row"><span class="cm-line cm-l"></span>'
+      + '<svg class="cm-star" viewBox="-13 -13 26 26" fill="currentColor"><path d="M0 -10 2.9 -2.9 10 0 2.9 2.9 0 10-2.9 2.9-10 0-2.9-2.9Z"/></svg>'
+      + '<span class="cm-line cm-r"></span></div>'
+      + '<div class="cm-ctr"><span class="cm-cur"></span><span class="cm-sep"></span><span class="cm-total"></span></div>';
+    ctr = meta.querySelector('.cm-ctr');
   }
+  const curEl = ctr.querySelector('.cm-cur'), sepEl = ctr.querySelector('.cm-sep'), totEl = ctr.querySelector('.cm-total');
+  const cur = String(index), tot = String(total), sep = T('meta', { i: '', t: '' });   // '  из  ' — только разделитель
+  if (curEl.textContent !== cur) curEl.textContent = cur;
+  if (sepEl.textContent !== sep) sepEl.textContent = sep;
+  if (totEl.textContent !== tot) totEl.textContent = tot;   // total обычно неизменен — не переписываем
 }
 
 async function openChapter(bookId, idx) {
@@ -2268,12 +2283,15 @@ async function openChapter(bookId, idx) {
   $('#readbar').classList.remove('loading');
   $('#reader-header').classList.remove('hidden');
   $('#reader-fabnav')?.classList.remove('hidden');   // показать кнопки навигации при открытии главы
-  setCrumbs(ch.vol || ch.crumb || state.book.title);
-  $('#chapter-meta').innerHTML = '<div class="cm-row"><span class="cm-line cm-l"></span><svg class="cm-star" viewBox="-13 -13 26 26" fill="currentColor"><path d="M0 -10 2.9 -2.9 10 0 2.9 2.9 0 10-2.9 2.9-10 0-2.9-2.9Z"/></svg><span class="cm-line cm-r"></span></div><div class="cm-ctr">' + esc(T('meta', { i: ch.index, t: ch.total })) + '</div>';
-  $('#chapter-title').textContent = ch.title;
-  // шапка главы (крошки · заголовок · счётчик) отвязана от текста: при смене главы она
-  // не едет со свайпом, а плавно затухает и появляется (задача 2)
-  crossfadeChapterHead();
+  // Обновляем и мигаем ТОЛЬКО то, что реально изменилось — иначе шапка дёргается на каждом
+  // листании (том обычно тот же, звезда/линии постоянны, «621» одно на книгу).
+  const crumbText = ch.vol || ch.crumb || state.book.title;
+  if (crumbText !== ($('#reader-crumbs .crumbs-track')?.textContent || '')) {
+    setCrumbs(crumbText); fadeHead($('#reader-crumbs'));
+  }
+  setChapterMeta(ch.index, ch.total);
+  const titleEl = $('#chapter-title');
+  if (titleEl.textContent !== ch.title) { titleEl.textContent = ch.title; fadeHead(titleEl); }
   const bodyEl = $('#chapter-body');
   bodyEl.style.transition = ''; bodyEl.style.transform = ''; bodyEl.style.opacity = '';   // убрать следы свайпа
   bodyEl.innerHTML = ch.html;
@@ -3166,6 +3184,7 @@ function ttsStart(fromEl = null, charOffset = 0, boundary = null) {
   tts.neuralFails = 0;
   tts.pos = pos;
   $('#tts-bar').hidden = false;
+  $('#tts-bar').classList.remove('tucked');   // если пряталась — показываем снова (слайд снизу)
   document.body.classList.add('tts-on');
   $('#tts-rate-value').textContent = (Number.isInteger(settings.ttsRate) ? settings.ttsRate.toFixed(1) : String(settings.ttsRate)) + '×';
   ttsPlayFrom(pos);
@@ -3243,6 +3262,16 @@ function ttsPause() {
   updateMediaSession();
 }
 
+// аудиопанель уезжает вниз ПЛАВНО (через .tucked с transition), а не пропадает резко
+function hideTtsBar() {
+  const bar = $('#tts-bar');
+  if (!bar || bar.hidden) return;
+  bar.classList.remove('collapsed');
+  bar.classList.add('tucked');
+  setTimeout(() => {
+    if (bar.classList.contains('tucked') && !tts.active) { bar.hidden = true; bar.classList.remove('tucked'); }
+  }, 340);
+}
 function ttsStop() {
   if (!tts.active) return;
   ttsPause();
@@ -3252,8 +3281,7 @@ function ttsStop() {
   clearAudioCache();
   ttsHighlight(null);
   hlClear();
-  $('#tts-bar').hidden = true;
-  $('#tts-bar').classList.remove('collapsed', 'tucked');
+  hideTtsBar();                                   // плавно уезжает вниз, а не пропадает резко
   document.body.classList.remove('tts-on');
   sleepClear();   // остановили озвучку — таймер сна больше не нужен
   updateMediaSession();

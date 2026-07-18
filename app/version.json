@@ -1,7 +1,7 @@
 {
-  "web": "1.0.50",
+  "web": "1.0.51",
   "native": "1.0.50",
-  "bundleUrl": "https://github.com/Archidexter/talewyn/releases/download/web-1.0.50/bundle-1.0.50.zip",
+  "bundleUrl": "https://github.com/Archidexter/talewyn/releases/download/web-1.0.51/bundle-1.0.51.zip",
   "apkUrl": "https://github.com/Archidexter/talewyn/releases/download/apk-1.0.50/AD.Talewyn-1.0.50.apk",
   "notes": "",
   "apkSha256": "6e30f5632224d3e0cba4c10bf708580071689e7e5ce81e85f8efbd4f9fc1ce45",

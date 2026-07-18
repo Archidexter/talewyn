@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.50';
+const APP_VERSION = '1.0.51';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -335,11 +335,13 @@ const I18N = {
     restoreMixed: 'Восстановлено: {n}, уже на полке: {s}',
     restoreNone: 'Все книги из копии уже на полке',
     notBackup: 'это не копия библиотеки AD.Talewyn',
-    syncSaved: 'Файл синхры сохранён · {s} КБ', syncMerged: 'Синхронизировано · +{a}, обновлено {m}',
-    syncMissing: '{x} книг нет локально', syncT: 'Синхронизация и копия',
-    syncLight: 'Синхра прогресса', syncLightSub: 'Лёгкий файл: прогресс, заметки, коллекции — без самих книг',
+    syncSaved: 'Файл синхронизации сохранён · {s} КБ',
+    syncResHead: 'Синхронизация', syncResAdd: 'добавлено книг: {n}', syncResUpd: 'обновлено книг: {n}',
+    syncResNone: 'изменений нет', syncMissing: 'не найдено на устройстве: {x}',
+    syncT: 'Синхронизация и копия',
+    syncLight: 'Синхронизация прогресса', syncLightSub: 'Лёгкий файл: прогресс, заметки, закладки, коллекции — без самих книг',
     syncFull: 'Полная копия', syncFullSub: 'Всё вместе с книгами — для резервной копии',
-    syncLoad: 'Загрузить файл (слияние)', syncLoadSub: 'Примет и синхру, и полную копию — сольёт без дублей',
+    syncLoad: 'Загрузить и объединить', syncLoadSub: 'Принимает и файл синхронизации, и полную копию — объединит без повторов',
     settingsT: 'Настройки', infoT: 'О приложении', infoSocial: 'Контакты', infoLicense: 'Лицензия и авторство',
     licApp: 'AD.Talewyn — приложение для чтения книг.',
     licRights: '© 2026 Archidexter. Все права на приложение защищены.',
@@ -502,11 +504,13 @@ const I18N = {
     restoreMixed: 'Restored: {n}, already on the shelf: {s}',
     restoreNone: 'All books from the backup are already on the shelf',
     notBackup: 'this is not an AD.Talewyn library backup',
-    syncSaved: 'Sync file saved · {s} KB', syncMerged: 'Synced · +{a}, updated {m}',
-    syncMissing: '{x} books missing locally', syncT: 'Sync & backup',
-    syncLight: 'Sync progress', syncLightSub: 'Light file: progress, notes, collections — without the books',
+    syncSaved: 'Sync file saved · {s} KB',
+    syncResHead: 'Synchronization', syncResAdd: 'books added: {n}', syncResUpd: 'books updated: {n}',
+    syncResNone: 'no changes', syncMissing: 'not found on device: {x}',
+    syncT: 'Sync & backup',
+    syncLight: 'Sync reading progress', syncLightSub: 'Light file: progress, notes, bookmarks, collections — without the books',
     syncFull: 'Full copy', syncFullSub: 'Everything with the books — for backup',
-    syncLoad: 'Load file (merge)', syncLoadSub: 'Takes both sync and full copy — merges without duplicates',
+    syncLoad: 'Load & merge', syncLoadSub: 'Takes both a sync file and a full copy — merges without duplicates',
     settingsT: 'Settings', infoT: 'About', infoSocial: 'Contacts', infoLicense: 'License & credits',
     licApp: 'AD.Talewyn — a book-reading app.',
     licRights: '© 2026 Archidexter. All rights to the app reserved.',
@@ -2852,8 +2856,31 @@ async function mergeImport(file) {
     if (typeof j.ttsBase === 'string' && j.ttsBase) localStorage.setItem('talewyn-tts-base', j.ttsBase);
   }
   state.books = await dbAll('books');
-  let msg = T('syncMerged', { a: added, m: merged });
-  if (missing) msg += ' · ' + T('syncMissing', { x: missing });
+  // ВАЖНО: перерисовываем полку и прогресс — иначе слитый прогресс не виден до перезапуска
+  // (частый случай: книги не добавлялись, только обновлялись — раньше UI не обновлялся вовсе)
+  try { await loadCollections(); } catch {}
+  try { if (typeof loadAudiobooks === 'function') await loadAudiobooks(); } catch {}
+  if (!$('#shelf-view').hidden) {
+    try { await renderShelf(); } catch {}
+    try { if (typeof renderAudioShelf === 'function') renderAudioShelf(); } catch {}
+  }
+  if (state.book) {   // открыта книга — перечитать её прогресс из базы
+    try {
+      const map = {};
+      for (const r of await dbAll('progress', bookRange(state.book.id))) map[r.idx] = { position: r.position, percent: r.percent };
+      state.progress.map = map;
+      if (typeof renderContinue === 'function') renderContinue();
+      if (typeof renderToc === 'function') renderToc();
+      if (typeof renderFooter === 'function') renderFooter();
+    } catch {}
+  }
+  // человеко-читаемый итог, без «+0» и жаргона
+  const parts = [];
+  if (added) parts.push(T('syncResAdd', { n: added }));
+  if (merged) parts.push(T('syncResUpd', { n: merged }));
+  if (!parts.length) parts.push(t('syncResNone'));
+  let msg = t('syncResHead') + ': ' + parts.join(', ');
+  if (missing) msg += '. ' + T('syncMissing', { x: missing });
   showToast(msg);
   return { added, merged, missing };
 }

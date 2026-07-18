@@ -10,7 +10,7 @@
 if(th==='auto')th=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <link rel="stylesheet" href="fonts.css?v=9">
-<link rel="stylesheet" href="app.css?v=159">
+<link rel="stylesheet" href="app.css?v=160">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -155,7 +155,8 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <div id="scan-scrim" class="sheet-scrim" hidden></div>
 <div id="scan-modal" hidden>
   <div class="confirm-card scan-box">
-    <div class="col-modal-title" data-i18n="scanTitle">Автопоиск книг</div>
+    <p class="scan-title" data-i18n="scanTitle">Автопоиск книг</p>
+    <div class="confirm-orn"><span>◆</span></div>
 
     <div id="scan-choose">
       <button class="scan-opt" id="scan-all">
@@ -174,14 +175,14 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     </div>
 
     <div id="scan-results" hidden>
-      <div class="scan-res-head">
-        <span id="scan-res-count"></span>
-        <button id="scan-toggle-all" class="scan-mini-btn" data-i18n="scanSelAll">Все</button>
+      <div class="scan-ctl">
+        <div class="fmt-pick" id="scan-fmt"></div>
+        <label class="scan-all-lbl"><input type="checkbox" id="scan-allcb" class="scan-cb"><span data-i18n="scanSelAll">Все</span></label>
       </div>
       <div class="scan-list" id="scan-list"></div>
     </div>
 
-    <div class="col-modal-actions">
+    <div class="scan-acts">
       <button id="scan-cancel" class="ghost-btn" data-i18n="colCancel">Отменить</button>
       <button id="scan-add" class="primary-btn" hidden>Добавить</button>
     </div>
@@ -715,8 +716,8 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <div id="confirm-scrim" class="sheet-scrim" hidden></div>
 <div id="confirm-modal" hidden role="alertdialog" aria-modal="true" aria-labelledby="confirm-msg">
   <div class="confirm-card">
-    <div class="confirm-orn"><span>◆</span></div>
     <p id="confirm-msg"></p>
+    <div class="confirm-orn"><span>◆</span></div>
     <!-- Поле-капсула со значком: появляется только у диалога-запроса (uiPrompt),
          обычный вопрос его прячет. Значок сразу говорит, что сюда вставляют ссылку. -->
     <div id="confirm-field" hidden>
@@ -750,6 +751,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=174"></script>
+<script src="app.js?v=175"></script>
 </body>
 </html>

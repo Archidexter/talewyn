@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.59';
+const APP_VERSION = '1.0.60';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -247,6 +247,7 @@ const I18N = {
     otaInstall: 'Установить', otaDownloadingPct: 'Загружаю обновление… {p}%',
     otaInstalling: 'Открываю установщик…', otaNeedPerm: 'Разреши установку обновлений приложения',
     otaGrant: 'Разрешить', otaOldApp: 'Обнови приложение вручную один раз — дальше будет само',
+    otaUpdated: 'Обновлено до {v}',
     scanTitle: 'Автопоиск книг', scanTitleT: 'Найти книги на устройстве',
     scanAll: 'Весь телефон', scanAllSub: 'Просканировать всю память',
     scanFolder: 'Отдельная папка', scanFolderSub: 'Выбрать, где искать',
@@ -417,6 +418,7 @@ const I18N = {
     otaInstall: 'Install', otaDownloadingPct: 'Downloading update… {p}%',
     otaInstalling: 'Opening installer…', otaNeedPerm: 'Allow installing app updates',
     otaGrant: 'Allow', otaOldApp: 'Update the app manually once — after that it is automatic',
+    otaUpdated: 'Updated to {v}',
     scanTitle: 'Find books', scanTitleT: 'Find books on device',
     scanAll: 'Whole phone', scanAllSub: 'Scan all storage',
     scanFolder: 'A folder', scanFolderSub: 'Choose where to look',
@@ -1115,9 +1117,17 @@ function cmpVer(a, b) {   // 1.0.23 vs 1.0.22 → 1/0/-1
 }
 let otaInfo = null;    // доступное обновление {kind:'web'|'native', version, bundleUrl?/apkUrl?} или null
 let otaBusy = false;
+let otaWebQueued = null;   // версия веб-бандла, уже скачанного и поставленного в очередь на след. запуск
 async function otaInit() {
   if (!capUpdater || !isNativeApp()) return;             // OTA только в нативной сборке
   try { await capUpdater.notifyAppReady(); } catch {}    // текущий бандл рабочий — защита от отката
+  // если тихое веб-обновление применилось при этом запуске — коротко сообщаем, что версия новее
+  try {
+    const prev = localStorage.getItem('talewyn-ran-ver');
+    if (prev && cmpVer(APP_VERSION, prev) > 0)
+      setTimeout(() => { try { showToast(T('otaUpdated', { v: APP_VERSION })); } catch {} }, 1600);
+    localStorage.setItem('talewyn-ran-ver', APP_VERSION);
+  } catch {}
   setTimeout(otaCheck, 3000);                            // фоновая проверка, не мешаем старту
 }
 async function otaFetchManifest() {
@@ -1148,11 +1158,20 @@ function otaMarker() {
   const btn = document.getElementById('update-btn');
   if (btn) btn.classList.toggle('ota-avail', !!otaInfo);
 }
-// ФОНОВАЯ проверка при старте: только маркер, без тостов и без загрузки
+// ФОНОВАЯ проверка при старте. ВЕБ-обновление ставим сами и молча: качаем бандл и ставим
+// в очередь на следующий сворачивание/запуск (next) — WebView тихо перезагрузится в новую версию,
+// без тапа и без установщика. NATIVE (APK) тихо поставить нельзя (Android покажет системный
+// установщик), поэтому его только помечаем на кнопке и ждём ручного «Обновить».
 async function otaCheck() {
   if (!capUpdater) return;
   otaInfo = await otaEval(await otaFetchManifest());
   otaMarker();
+  if (otaInfo && otaInfo.kind === 'web' && otaWebQueued !== otaInfo.version) {
+    try {
+      const b = await capUpdater.download({ version: String(otaInfo.version), url: otaInfo.bundleUrl });
+      if (b && b.id) { await capUpdater.next({ id: b.id }); otaWebQueued = otaInfo.version; }
+    } catch { /* не вышло тихо — останется ручной путь по кнопке */ }
+  }
 }
 // РУЧНАЯ проверка по кнопке
 async function otaManualCheck() {

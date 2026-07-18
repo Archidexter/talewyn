@@ -1,9 +1,9 @@
 {
-  "web": "1.0.59",
-  "native": "1.0.59",
+  "web": "1.0.60",
+  "native": "1.0.60",
   "bundleUrl": "https://github.com/Archidexter/talewyn/releases/download/web-1.0.59/bundle-1.0.59.zip",
-  "apkUrl": "https://github.com/Archidexter/talewyn/releases/download/apk-1.0.59/AD.Talewyn-1.0.59.apk",
+  "apkUrl": "https://github.com/Archidexter/talewyn/releases/download/apk-1.0.60/AD.Talewyn-1.0.60.apk",
   "notes": "",
-  "apkSha256": "a6b60a8acb83469d882238434493ac9abee79f08e8baf5c1af4ab7f7976abe96",
-  "apkSize": 10732285
+  "apkSha256": "e345238f7ef9836bae1bb561b64070c74cc0f62458554e02dec86068101390e4",
+  "apkSize": 10732721
 }

@@ -1281,6 +1281,24 @@ body.col-viewing #add-fab .fab-collect svg { transform: scaleX(-1); }
 .col-head { position: sticky; top: 0; z-index: 1; background: var(--elev); min-height: 40px; padding: 10px 0 14px; display: grid; place-items: center; border-bottom: 1px solid var(--border); }   /* вровень с шапкой полки */
 .col-title { display: block; text-align: center; font-size: 11px; font-weight: 700; letter-spacing: .17em; text-transform: uppercase; color: var(--gild); }
 .col-list { flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px; padding: 4px 0; }
+
+/* сегмент «Загрузки»: единицы импорта с прогрессом и отменой (до ~четверти высоты, дальше скролл) */
+#dl-section { flex: 0 0 auto; display: flex; flex-direction: column; }
+.dl-list { max-height: 26vh; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 8px; padding: 4px 0; scrollbar-width: none; }
+.dl-list::-webkit-scrollbar { display: none; }
+.dl-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--r-md); border: 1px solid var(--border-strong); background: var(--bg); }
+.dl-ic { color: var(--gild); display: grid; place-items: center; }
+.dl-body { min-width: 0; }
+.dl-name { display: block; font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dl-sub { display: block; font-size: 11px; color: var(--dim); margin-top: 1px; }
+.dl-bar { display: block; height: 3px; margin-top: 6px; border-radius: 2px; background: var(--border); overflow: hidden; }
+.dl-bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-hi)); border-radius: 2px; transition: width .2s ease; }
+.dl-bar.indet i { width: 35%; animation: dl-indet 1.1s ease-in-out infinite; }
+@keyframes dl-indet { 0% { transform: translateX(-120%); } 100% { transform: translateX(340%); } }
+.dl-cancel { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; color: var(--danger); background: transparent; border: 1px solid transparent; font-size: 15px; -webkit-tap-highlight-color: transparent; }
+.dl-cancel:active { background: color-mix(in srgb, var(--danger) 16%, transparent); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+/* значок на язычке панели, когда есть активные загрузки */
+#col-tab.has-dl::after { content: ''; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--elev); }
 .col-item {
   display: flex; align-items: center; gap: 6px; padding: 9px 8px 9px 4px;
   border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg);

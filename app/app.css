@@ -1240,13 +1240,8 @@ body.sel-mode #add-fab .fab-del { display: grid; animation: fab-del-in .3s cubic
 .sheet::-webkit-scrollbar-track { background: transparent; margin: 18px 4px; }
 
 /* Заметка — плавающая капсула, оторванная от краёв (в тон меню озвучки) */
-#note-sheet {
-  bottom: calc(12px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));
-  width: min(calc(100% - 24px), 460px);
-  border-radius: var(--r-xl); border-bottom: 1px solid var(--border-strong);
-  padding: 8px 22px 20px;
-  box-shadow: 0 18px 52px rgb(0 0 0 / .46);
-}
+/* Заметка — обычная нижняя шторка: выезжает снизу от края экрана (как перевод/оценка),
+   а не плавающей капсулой. Спец-стиль убран намеренно. */
 
 /* секции настроек */
 .set-section {
@@ -1790,7 +1785,9 @@ html.t-dark #sel-tr, html.t-dark #sel-note, html.t-dark #sel-speak { color: var(
 .color-row { display: flex; gap: 14px; margin-bottom: 14px; }
 /* редактор заметки — выбор цвета метки сегментами-чипами (вариант 4) */
 #note-excerpt { font-style: italic; }
-.color-row.seg { gap: 7px; }
+.color-row.seg { gap: 10px; }
+/* маркеры цвета — без общей обёртки-контейнера, только индивидуальные ячейки */
+#note-colors { background: transparent; border: none; padding: 0; }
 .color-row.seg .sel-dot {
   flex: 1; width: auto; height: 38px; border-radius: 10px;
   border: 1px solid var(--border); background: var(--elev2);

@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.58';
+const APP_VERSION = '1.0.59';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -7445,7 +7445,7 @@ function bindUI() {
     const b = e.target.closest('button');
     if (!b) return;
     const i = [...b.parentElement.children].indexOf(b) + 1;
-    reviewStars = reviewStars === i ? i - 1 : i;   // повторный тап снимает звезду
+    reviewStars = reviewStars === i ? 0 : i;   // повторный тап по той же звезде снимает оценку целиком
     syncStarsUI();
   });
   $('#review-save').addEventListener('click', () => saveReview(false));

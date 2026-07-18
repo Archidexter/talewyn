@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.43';
+const APP_VERSION = '1.0.44';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -1216,6 +1216,8 @@ const SCAN_FMT_COLOR = {
   mobi: '#c9a45f', azw: '#c9a45f', azw3: '#c9a45f', prc: '#c9a45f',
   cbz: '#b58bcf', cbr: '#b58bcf', cb7: '#b58bcf', cbt: '#b58bcf',
   txt: '#93a1a6', html: '#93a1a6', htm: '#93a1a6', xhtml: '#93a1a6', zip: '#93a1a6',
+  // аудиокниги — своим оттенком (бирюза), чтобы отличать от текстовых
+  mp3: '#6fb0a4', m4a: '#6fb0a4', m4b: '#6fb0a4', aac: '#6fb0a4', ogg: '#6fb0a4', opus: '#6fb0a4', flac: '#6fb0a4', wav: '#6fb0a4',
 };
 const scanColor = f => SCAN_FMT_COLOR[f] || '#c9a45f';
 const scanShownIdx = () => scanFiles.map((_, i) => i).filter(i => !scanFmt || scanExt(scanFiles[i].n) === scanFmt);
@@ -1364,18 +1366,26 @@ async function scanDoAdd() {
   if (!chosen.length) return;
   closeScan();
   const conv = (window.Capacitor && window.Capacitor.convertFileSrc) || (x => x);
-  const files = [];
+  const books = [];
+  const audioByDir = new Map();   // аудио группируем по родительской папке: папка = одна аудиокнига
   let i = 0;
   for (const it of chosen) {
     i++;
     showProgress(T('scanReading', { i, n: chosen.length }), i / chosen.length);
-    try {
-      const r = await fetch(conv(it.p));
-      files.push(new File([await r.blob()], it.n));
-    } catch { /* нечитаемый файл пропускаем */ }
+    let file;
+    try { const r = await fetch(conv(it.p)); file = new File([await r.blob()], it.n); }
+    catch { continue; }   // нечитаемый файл пропускаем
+    if (AUDIO_EXT.test(it.n)) {
+      const dir = String(it.p).replace(/[^/\\]*$/, '');
+      if (!audioByDir.has(dir)) audioByDir.set(dir, []);
+      audioByDir.get(dir).push(file);
+    } else books.push(file);
   }
-  if (files.length) doImport(files);
-  else showToast(t('scanErr'));
+  if (!books.length && !audioByDir.size) { showToast(t('scanErr')); return; }
+  // книги — все разом (doImport заведёт каждую отдельно); аудио — по папкам,
+  // каждая папка отдельным вызовом → отдельная аудиокнига (иначе разные книги слились бы в одну)
+  if (books.length) await doImport(books);
+  for (const grp of audioByDir.values()) await doImport(grp);
 }
 $('#scan-btn')?.addEventListener('click', openScan);
 $('#scan-all')?.addEventListener('click', () => startScan('all'));

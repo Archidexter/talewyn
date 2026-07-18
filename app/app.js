@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.27';
+const APP_VERSION = '1.0.28';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -230,6 +230,9 @@ const I18N = {
     pronunListT: 'Список слов', pronunAdded: 'Добавлено в словарь',
     pronunEmpty: 'Пока пусто', wpPron: 'Произношение', wpSay: 'Озвучить',
     otaReady: 'Обновление {v} готово', otaApply: 'Обновить',
+    updateT: 'Проверить обновления', otaNoUpd: 'Обновлять нечего',
+    otaAvail: 'Доступно обновление {v}', otaAvailApp: 'Доступно обновление приложения {v}',
+    otaDownloading: 'Загружаю обновление…', otaFail: 'Не удалось обновить',
     start: 'Начать чтение', cont: 'Продолжить чтение', nextCh: 'Следующая глава',
     footer: 'Прочитано {r} из {t} глав ({p}%)',
     build: 'AD.Talewyn · {v}',
@@ -370,6 +373,9 @@ const I18N = {
     pronunListT: 'Word list', pronunAdded: 'Added to dictionary',
     pronunEmpty: 'Empty', wpPron: 'Pronunciation', wpSay: 'Speak',
     otaReady: 'Update {v} ready', otaApply: 'Update',
+    updateT: 'Check for updates', otaNoUpd: 'Nothing to update',
+    otaAvail: 'Update {v} available', otaAvailApp: 'App update {v} available',
+    otaDownloading: 'Downloading update…', otaFail: 'Update failed',
     start: 'Start reading', cont: 'Continue reading', nextCh: 'Next chapter',
     footer: '{r} of {t} chapters read ({p}%)',
     build: 'AD.Talewyn · {v}',
@@ -913,37 +919,67 @@ function cmpVer(a, b) {   // 1.0.23 vs 1.0.22 → 1/0/-1
   for (let i = 0; i < 3; i++) { const x = pa[i] || 0, y = pb[i] || 0; if (x !== y) return x < y ? -1 : 1; }
   return 0;
 }
-let otaPending = null;   // скачанный веб-бандл, ждёт применения (set перезагрузит WebView)
+let otaInfo = null;    // доступное обновление {kind:'web'|'native', version, bundleUrl?/apkUrl?} или null
+let otaBusy = false;
 async function otaInit() {
   if (!capUpdater || !isNativeApp()) return;             // OTA только в нативной сборке
   try { await capUpdater.notifyAppReady(); } catch {}    // текущий бандл рабочий — защита от отката
-  setTimeout(otaCheck, 3000);                            // не мешаем старту
+  setTimeout(otaCheck, 3000);                            // фоновая проверка, не мешаем старту
 }
-async function otaCheck() {
-  if (!capUpdater) return;
-  let m;
+async function otaFetchManifest() {
   try {
     const res = await fetch(OTA_MANIFEST + '?t=' + Math.floor(Date.now() / 3600000), { cache: 'no-store' });
-    if (!res.ok) return;
-    m = await res.json();
-  } catch { return; }
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+}
+// из манифеста определяем доступное обновление (нативное важнее веба)
+async function otaEval(m) {
+  if (!m) return null;
+  if (m.native && m.apkUrl) {                            // новый APK
+    let nativeVer = APP_VERSION;
+    try { const cur = await capUpdater.current(); if (cur && cur.native) nativeVer = cur.native; } catch {}
+    if (cmpVer(m.native, nativeVer) > 0) return { kind: 'native', version: m.native, apkUrl: m.apkUrl };
+  }
+  if (m.web && m.bundleUrl && cmpVer(m.web, APP_VERSION) > 0) return { kind: 'web', version: m.web, bundleUrl: m.bundleUrl };
+  return null;
+}
+// маркер на кнопке: есть обновление — стрелки крутятся (оборот-пауза); нет — стоят
+function otaMarker() {
+  const btn = document.getElementById('update-btn');
+  if (btn) btn.classList.toggle('ota-avail', !!otaInfo);
+}
+// ФОНОВАЯ проверка при старте: только маркер, без тостов и без загрузки
+async function otaCheck() {
+  if (!capUpdater) return;
+  otaInfo = await otaEval(await otaFetchManifest());
+  otaMarker();
+}
+// РУЧНАЯ проверка по кнопке
+async function otaManualCheck() {
+  if (!capUpdater || !isNativeApp()) { showToast(t('otaNoUpd')); return; }
+  if (otaBusy) return;
+  otaBusy = true;
+  const btn = document.getElementById('update-btn');
+  if (btn) btn.classList.add('ota-checking');
+  otaInfo = await otaEval(await otaFetchManifest());
+  if (btn) btn.classList.remove('ota-checking');
+  otaMarker();
+  otaBusy = false;
+  if (!otaInfo) { showToast(t('otaNoUpd')); return; }
+  if (otaInfo.kind === 'web') showToast(T('otaAvail', { v: otaInfo.version }), t('otaApply'), otaDoWeb);
+  else showToast(T('otaAvailApp', { v: otaInfo.version }));   // нативная установка одним тапом — Фаза 2
+}
+// скачать и применить веб-обновление (перезагружает WebView в новую версию)
+async function otaDoWeb() {
+  if (!capUpdater || !otaInfo || otaInfo.kind !== 'web') return;
+  showToast(t('otaDownloading'));
   try {
-    // веб-обновление: тихо качаем, применяем при уходе в фон (или по кнопке в тосте)
-    if (m && m.web && m.bundleUrl && cmpVer(m.web, APP_VERSION) > 0 && !otaPending) {
-      const b = await capUpdater.download({ version: String(m.web), url: m.bundleUrl });
-      if (b && b.id) { otaPending = b; showToast(T('otaReady', { v: m.web }), t('otaApply'), otaApply); }
-    }
-    // нативное обновление (новый APK) — Фаза 2
-  } catch {}
+    const b = await capUpdater.download({ version: String(otaInfo.version), url: otaInfo.bundleUrl });
+    if (b && b.id) await capUpdater.set({ id: b.id });   // применяет и перезагружает
+    else showToast(t('otaFail'));
+  } catch { showToast(t('otaFail')); }
 }
-async function otaApply() {
-  if (!capUpdater || !otaPending) return;
-  try { await capUpdater.set({ id: otaPending.id }); } catch {}   // применяет и перезагружает
-}
-// не нажал сам — применяем при следующем уходе в фон, без рывка
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden' && otaPending) otaApply();
-});
 
 // ══════════════════ маршрутизация ══════════════════
 let navToken = 0;
@@ -6487,6 +6523,7 @@ function bindUI() {
     $('#' + id).addEventListener('click', openSettings);
   $('#settings-overlay').addEventListener('click', closeSettings);
   $('#info-btn').addEventListener('click', openInfo);
+  $('#update-btn')?.addEventListener('click', otaManualCheck);
   $('#info-overlay').addEventListener('click', closeInfo);
   $('#filter-btn').addEventListener('click', toggleFilters);
 

@@ -231,6 +231,14 @@ html.t-light .brand-logo, html.t-sepia .brand-logo {
   50%      { background-position: -35% 50%; }
 }
 @media (prefers-reduced-motion: reduce) { .brand-logo { animation: none; } }
+/* кнопка обновлений: есть обновление — стрелки делают оборот, пауза, снова оборот;
+   во время ручной проверки — крутятся непрерывно; нет обновлений — стоят на месте */
+#update-btn svg { transform-origin: 50% 50%; }
+#update-btn.ota-avail svg { animation: ota-turn 1.5s ease-in-out infinite; }
+@keyframes ota-turn { 0% { transform: rotate(0); } 55% { transform: rotate(360deg); } 100% { transform: rotate(360deg); } }
+#update-btn.ota-checking svg { animation: ota-turn-cont .8s linear infinite; }
+@keyframes ota-turn-cont { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { #update-btn.ota-avail svg, #update-btn.ota-checking svg { animation: none; } }
 .lib-title-block { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
 .lib-title-block h1 { flex: none; }
 .lib-title-block .lib-subtitle { margin: 0; }

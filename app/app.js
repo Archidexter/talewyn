@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.39';
+const APP_VERSION = '1.0.40';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -247,6 +247,13 @@ const I18N = {
     otaInstall: 'Установить', otaDownloadingPct: 'Загружаю обновление… {p}%',
     otaInstalling: 'Открываю установщик…', otaNeedPerm: 'Разреши установку обновлений приложения',
     otaGrant: 'Разрешить', otaOldApp: 'Обнови приложение вручную один раз — дальше будет само',
+    scanTitle: 'Автопоиск книг', scanTitleT: 'Найти книги на устройстве',
+    scanAll: 'Весь телефон', scanAllSub: 'Просканировать всю память',
+    scanFolder: 'Отдельная папка', scanFolderSub: 'Выбрать, где искать',
+    scanNeedPerm: 'Дай доступ к файлам, чтобы искать книги', scanGrant: 'Дать доступ',
+    scanBusyStat: 'папок: {d} · найдено: {n}', scanFound: 'Найдено книг: {n}', scanNone: 'Книги не найдены',
+    scanSelAll: 'Все', scanSelNone: 'Снять', scanReading: 'Читаю {i} из {n}…',
+    scanErr: 'Не удалось просканировать', scanNoNative: 'Автопоиск доступен только в приложении',
     start: 'Начать чтение', cont: 'Продолжить чтение', nextCh: 'Следующая глава',
     footer: 'Прочитано {r} из {t} глав ({p}%)',
     build: 'AD.Talewyn · {v}',
@@ -401,6 +408,13 @@ const I18N = {
     otaInstall: 'Install', otaDownloadingPct: 'Downloading update… {p}%',
     otaInstalling: 'Opening installer…', otaNeedPerm: 'Allow installing app updates',
     otaGrant: 'Allow', otaOldApp: 'Update the app manually once — after that it is automatic',
+    scanTitle: 'Find books', scanTitleT: 'Find books on device',
+    scanAll: 'Whole phone', scanAllSub: 'Scan all storage',
+    scanFolder: 'A folder', scanFolderSub: 'Choose where to look',
+    scanNeedPerm: 'Grant file access to search for books', scanGrant: 'Grant',
+    scanBusyStat: 'folders: {d} · found: {n}', scanFound: 'Books found: {n}', scanNone: 'No books found',
+    scanSelAll: 'All', scanSelNone: 'None', scanReading: 'Reading {i} of {n}…',
+    scanErr: 'Scan failed', scanNoNative: 'Auto-search works only in the app',
     start: 'Start reading', cont: 'Continue reading', nextCh: 'Next chapter',
     footer: '{r} of {t} chapters read ({p}%)',
     build: 'AD.Talewyn · {v}',
@@ -1181,6 +1195,114 @@ window.__otaNativeProgress = pct => {
 };
 window.__otaNativeReady = () => { otaNativeBusy = false; hideToast(); };   // системный установщик открылся
 window.__otaNativeError = () => { otaNativeBusy = false; showToast(t('otaFail')); };
+
+// ══════════════════ автопоиск книг на устройстве (мост AndroidScan) ══════════════════
+// Натив ищет файлы книг в памяти и отдаёт СПИСОК путей (мелочь); сами файлы читаем по
+// Capacitor.convertFileSrc и прогоняем через обычный doImport — дедуп и импорт уже там.
+const scanBridge = () => window.AndroidScan || null;
+let scanFiles = [];        // [{p,n,s}]
+let scanSel = new Set();   // индексы отмеченных
+let scanBusyFlag = false;
+const scanFmtSize = b => b >= 1048576 ? (b / 1048576).toFixed(1) + ' МБ' : Math.max(1, Math.round(b / 1024)) + ' КБ';
+function scanState(s) {     // 'choose' | 'busy' | 'results'
+  $('#scan-choose').hidden = s !== 'choose';
+  $('#scan-busy').hidden = s !== 'busy';
+  $('#scan-results').hidden = s !== 'results';
+  $('#scan-add').hidden = s !== 'results';
+}
+function openScan() {
+  if (!isNativeApp() || !scanBridge()) { showToast(t('scanNoNative')); return; }   // только в приложении
+  scanFiles = []; scanSel = new Set(); scanBusyFlag = false;
+  scanState('choose');
+  $('#scan-scrim').hidden = false; $('#scan-modal').hidden = false;
+  requestAnimationFrame(() => $('#scan-modal').classList.add('open'));
+}
+function closeScan() {
+  scanBusyFlag = false;
+  $('#scan-modal').classList.remove('open');
+  $('#scan-modal').hidden = true; $('#scan-scrim').hidden = true;
+}
+function startScan(mode) {
+  const B = scanBridge(); if (!B) return;
+  try {
+    if (typeof B.hasAccess === 'function' && !B.hasAccess()) {   // нет доступа — просим и ждём возврата
+      showToast(t('scanNeedPerm'), t('scanGrant'), () => { try { B.requestAccess(); } catch {} });
+      return;
+    }
+  } catch {}
+  scanBusyFlag = true;
+  $('#scan-stat').textContent = T('scanBusyStat', { d: 0, n: 0 });
+  scanState('busy');
+  try { if (mode === 'all') B.scanAll(); else B.pickFolder(); }
+  catch { scanBusyFlag = false; showToast(t('scanErr')); scanState('choose'); }
+}
+window.__scanProgress = (d, n) => { if (scanBusyFlag) $('#scan-stat').textContent = T('scanBusyStat', { d, n }); };
+window.__scanResult = list => {
+  scanBusyFlag = false;
+  scanFiles = Array.isArray(list) ? list : [];
+  scanSel = new Set(scanFiles.map((_, i) => i));   // по умолчанию отмечены все найденные
+  renderScanResults();
+  scanState('results');
+};
+window.__scanError = () => { scanBusyFlag = false; showToast(t('scanErr')); scanState('choose'); };
+window.__scanCancelled = () => { scanBusyFlag = false; scanState('choose'); };
+function renderScanResults() {
+  const box = $('#scan-list');
+  if (!scanFiles.length) {
+    $('#scan-res-count').textContent = t('scanNone');
+    $('#scan-toggle-all').hidden = true;
+    box.innerHTML = '';
+    $('#scan-add').hidden = true;
+    return;
+  }
+  $('#scan-res-count').textContent = T('scanFound', { n: scanFiles.length });
+  $('#scan-toggle-all').hidden = false;
+  box.innerHTML = scanFiles.map((f, i) =>
+    `<label class="scan-item"><input type="checkbox" data-si="${i}"${scanSel.has(i) ? ' checked' : ''}>` +
+    `<span class="scan-item-n">${esc(f.n)}</span><span class="scan-item-s">${scanFmtSize(+f.s || 0)}</span></label>`).join('');
+  updateScanAdd();
+}
+function updateScanAdd() {
+  const btn = $('#scan-add');
+  btn.hidden = false;
+  btn.disabled = !scanSel.size;
+  btn.textContent = T('scanAdd', { n: scanSel.size });
+  $('#scan-toggle-all').textContent = (scanFiles.length && scanSel.size === scanFiles.length) ? t('scanSelNone') : t('scanSelAll');
+}
+async function scanDoAdd() {
+  if (!scanSel.size) return;
+  const chosen = [...scanSel].sort((a, b) => a - b).map(i => scanFiles[i]).filter(Boolean);
+  closeScan();
+  const conv = (window.Capacitor && window.Capacitor.convertFileSrc) || (x => x);
+  const files = [];
+  let i = 0;
+  for (const it of chosen) {
+    i++;
+    showProgress(T('scanReading', { i, n: chosen.length }), i / chosen.length);
+    try {
+      const r = await fetch(conv(it.p));
+      files.push(new File([await r.blob()], it.n));
+    } catch { /* нечитаемый файл пропускаем */ }
+  }
+  if (files.length) doImport(files);
+  else showToast(t('scanErr'));
+}
+$('#scan-btn')?.addEventListener('click', openScan);
+$('#scan-all')?.addEventListener('click', () => startScan('all'));
+$('#scan-folder')?.addEventListener('click', () => startScan('folder'));
+$('#scan-cancel')?.addEventListener('click', closeScan);
+$('#scan-scrim')?.addEventListener('click', closeScan);
+$('#scan-add')?.addEventListener('click', scanDoAdd);
+$('#scan-toggle-all')?.addEventListener('click', () => {
+  scanSel = (scanFiles.length && scanSel.size === scanFiles.length) ? new Set() : new Set(scanFiles.map((_, i) => i));
+  renderScanResults();
+});
+$('#scan-list')?.addEventListener('change', e => {
+  const cb = e.target.closest('input[data-si]'); if (!cb) return;
+  const i = +cb.dataset.si;
+  if (cb.checked) scanSel.add(i); else scanSel.delete(i);
+  updateScanAdd();
+});
 
 // ══════════════════ маршрутизация ══════════════════
 let navToken = 0;

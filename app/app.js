@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.20';
+const APP_VERSION = '1.0.21';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -6726,7 +6726,7 @@ function bindSheetDrag(sheet, overlay) {
   });
 }
 function bindAllSheets() {
-  for (const id of ['settings', 'note', 'review', 'annot', 'tr', 'info'])
+  for (const id of ['settings', 'pronun', 'note', 'review', 'annot', 'tr', 'info'])
     bindSheetDrag($('#' + id + '-sheet'), $('#' + id + '-overlay'));
 }
 

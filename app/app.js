@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.31';
+const APP_VERSION = '1.0.32';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -1431,16 +1431,20 @@ function openColDrawer() {
   colDrawerOpen = true;
   renderColDrawer();
   const dr = $('#col-drawer'), sc = $('#col-scrim');
+  const hadInline = !!dr.style.transform;   // драг оставил позицию — плавно анимируем от неё
   sc.hidden = false; dr.hidden = false;
-  requestAnimationFrame(() => { dr.style.transform = ''; sc.classList.add('open'); dr.classList.add('open'); });
-  document.body.classList.add('col-open');
+  dr.style.transition = ''; dr.style.transform = '';
+  if (!hadInline) void dr.offsetWidth;       // тап/свайп: применяем стартовое -100% ДО .open, иначе рывок
+  document.body.classList.add('col-open');   // язычок и раздел трогаются В ОДНОМ кадре — не отрываются
+  sc.classList.add('open'); dr.classList.add('open');
 }
 function closeColDrawer() {
   colDrawerOpen = false;
   const dr = $('#col-drawer'), sc = $('#col-scrim');
-  dr.style.transform = ''; dr.classList.remove('open'); sc.classList.remove('open');
+  dr.style.transition = ''; dr.style.transform = '';   // от текущего положения плавно в -100%
+  dr.classList.remove('open'); sc.classList.remove('open');
   document.body.classList.remove('col-open');
-  setTimeout(() => { if (!colDrawerOpen) { dr.hidden = true; sc.hidden = true; } }, 320);
+  setTimeout(() => { if (!colDrawerOpen) { dr.hidden = true; sc.hidden = true; } }, 340);
 }
 function toggleColDrawer() { colDrawerOpen ? closeColDrawer() : openColDrawer(); }
 
@@ -1484,9 +1488,10 @@ async function deleteCollection(id) {
   const c = colById(id); if (!c) return;
   if (!(await uiConfirm(T('colDelConfirm', { n: c.name }), { yes: t('dlgDelete'), danger: true }))) return;
   state.collections = state.collections.filter(x => x.id !== id);
-  try { await dbDel('collections', id); } catch {}
-  if (activeCol === id) { activeCol = null; refreshShelfForCol(); }
+  if (activeCol === id) activeCol = null;
   renderColDrawer();
+  refreshShelfForCol();                 // полка обновляется сразу (книги возвращаются в реалтайме)
+  try { await dbDel('collections', id); } catch {}
 }
 
 // ── просмотр коллекции ──
@@ -1524,16 +1529,16 @@ async function applyColPick() {
   if (!colPickSel || !colPickSel.size || !selIds.length) { closeColPick(); return; }
   const kind = selKind === 'audio' ? 'audio' : 'book';
   const ids = selIds.slice();
+  const changed = [];
   for (const colId of colPickSel) {
     const c = colById(colId); if (!c) continue;
     c.items = c.items || [];
     for (const id of ids) if (!c.items.some(it => it.k === kind && it.id === id)) c.items.push({ k: kind, id });
-    try { await saveCollection(c); } catch {}
+    changed.push(c);
   }
-  closeColPick();
-  exitSelMode();
-  renderColDrawer();
+  closeColPick(); exitSelMode(); renderColDrawer(); refreshShelfForCol();
   showToast(T('colAdded', { n: ids.length }));
+  for (const c of changed) { try { await saveCollection(c); } catch {} }   // персист после обновления UI
 }
 
 // ── убрать выбранные книги из ПРОСМАТРИВАЕМОЙ коллекции ──
@@ -1548,11 +1553,9 @@ async function removeFromActiveCol() {
   const msg = uiLang() === 'ru' ? `Убрать ${n} ${noun} из коллекции?` : `Remove ${n} ${noun} from the collection?`;
   if (!(await uiConfirm(msg, { yes: t('colRemoveYes'), no: t('colRemoveNo'), danger: true }))) return;
   c.items = (c.items || []).filter(it => !(it.k === kind && ids.includes(it.id)));
-  try { await saveCollection(c); } catch {}
-  exitSelMode();
-  renderColDrawer();
-  refreshShelfForCol();   // убранные книги исчезают из просматриваемой коллекции
+  exitSelMode(); renderColDrawer(); refreshShelfForCol();   // убранные книги исчезают из коллекции сразу
   showToast(T('colRemoved', { n }));
+  try { await saveCollection(c); } catch {}
 }
 
 // ── жесты язычка/раздела + перетаскивание коллекций ──
@@ -1598,36 +1601,37 @@ function setupColDrawer() {
   });
   // перетаскивание коллекций за «ручку» (реордер)
   if (list) {
+    // реордер: тащим за ручку, элемент следует за пальцем; вставку считаем ТОЛЬКО на отпускании
+    // (никаких перестановок DOM во время жеста — оттого и не спотыкается)
     let drag = null;
     list.addEventListener('pointerdown', e => {
       const grip = e.target.closest('[data-colgrip]'); if (!grip) return;
       const item = grip.closest('.col-item'); if (!item) return;
       e.preventDefault();
-      drag = { item, y: e.clientY };
+      drag = { item, y0: e.clientY, top0: item.getBoundingClientRect().top, h: item.offsetHeight,
+               others: [...list.querySelectorAll('.col-item')].filter(x => x !== item) };
       item.classList.add('dragging');
       try { list.setPointerCapture(e.pointerId); } catch {}
     });
     list.addEventListener('pointermove', e => {
       if (!drag) return;
-      drag.item.style.transform = 'translateY(' + (e.clientY - drag.y) + 'px)';
-      const mid = drag.item.getBoundingClientRect().top + drag.item.offsetHeight / 2;
-      for (const other of list.querySelectorAll('.col-item:not(.dragging)')) {
-        const r = other.getBoundingClientRect();
-        if (mid > r.top && mid < r.bottom) {
-          list.insertBefore(drag.item, mid < r.top + r.height / 2 ? other : other.nextSibling);
-          drag.y = e.clientY; drag.item.style.transform = '';
-          break;
-        }
-      }
+      drag.item.style.transform = 'translateY(' + (e.clientY - drag.y0) + 'px)';
     });
-    const dropEnd = () => {
+    const dropEnd = e => {
       if (!drag) return;
-      drag.item.classList.remove('dragging'); drag.item.style.transform = ''; drag = null;
+      const item = drag.item;
+      const endY = (e && e.clientY != null) ? e.clientY : drag.y0;
+      const centerY = drag.top0 + drag.h / 2 + (endY - drag.y0);
+      item.classList.remove('dragging'); item.style.transform = '';
+      let ref = null;   // вставить перед первым соседом, чей центр ниже нашего
+      for (const o of drag.others) { const r = o.getBoundingClientRect(); if (centerY < r.top + r.height / 2) { ref = o; break; } }
+      list.insertBefore(item, ref);
       [...list.querySelectorAll('.col-item')].forEach((el, i) => {
         const c = colById(el.dataset.col);
         if (c && c.order !== i) { c.order = i; saveCollection(c); }
       });
       (state.collections || []).sort((a, b) => (a.order || 0) - (b.order || 0));
+      drag = null;
     };
     list.addEventListener('pointerup', dropEnd);
     list.addEventListener('pointercancel', dropEnd);
@@ -6262,8 +6266,12 @@ function bindUI() {
       const dx = e.changedTouches[0].clientX - sx;
       if (Math.abs(dx) < 36) return;
       if (colDrawerOpen) { if (dx < 0) closeColDrawer(); return; }   // раздел открыт: свайп влево закрывает, вкладки не трогаем
-      if (dx > 0) { openColDrawer(); return; }                      // свайп вправо — открыть коллекции
-      if (shelfTab !== 'audio') setShelfTab('audio');               // свайп влево — аудиокниги
+      if (dx > 0) {                                                  // свайп вправо
+        if (shelfTab === 'books') openColDrawer();                  // коллекции открываются ТОЛЬКО со вкладки Книги
+        else setShelfTab('books');                                  // с аудио вправо — обратно к книгам
+        return;
+      }
+      if (shelfTab === 'books') setShelfTab('audio');               // свайп влево — аудиокниги
     }, { passive: true });
   })();
   // резервная копия библиотеки

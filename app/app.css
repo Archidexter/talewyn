@@ -1700,6 +1700,10 @@ body.col-open #col-tab svg { transform: rotate(180deg); }
 
 /* кнопки бэкапа внутри настроек — просто по центру, без иконок */
 .backup-row .tool-btn { width: 100%; justify-content: center; }
+/* кнопки синхры: заголовок + тихая подпись под ним */
+.backup-row .tool-btn { flex-direction: column; align-items: stretch; gap: 3px; text-align: center; white-space: normal; min-height: 0; padding: 11px 14px; }
+.backup-row .tool-btn span { color: var(--text); }
+.backup-row .tool-btn small { font-size: 11px; font-weight: 400; color: var(--dim); line-height: 1.3; }
 
 /* ═══ Озвучка — плавающая капсула, оторванная от краёв (как панель заметок) ═══ */
 #tts-bar {

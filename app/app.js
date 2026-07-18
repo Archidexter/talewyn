@@ -915,26 +915,32 @@ function cmpVer(a, b) {   // 1.0.23 vs 1.0.22 → 1/0/-1
 }
 let otaPending = null;   // скачанный веб-бандл, ждёт применения (set перезагрузит WebView)
 async function otaInit() {
+  console.warn('[OTA] init native=' + isNativeApp() + ' cap=' + !!capUpdater);
   if (!capUpdater || !isNativeApp()) return;             // OTA только в нативной сборке
-  try { await capUpdater.notifyAppReady(); } catch {}    // текущий бандл рабочий — защита от отката
+  try { await capUpdater.notifyAppReady(); console.warn('[OTA] appReady ok'); } catch (e) { console.warn('[OTA] appReady err ' + e); }
   setTimeout(otaCheck, 3000);                            // не мешаем старту
 }
 async function otaCheck() {
+  console.warn('[OTA] check start');
   if (!capUpdater) return;
   let m;
   try {
     const res = await fetch(OTA_MANIFEST + '?t=' + Math.floor(Date.now() / 3600000), { cache: 'no-store' });
+    console.warn('[OTA] manifest http ' + res.status);
     if (!res.ok) return;
     m = await res.json();
-  } catch { return; }
+    console.warn('[OTA] manifest web=' + m.web + ' cur=' + APP_VERSION + ' cmp=' + cmpVer(m.web, APP_VERSION));
+  } catch (e) { console.warn('[OTA] manifest err ' + e); return; }
   try {
     // веб-обновление: тихо качаем, применяем при уходе в фон (или по кнопке в тосте)
     if (m && m.web && m.bundleUrl && cmpVer(m.web, APP_VERSION) > 0 && !otaPending) {
+      console.warn('[OTA] downloading ' + m.bundleUrl);
       const b = await capUpdater.download({ version: String(m.web), url: m.bundleUrl });
+      console.warn('[OTA] downloaded id=' + (b && b.id) + ' status=' + (b && b.status));
       if (b && b.id) { otaPending = b; showToast(T('otaReady', { v: m.web }), t('otaApply'), otaApply); }
-    }
+    } else { console.warn('[OTA] no download (cmp<=0 or no bundleUrl)'); }
     // нативное обновление (новый APK) — Фаза 2
-  } catch {}
+  } catch (e) { console.warn('[OTA] download err ' + e); }
 }
 async function otaApply() {
   if (!capUpdater || !otaPending) return;

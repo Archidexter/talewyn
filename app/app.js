@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.51';
+const APP_VERSION = '1.0.52';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -7849,11 +7849,11 @@ function openInfo() {
   $('#info-version').textContent = T('build', { v: APP_VERSION });
   // натив (APK, versionName) и веб (докачанный бандл) могут расходиться — показываем оба,
   // если различаются, чтобы было видно реальное состояние, а не одну цифру
-  (async () => {
+  (async () => {   // в нативной сборке показываем ОБЕ версии всегда: прил. (APK) · веб (бандл)
     try {
       const c = capUpdater && await capUpdater.current();
       const nat = c && c.native;
-      if (nat && nat !== APP_VERSION) $('#info-version').textContent = T('buildBoth', { app: nat, web: APP_VERSION });
+      if (nat) $('#info-version').textContent = T('buildBoth', { app: nat, web: APP_VERSION });
     } catch {}
   })();
   sheetShow($('#info-sheet'), $('#info-overlay'));

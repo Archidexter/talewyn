@@ -1294,11 +1294,10 @@ body.col-open #col-tab svg { transform: rotate(180deg); }
   30% { transform: translate(1px, -1.3px) rotate(-9deg); }
   65% { transform: translate(-1.4px, 1px) rotate(7deg); }
 }
-#scan-modal { position: fixed; inset: 0; z-index: 82; display: grid; place-items: center; padding: 20px; background: rgb(9 11 6 / .5); opacity: 0; transition: opacity .2s ease; }
-#scan-modal.open { opacity: 1; }
-#scan-modal .col-modal-box { transform: translateY(10px) scale(.98); transition: transform .2s ease; }
-#scan-modal.open .col-modal-box { transform: none; }
-.scan-box { width: min(400px, 94vw); }
+/* окно автопоиска использует ТУ ЖЕ механику, что «вставить ссылку» (#confirm-modal):
+   карточка .confirm-card влетает из-за левого края и так же закрывается (скрим/мимо
+   карточки/аппаратная «назад»). Здесь только внутренняя раскладка содержимого. */
+.scan-box { display: flex; flex-direction: column; gap: 14px; }
 #scan-choose { display: flex; flex-direction: column; gap: 10px; }
 .scan-opt {
   display: flex; align-items: center; gap: 14px; text-align: left; width: 100%;
@@ -2212,7 +2211,7 @@ html.t-dark #sel-tr, html.t-dark #sel-note, html.t-dark #sel-speak { color: var(
 
 /* ═══ Тост ═══ */
 #toast {
-  position: fixed; left: 50%; z-index: 45;   /* ниже шапки читалки (z-index 50) — не перекрываем её */
+  position: fixed; left: 50%; z-index: 120;   /* ВЫШЕ всех окон/шторок (модалки 90, шторки/скримы 70): интерактивные уведомления («Дать доступ» и т.п.) должны тапаться, не закрывая окно, из которого пришли. По вертикали тост и так ниже шапки (см. top), поэтому её не перекрывает. */
   top: calc(max(env(safe-area-inset-top, 0px), var(--sat, 0px)) + 58px);   /* сразу под шапкой */
   display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap;
   width: max-content; max-width: min(92vw, 440px);   /* окно по размеру текста, без огромной пустоты */
@@ -2236,7 +2235,7 @@ html.t-dark #sel-tr, html.t-dark #sel-note, html.t-dark #sel-speak { color: var(
 #toast-btn { color: var(--accent); font-weight: 700; white-space: nowrap; padding: 6px 4px; }
 
 /* ═══ кастомный диалог подтверждения (замена системного confirm) ═══ */
-#confirm-modal {
+#confirm-modal, #scan-modal {
   /* Окно не должно двигаться от клавиатуры. Центрируем его не в inset:0 (эта область
      ужимается клавиатурой и окно уезжало вверх), а в ФИКСИРОВАННОЙ полной высоте
      --fullvh (макс. innerHeight, клавиатура её не трогает — задаёт app.js). Так окно
@@ -2247,6 +2246,7 @@ html.t-dark #sel-tr, html.t-dark #sel-note, html.t-dark #sel-speak { color: var(
   height: var(--fullvh, 100dvh);
   z-index: 90;
   display: flex; align-items: center; justify-content: center;
+  /* #scan-modal делит эту механику — см. правило селектора ниже */
   padding: calc(24px + max(env(safe-area-inset-top, 0px), var(--sat, 0px))) 24px
            calc(24px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));
 }
@@ -2265,7 +2265,8 @@ html.t-dark #sel-tr, html.t-dark #sel-note, html.t-dark #sel-speak { color: var(
   transform: translate(-110vw, calc(-1 * var(--lift)));
   transition: transform .34s cubic-bezier(.22, .9, .28, 1);
 }
-#confirm-modal.open .confirm-card { transform: translate(0, calc(-1 * var(--lift))); }
+#confirm-modal.open .confirm-card,
+#scan-modal.open .confirm-card { transform: translate(0, calc(-1 * var(--lift))); }
 .confirm-orn { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
 .confirm-orn::before, .confirm-orn::after { content: ''; height: 1px; flex: 1; }
 .confirm-orn::before { background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--gild) 34%, transparent)); }

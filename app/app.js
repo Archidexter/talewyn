@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.22';
+const APP_VERSION = '1.0.23';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -229,6 +229,7 @@ const I18N = {
     pronunFromPh: 'Слово', pronunToPh: 'Как читать', pronunAdd: 'Добавить', pronunDel: 'Убрать',
     pronunListT: 'Список слов', pronunAdded: 'Добавлено в словарь',
     pronunEmpty: 'Пока пусто', wpPron: 'Произношение', wpSay: 'Озвучить',
+    otaReady: 'Обновление {v} готово', otaApply: 'Обновить',
     start: 'Начать чтение', cont: 'Продолжить чтение', nextCh: 'Следующая глава',
     footer: 'Прочитано {r} из {t} глав ({p}%)',
     build: 'AD.Talewyn · {v}',
@@ -368,6 +369,7 @@ const I18N = {
     pronunFromPh: 'Word', pronunToPh: 'How to read it', pronunAdd: 'Add', pronunDel: 'Remove',
     pronunListT: 'Word list', pronunAdded: 'Added to dictionary',
     pronunEmpty: 'Empty', wpPron: 'Pronunciation', wpSay: 'Speak',
+    otaReady: 'Update {v} ready', otaApply: 'Update',
     start: 'Start reading', cont: 'Continue reading', nextCh: 'Next chapter',
     footer: '{r} of {t} chapters read ({p}%)',
     build: 'AD.Talewyn · {v}',
@@ -878,6 +880,7 @@ async function boot() {
   route();
   hideBootSplash();
   if (urlParams.get('selftest')) selftest();
+  otaInit();   // самообновление веб-слоя (только в нативной сборке)
 }
 
 // Заставка держит экран, пока приложение собирается: без неё было видно пустую полку,
@@ -896,6 +899,51 @@ function hideBootSplash() {
     }));
   }, wait);
 }
+
+// ══════════════════ самообновление (OTA) ══════════════════
+// Веб-слой (www) обновляется по воздуху через Capgo — без сторов и без переустановки APK.
+// Ручной режим: сами тянем version.json с GitHub Pages (GET), качаем бандл, применяем.
+// Всё под guard'ами: в PWA/вебе и при любой ошибке молча ничего не делаем.
+const capUpdater = (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorUpdater) || null;
+const isNativeApp = () => !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+const OTA_MANIFEST = 'https://archidexter.github.io/talewyn/app/version.json';
+function cmpVer(a, b) {   // 1.0.23 vs 1.0.22 → 1/0/-1
+  const pa = String(a).split('.').map(n => parseInt(n, 10) || 0);
+  const pb = String(b).split('.').map(n => parseInt(n, 10) || 0);
+  for (let i = 0; i < 3; i++) { const x = pa[i] || 0, y = pb[i] || 0; if (x !== y) return x < y ? -1 : 1; }
+  return 0;
+}
+let otaPending = null;   // скачанный веб-бандл, ждёт применения (set перезагрузит WebView)
+async function otaInit() {
+  if (!capUpdater || !isNativeApp()) return;             // OTA только в нативной сборке
+  try { await capUpdater.notifyAppReady(); } catch {}    // текущий бандл рабочий — защита от отката
+  setTimeout(otaCheck, 3000);                            // не мешаем старту
+}
+async function otaCheck() {
+  if (!capUpdater) return;
+  let m;
+  try {
+    const res = await fetch(OTA_MANIFEST + '?t=' + Math.floor(Date.now() / 3600000), { cache: 'no-store' });
+    if (!res.ok) return;
+    m = await res.json();
+  } catch { return; }
+  try {
+    // веб-обновление: тихо качаем, применяем при уходе в фон (или по кнопке в тосте)
+    if (m && m.web && m.bundleUrl && cmpVer(m.web, APP_VERSION) > 0 && !otaPending) {
+      const b = await capUpdater.download({ version: String(m.web), url: m.bundleUrl });
+      if (b && b.id) { otaPending = b; showToast(T('otaReady', { v: m.web }), t('otaApply'), otaApply); }
+    }
+    // нативное обновление (новый APK) — Фаза 2
+  } catch {}
+}
+async function otaApply() {
+  if (!capUpdater || !otaPending) return;
+  try { await capUpdater.set({ id: otaPending.id }); } catch {}   // применяет и перезагружает
+}
+// не нажал сам — применяем при следующем уходе в фон, без рывка
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && otaPending) otaApply();
+});
 
 // ══════════════════ маршрутизация ══════════════════
 let navToken = 0;

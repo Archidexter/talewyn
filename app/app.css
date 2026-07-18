@@ -504,8 +504,14 @@ html.t-light .brand-logo, html.t-sepia .brand-logo {
   top: auto; right: auto;
   bottom: max(16px, max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));
 }
-/* режим захвата: кластер приподнят, кнопки не «клюют» переходами, главная чуть крупнее */
-#add-fab.fab-dragging button { transition: none; box-shadow: 0 12px 32px rgb(0 0 0 / .6); }
+/* инерция: во время захвата и доводки кластер едет к цели с лёгким лагом (не «закостенело»);
+   доводка (.fab-gliding) — длиннее, доезжает по броску */
+#add-fab.fab-dragging, #add-fab.fab-gliding {
+  transition: top .13s cubic-bezier(.22, .61, .36, 1), left .13s cubic-bezier(.22, .61, .36, 1);
+}
+#add-fab.fab-gliding { transition-duration: .34s; }
+/* режим захвата: кластер приподнят, главная чуть крупнее */
+#add-fab.fab-dragging button, #add-fab.fab-gliding button { box-shadow: 0 12px 32px rgb(0 0 0 / .55); }
 #add-fab.fab-dragging .fab-main { transform: scale(1.08); box-shadow: 0 14px 36px rgb(0 0 0 / .6), 0 0 0 2px var(--gild); }
 /* на нижней рельсе корзина/коллекция вылетают СНИЗУ и уходят туда же, а не из-за правого края */
 body.sel-mode #add-fab.fab-dock-bottom .fab-del,

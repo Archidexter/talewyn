@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.66';
+const APP_VERSION = '1.0.67';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -1801,6 +1801,7 @@ function enterSelMode(kind, firstId) {
   document.body.classList.remove('sel-exiting');   // прервать уходящую анимацию, если успели
   document.body.classList.add('sel-mode');   // показывает чекбоксы и красную кнопку-мусорку
   refreshSelChecks();
+  applyFabDock();   // кластер стал шире/выше на 2 кнопки — пере-клампим, чтобы не вылез за экран
 }
 function exitSelMode() {
   if (!selMode) return;
@@ -1810,7 +1811,7 @@ function exitSelMode() {
   document.body.classList.remove('sel-mode');
   document.body.classList.add('sel-exiting');
   clearTimeout(selExitTimer);
-  selExitTimer = setTimeout(() => document.body.classList.remove('sel-exiting'), 300);
+  selExitTimer = setTimeout(() => { document.body.classList.remove('sel-exiting'); applyFabDock(); }, 300);
   document.querySelectorAll('.book-card.sel, .ab-card.sel').forEach(c => c.classList.remove('sel'));
 }
 function toggleSel(id) {
@@ -2342,9 +2343,11 @@ function syncAddFab() {
   if (f) { f.hidden = !!$('#shelf-view').hidden; if (!f.hidden) applyFabDock(); }
 }
 
-// ── перетаскивание кластера #add-fab по L-рельсе (правый край ↔ низ) с запоминанием позиции ──
-// позицию храним как ДОЛЮ вдоль рельсы (0..1) — переживает поворот и смену размера экрана.
-let fabDock = null;   // {edge:'right'|'bottom', frac} или null = дефолт из CSS (справа-снизу)
+// ── перетаскивание кластера #add-fab по L-рельсе (правый край ↔ низ), с инерцией и запоминанием ──
+// позиция = ДОЛЯ (0..1) центра ГЛАВНОЙ кнопки вдоль рельсы. Якорим по ней и клампим ВЕСЬ кластер:
+// поэтому у угла появление корзины/коллекции растёт в свободную сторону, не выталкивая видимые кнопки.
+let fabDock = null;     // {edge:'right'|'bottom', frac} или null = дефолт из CSS (справа-снизу)
+let fabDragging = false;   // истина во время захвата — по нему свайпы приложения себя глушат
 const clamp01 = x => Math.max(0, Math.min(1, x));
 function cssInset(n) { const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(n)); return isFinite(v) ? v : 0; }
 function applyFabDock() {
@@ -2352,32 +2355,61 @@ function applyFabDock() {
   if (!fab || fab.hidden || !fabDock) return;
   const bottom = fabDock.edge === 'bottom';
   fab.classList.toggle('fab-dock-bottom', bottom);
-  const r = fab.getBoundingClientRect();
+  const main = fab.querySelector('.fab-main');
+  const r = fab.getBoundingClientRect(), rm = main.getBoundingClientRect();
   if (!r.width || !r.height) return;            // ещё не в потоке — применим при следующем показе
   const W = innerWidth, H = innerHeight, m = 16;
-  if (bottom) {   // нижняя рельса: фикс снизу (из CSS), двигаем по X, не вылезая за края
-    const left = Math.max(m, Math.min(W - r.width - m, fabDock.frac * W - r.width / 2));
+  if (bottom) {   // нижняя рельса: фикс снизу (из CSS), двигаем по X
+    const off = (rm.left + rm.width / 2) - r.left;   // центр главной кнопки от левого края кластера
+    const left = Math.max(m, Math.min(W - r.width - m, fabDock.frac * W - off));
     fab.style.top = 'auto'; fab.style.left = left + 'px'; fab.style.right = 'auto'; fab.style.bottom = '';
   } else {        // правая рельса: фикс справа (из CSS), двигаем по Y
-    const top = Math.max(m + cssInset('--sat'), Math.min(H - r.height - m - cssInset('--sab'), fabDock.frac * H - r.height / 2));
+    const off = (rm.top + rm.height / 2) - r.top;
+    const tabs = $('#shelf-tabs');
+    const ceil = (tabs && !tabs.hidden) ? tabs.getBoundingClientRect().top : (m + 80);   // потолок — вкладки книга/аудио
+    const topMin = Math.max(m + cssInset('--sat'), ceil);
+    const top = Math.max(topMin, Math.min(H - r.height - m - cssInset('--sab'), fabDock.frac * H - off));
     fab.style.top = top + 'px'; fab.style.left = 'auto'; fab.style.right = ''; fab.style.bottom = 'auto';
   }
+}
+// плавная перестройка колонка↔строка: FLIP — кнопки едут из старых экранных позиций в новые
+function fabFlip(change) {
+  const fab = $('#add-fab');
+  const kids = [...fab.querySelectorAll('button')].filter(b => b.offsetParent);
+  const before = kids.map(b => b.getBoundingClientRect());
+  change();
+  const after = kids.map(b => b.getBoundingClientRect());
+  kids.forEach((b, i) => {
+    const dx = before[i].left - after[i].left, dy = before[i].top - after[i].top;
+    if (!dx && !dy) return;
+    b.style.transition = 'none';
+    b.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+  });
+  fab.getBoundingClientRect();   // форс-перерисовка со стартовым сдвигом
+  kids.forEach(b => { b.style.transition = 'transform .26s cubic-bezier(.22,.61,.36,1)'; b.style.transform = ''; });
+  setTimeout(() => kids.forEach(b => { b.style.transition = ''; b.style.transform = ''; }), 300);
 }
 function initFabDrag() {
   const fab = $('#add-fab'); if (!fab) return;
   try { const s = JSON.parse(localStorage.getItem('talewyn-fab-dock') || 'null'); if (s && s.edge) fabDock = s; } catch {}
   applyFabDock();
-  let holdT = 0, dragging = false, pid = null, sx = 0, sy = 0, justDragged = false;
+  let holdT = 0, pid = null, sx = 0, sy = 0, justDragged = false, vel = 0, lastT = 0;
   const startDrag = () => {
-    dragging = true;
-    fab.classList.add('fab-dragging');
+    fabDragging = true; vel = 0; lastT = performance.now();
+    fab.classList.add('fab-dragging'); fab.classList.remove('fab-gliding');
     try { fab.setPointerCapture(pid); } catch {}
     if (!fabDock) { const r = fab.getBoundingClientRect(); fabDock = { edge: 'right', frac: clamp01((r.top + r.height / 2) / innerHeight) }; }
   };
   const moveDock = (fx, fy) => {
     const W = innerWidth, H = innerHeight, band = 92;   // палец ближе band к низу → нижняя рельса
-    fabDock = (fy > H - band) ? { edge: 'bottom', frac: clamp01(fx / W) } : { edge: 'right', frac: clamp01(fy / H) };
-    applyFabDock();
+    const edge = (fy > H - band) ? 'bottom' : 'right';
+    const frac = clamp01(edge === 'bottom' ? fx / W : fy / H);
+    const t = performance.now();
+    if (fabDock && edge === fabDock.edge && t > lastT) vel = 0.6 * vel + 0.4 * ((frac - fabDock.frac) / (t - lastT));
+    else vel = 0;   // смена рельсы — скорость сбрасываем (ось другая)
+    lastT = t;
+    if (fabDock && edge !== fabDock.edge) fabFlip(() => { fabDock = { edge, frac }; applyFabDock(); });
+    else { fabDock = { edge, frac }; applyFabDock(); }
   };
   fab.addEventListener('pointerdown', e => {
     if (e.button && e.button !== 0) return;
@@ -2386,20 +2418,24 @@ function initFabDrag() {
   });
   fab.addEventListener('pointermove', e => {
     if (e.pointerId !== pid) return;
-    if (!dragging) { if (Math.abs(e.clientX - sx) > 8 || Math.abs(e.clientY - sy) > 8) clearTimeout(holdT); return; }
+    if (!fabDragging) { if (Math.abs(e.clientX - sx) > 8 || Math.abs(e.clientY - sy) > 8) clearTimeout(holdT); return; }
     e.preventDefault();
     moveDock(e.clientX, e.clientY);
   });
   const end = e => {
     if (pid == null || (e && e.pointerId !== pid)) return;
     clearTimeout(holdT);
-    if (dragging) {
-      dragging = false; fab.classList.remove('fab-dragging');
-      try { localStorage.setItem('talewyn-fab-dock', JSON.stringify(fabDock)); } catch {}
-      justDragged = true; setTimeout(() => { justDragged = false; }, 80);
-    }
     try { fab.releasePointerCapture(pid); } catch {}
     pid = null;
+    if (!fabDragging) return;
+    fab.classList.remove('fab-dragging');
+    // доводка по инерции: продлеваем в сторону броска и плавно доезжаем (через .fab-gliding)
+    fab.classList.add('fab-gliding');
+    fabDock = { edge: fabDock.edge, frac: clamp01(fabDock.frac + vel * 130) };
+    applyFabDock();
+    setTimeout(() => { fab.classList.remove('fab-gliding'); try { localStorage.setItem('talewyn-fab-dock', JSON.stringify(fabDock)); } catch {} }, 380);
+    justDragged = true; setTimeout(() => { justDragged = false; }, 80);
+    setTimeout(() => { fabDragging = false; }, 120);   // держим флаг ещё чуть-чуть — гасим завершающий touchend
   };
   fab.addEventListener('pointerup', end);
   fab.addEventListener('pointercancel', end);
@@ -7157,7 +7193,8 @@ function bindUI() {
       // мешает — вкладка листается только при сдвиге от 36px, а на таком сдвиге браузер уже
       // отменил клик по кнопке. Исключаем лишь то, где горизонталь значит своё: поля ввода
       // (курсор/выделение), ползунки и сама панель вкладок.
-      if (e.target.closest('input, textarea, select, .shelf-tabs, #col-tab, .col-grip')) return;
+      // #add-fab — перетаскиваемый кластер: касания на нём вкладки НЕ листают
+      if (fabDragging || e.target.closest('input, textarea, select, .shelf-tabs, #col-tab, .col-grip, #add-fab')) return;
       sx = e.touches[0].clientX; sy = e.touches[0].clientY; active = true;
     }, { passive: true });
     addEventListener('touchmove', e => {
@@ -7436,9 +7473,12 @@ function bindUI() {
     // (PDF/короткая глава): там скролла нет, и обычное «показать шапку при прокрутке вверх»
     // не срабатывает, а вызвать меню было нечем.
     if (sw.axis === 'y') {
-      if (sw.dy > 45) {
+      if (sw.dy > 45) {                                    // вниз — показать панель настроек и навигацию
         $('#reader-header').classList.remove('hidden');
         $('#reader-fabnav')?.classList.remove('hidden');
+      } else if (sw.dy < -45) {                            // вверх — скрыть их (предохранитель для коротких страниц)
+        $('#reader-header').classList.add('hidden');
+        $('#reader-fabnav')?.classList.add('hidden');
       }
       sw = null; return;
     }

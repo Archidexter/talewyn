@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.18';
+const APP_VERSION = '1.0.19';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -228,7 +228,7 @@ const I18N = {
     pronunHint: 'Как читать слово при озвучке. Напр.: GIF → джиф',
     pronunFromPh: 'Слово', pronunToPh: 'Как читать', pronunAdd: 'Добавить', pronunDel: 'Убрать',
     pronunListT: 'Список слов', pronunAdded: 'Добавлено в словарь',
-    pronunEmpty: 'Пока пусто. Добавь слово и то, как его произносить.', wpPron: 'Произношение',
+    pronunEmpty: 'Пока пусто. Добавь слово и то, как его произносить.', wpPron: 'Произношение', wpSay: 'Озвучить',
     start: 'Начать чтение', cont: 'Продолжить чтение', nextCh: 'Следующая глава',
     footer: 'Прочитано {r} из {t} глав ({p}%)',
     build: 'AD.Talewyn · {v}',
@@ -367,7 +367,7 @@ const I18N = {
     pronunHint: 'How a word is read aloud. E.g. GIF → jif',
     pronunFromPh: 'Word', pronunToPh: 'How to read it', pronunAdd: 'Add', pronunDel: 'Remove',
     pronunListT: 'Word list', pronunAdded: 'Added to dictionary',
-    pronunEmpty: 'Empty for now. Add a word and how to pronounce it.', wpPron: 'Pronunciation',
+    pronunEmpty: 'Empty for now. Add a word and how to pronounce it.', wpPron: 'Pronunciation', wpSay: 'Speak',
     start: 'Start reading', cont: 'Continue reading', nextCh: 'Next chapter',
     footer: '{r} of {t} chapters read ({p}%)',
     build: 'AD.Talewyn · {v}',
@@ -5503,6 +5503,22 @@ function placeWordPop() {
   pop.style.top = clamp(top, vy + 8, vy + vh - h - 8) + 'px';    // и всегда внутри экрана
 }
 
+// «Озвучить» слово в попапе — просто услышать, как оно звучит (голос устройства, без словаря)
+function speakWord(word) {
+  if (!word) return;
+  try {
+    if (capTTS) { capTTS.stop().catch(() => {}); capTTS.speak({ text: word, lang: 'ru-RU', rate: settings.ttsRate, category: 'playback' }).catch(() => {}); return; }
+  } catch {}
+  if (window.speechSynthesis) {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(word);
+    const v = (typeof ttsVoices !== 'undefined' && ttsVoices) ? (ttsVoices.find(x => x.voiceURI === settings.ttsVoice) || ttsVoices[0]) : null;
+    if (v) u.voice = v;
+    u.lang = 'ru-RU'; u.rate = settings.ttsRate;
+    speechSynthesis.speak(u);
+  }
+}
+
 async function openWordPop(hit) {
   const pop = $('#word-pop');
   $('#wp-word').textContent = hit.word;
@@ -6286,6 +6302,7 @@ function bindUI() {
   $('#pronun-to')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addPronun(); } });
   $('#pronun-list')?.addEventListener('click', e => { const b = e.target.closest('[data-pi]'); if (b) delPronun(+b.dataset.pi); });
   $('#wp-pron')?.addEventListener('click', e => { e.stopPropagation(); openPronunFor(wordPopHit && wordPopHit.word); });
+  $('#wp-say')?.addEventListener('click', e => { e.stopPropagation(); speakWord(wordPopHit && wordPopHit.word); });
   $('#pronun-open-list')?.addEventListener('click', openPronunList);
   $('#pronun-overlay')?.addEventListener('click', closePronunList);
   $('#bm-list-btn').addEventListener('click', () => toggleBmList());

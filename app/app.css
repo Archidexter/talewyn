@@ -504,15 +504,19 @@ html.t-light .brand-logo, html.t-sepia .brand-logo {
   top: auto; right: auto;
   bottom: max(16px, max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));
 }
-/* инерция: во время захвата и доводки кластер едет к цели с лёгким лагом (не «закостенело»);
-   доводка (.fab-gliding) — длиннее, доезжает по броску */
-#add-fab.fab-dragging, #add-fab.fab-gliding {
-  transition: top .13s cubic-bezier(.22, .61, .36, 1), left .13s cubic-bezier(.22, .61, .36, 1);
+/* во время захвата — БЕЗ перехода: кластер идёт 1:1 за пальцем (иначе тянется с лагом).
+   инерция только на отпускании: .fab-gliding доезжает по броску с переходом */
+#add-fab.fab-gliding {
+  transition: top .32s cubic-bezier(.16, .84, .3, 1), left .32s cubic-bezier(.16, .84, .3, 1);
 }
-#add-fab.fab-gliding { transition-duration: .34s; }
 /* режим захвата: кластер приподнят, главная чуть крупнее */
 #add-fab.fab-dragging button, #add-fab.fab-gliding button { box-shadow: 0 12px 32px rgb(0 0 0 / .55); }
 #add-fab.fab-dragging .fab-main { transform: scale(1.08); box-shadow: 0 14px 36px rgb(0 0 0 / .6), 0 0 0 2px var(--gild); }
+/* корзина/коллекция по умолчанию ПЕРЕД основными (слева в строке / сверху в колонке);
+   если с той стороны нет места — .fab-extra-flip переносит их в КОНЕЦ (вправо/вниз),
+   чтобы 3 основные кнопки не прыгали (сторону выбирает chooseExtraSide по факту «влезает ли») */
+#add-fab.fab-extra-flip .fab-del { order: 5; }
+#add-fab.fab-extra-flip .fab-collect { order: 6; }
 /* на нижней рельсе корзина/коллекция вылетают СНИЗУ и уходят туда же, а не из-за правого края */
 body.sel-mode #add-fab.fab-dock-bottom .fab-del,
 body.sel-mode #add-fab.fab-dock-bottom .fab-collect { animation-name: fab-del-in-v; }

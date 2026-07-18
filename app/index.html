@@ -10,7 +10,7 @@
 if(th==='auto')th=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <link rel="stylesheet" href="fonts.css?v=9">
-<link rel="stylesheet" href="app.css?v=152">
+<link rel="stylesheet" href="app.css?v=153">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -117,7 +117,7 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <!-- Коллекции: выдвижной раздел слева, лежит поверх интерфейса -->
 <div id="col-scrim" hidden></div>
 <aside id="col-drawer" hidden aria-label="Коллекции">
-  <div class="col-head"><span class="col-title" data-i18n="colTitle">Коллекции</span><span class="col-active-name" id="col-active-name"></span></div>
+  <div class="col-head"><span class="col-title" data-i18n="colTitle">Коллекции</span></div>
   <div class="col-list" id="col-list"></div>
   <button class="col-add" id="col-add" data-i18n-title="colNew" title="Новая коллекция" aria-label="Новая коллекция">
     <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -151,14 +151,14 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
 </div>
 
 <div id="add-fab" hidden>
-  <button id="fab-collect" class="fab-mini fab-collect" data-i18n-title="colAddT" title="В коллекцию" aria-label="В коллекцию">
-    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12H9"/><path d="M13 8l-4 4 4 4"/><path d="M5 5v14"/></svg>
-  </button>
   <button id="fab-del" class="fab-mini fab-del" title="Удалить выбранное" aria-label="Удалить выбранное">
     <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
       <g class="trash-lid"><path d="M4 7h16"/><path d="M9.5 7V5.3a1.3 1.3 0 0 1 1.3-1.3h2.4a1.3 1.3 0 0 1 1.3 1.3V7"/></g>
       <path d="M6.4 7.5 7.2 19.4a1.6 1.6 0 0 0 1.6 1.5h6.4a1.6 1.6 0 0 0 1.6-1.5L17.6 7.5"/>
     </svg>
+  </button>
+  <button id="fab-collect" class="fab-mini fab-collect" data-i18n-title="colAddT" title="В коллекцию" aria-label="В коллекцию">
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12H9"/><path d="M13 8l-4 4 4 4"/><path d="M5 5v14"/></svg>
   </button>
   <button id="url-btn" class="fab-mini" data-i18n-title="urlAdd" title="По ссылке" aria-label="По ссылке">
     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>
@@ -709,6 +709,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=163"></script>
+<script src="app.js?v=164"></script>
 </body>
 </html>

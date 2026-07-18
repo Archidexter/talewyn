@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.30';
+const APP_VERSION = '1.0.31';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -239,6 +239,7 @@ const I18N = {
     colDelConfirm: 'Удалить коллекцию «{n}»?', colAddT: 'В коллекцию',
     colPickTitle: 'В какие коллекции добавить', colAdd2: 'Добавить',
     colNoneYet: 'Сначала создайте коллекцию', colAdded: 'Добавлено в коллекции',
+    colRemoveYes: 'Убрать', colRemoveNo: 'Оставить', colRemoved: 'Убрано из коллекции',
     otaAvail: 'Доступно обновление {v}', otaAvailApp: 'Доступно обновление приложения {v}',
     otaDownloading: 'Загружаю обновление…', otaFail: 'Не удалось обновить',
     start: 'Начать чтение', cont: 'Продолжить чтение', nextCh: 'Следующая глава',
@@ -387,6 +388,7 @@ const I18N = {
     colDelConfirm: 'Delete collection "{n}"?', colAddT: 'To collection',
     colPickTitle: 'Add to which collections', colAdd2: 'Add',
     colNoneYet: 'Create a collection first', colAdded: 'Added to collections',
+    colRemoveYes: 'Remove', colRemoveNo: 'Keep', colRemoved: 'Removed from collection',
     otaAvail: 'Update {v} available', otaAvailApp: 'App update {v} available',
     otaDownloading: 'Downloading update…', otaFail: 'Update failed',
     start: 'Start reading', cont: 'Continue reading', nextCh: 'Next chapter',
@@ -718,6 +720,7 @@ function postProgress(idx, position, percent) {
     await progressBump(id, idx, position, percent);
     await kvSet('last:' + id, idx);
     await kvSet('lastBook', id);
+    for (const c of (state.collections || [])) if (colHas(c.id, 'book', id)) kvSet('colLast:' + c.id, id);   // своя «последняя» на коллекцию
   })().catch(e => {
     // молча терять прогресс нельзя: человек читает часами, а на выходе — ничего
     if (isQuota(e)) quotaToast();
@@ -1264,8 +1267,11 @@ async function animateRemoveBook(id) {
 
 async function renderShelfContinue() {
   const box = $('#shelf-continue');
-  const lastBook = await kvGet('lastBook');
-  const book = lastBook && state.books.find(b => b.id === lastBook);
+  // в коллекции — своя последняя книга; на общей полке — глобальная
+  let lastId = activeCol ? await kvGet('colLast:' + activeCol) : await kvGet('lastBook');
+  if (activeCol && !lastId) { const g = await kvGet('lastBook'); if (g && colHas(activeCol, 'book', g)) lastId = g; }   // своя ещё не запомнилась, но глобальная — член
+  let book = lastId && state.books.find(b => b.id === lastId);
+  if (book && activeCol && !colHas(activeCol, 'book', book.id)) book = null;   // уже не в коллекции
   if (!book) { box.innerHTML = ''; return; }
   const lastIdx = await kvGet('last:' + book.id);
   if (typeof lastIdx !== 'number' || !book.titles || !book.titles[lastIdx]) {
@@ -1486,8 +1492,6 @@ async function deleteCollection(id) {
 // ── просмотр коллекции ──
 function refreshShelfForCol() {
   document.body.classList.toggle('col-viewing', !!activeCol);
-  const hdr = $('#col-active-name');
-  if (hdr) hdr.textContent = activeCol ? colName(activeCol) : '';
   if (shelfTab === 'audio') renderAudioShelf(); else renderShelf();
 }
 function colName(id) { const c = colById(id); return c ? c.name : ''; }
@@ -1532,6 +1536,25 @@ async function applyColPick() {
   showToast(T('colAdded', { n: ids.length }));
 }
 
+// ── убрать выбранные книги из ПРОСМАТРИВАЕМОЙ коллекции ──
+async function removeFromActiveCol() {
+  if (!activeCol || !selIds.length) return;
+  const c = colById(activeCol); if (!c) return;
+  const kind = selKind === 'audio' ? 'audio' : 'book';
+  const ids = selIds.slice(), n = ids.length;
+  const noun = uiLang() === 'ru'
+    ? (kind === 'audio' ? pluralRu(n, 'аудиокнигу', 'аудиокниги', 'аудиокниг') : pluralRu(n, 'книгу', 'книги', 'книг'))
+    : (kind === 'audio' ? 'audiobook' : 'book') + (n === 1 ? '' : 's');
+  const msg = uiLang() === 'ru' ? `Убрать ${n} ${noun} из коллекции?` : `Remove ${n} ${noun} from the collection?`;
+  if (!(await uiConfirm(msg, { yes: t('colRemoveYes'), no: t('colRemoveNo'), danger: true }))) return;
+  c.items = (c.items || []).filter(it => !(it.k === kind && ids.includes(it.id)));
+  try { await saveCollection(c); } catch {}
+  exitSelMode();
+  renderColDrawer();
+  refreshShelfForCol();   // убранные книги исчезают из просматриваемой коллекции
+  showToast(T('colRemoved', { n }));
+}
+
 // ── жесты язычка/раздела + перетаскивание коллекций ──
 function setupColDrawer() {
   const tab = $('#col-tab'), dr = $('#col-drawer'), sc = $('#col-scrim'), list = $('#col-list');
@@ -1553,11 +1576,12 @@ function setupColDrawer() {
     const base = colDrawerOpen ? 0 : -cs.W;
     const tx = Math.max(-cs.W, Math.min(0, base + dx));
     dr.style.transform = 'translateX(' + tx + 'px)';
+    tab.style.transition = 'none'; tab.style.left = (cs.W + tx) + 'px';   // язычок держится края раздела
     sc.hidden = false; sc.classList.toggle('open', tx > -cs.W * 0.5);
   });
   tab.addEventListener('pointerup', e => {
     if (!cs) return;
-    dr.style.transition = '';
+    dr.style.transition = ''; tab.style.transition = ''; tab.style.left = '';   // отдаём управление CSS
     const dx = e.clientX - cs.x, base = colDrawerOpen ? 0 : -cs.W;
     if (!cs.moved) toggleColDrawer();
     else (base + dx > -cs.W * 0.5) ? openColDrawer() : closeColDrawer();
@@ -4275,6 +4299,7 @@ async function renderAudioShelf() {
     // «Продолжить слушать» — последняя аудиокнига с прогрессом (прячем при фильтре по статусу)
     let cont = null;
     if (!af.status.size && !af.q) for (const r of state.audiobooks) {
+      if (activeCol && !colHas(activeCol, 'audio', r.id)) continue;   // в коллекции — только её последняя
       const p = progs[r.id];
       if (p && (p.position > 1 || p.idx > 0) && (!cont || (p.at || 0) > (progs[cont.id].at || 0))) cont = r;
     }
@@ -6223,7 +6248,7 @@ function bindUI() {
       // мешает — вкладка листается только при сдвиге от 36px, а на таком сдвиге браузер уже
       // отменил клик по кнопке. Исключаем лишь то, где горизонталь значит своё: поля ввода
       // (курсор/выделение), ползунки и сама панель вкладок.
-      if (e.target.closest('input, textarea, select, .shelf-tabs')) return;
+      if (e.target.closest('input, textarea, select, .shelf-tabs, #col-tab, .col-grip')) return;
       sx = e.touches[0].clientX; sy = e.touches[0].clientY; active = true;
     }, { passive: true });
     addEventListener('touchmove', e => {
@@ -6236,11 +6261,9 @@ function bindUI() {
       if (!active || axis !== 'x') return;
       const dx = e.changedTouches[0].clientX - sx;
       if (Math.abs(dx) < 36) return;
-      // Свайп «в никуда» (влево, когда уже на аудио) не должен ничего делать. Раньше он
-      // звал setShelfTab с той же вкладкой, и та честно пересобирала весь список: обложки
-      // и «Продолжить слушать» создавались заново и дёргались.
-      const want = dx < 0 ? 'audio' : 'books';   // влево → аудиокниги, вправо → книги
-      if (want !== shelfTab) setShelfTab(want);
+      if (colDrawerOpen) { if (dx < 0) closeColDrawer(); return; }   // раздел открыт: свайп влево закрывает, вкладки не трогаем
+      if (dx > 0) { openColDrawer(); return; }                      // свайп вправо — открыть коллекции
+      if (shelfTab !== 'audio') setShelfTab('audio');               // свайп влево — аудиокниги
     }, { passive: true });
   })();
   // резервная копия библиотеки
@@ -6781,7 +6804,7 @@ function bindUI() {
   $('#filter-btn').addEventListener('click', toggleFilters);
   // коллекции («свои полки»)
   setupColDrawer();
-  $('#fab-collect')?.addEventListener('click', openColPick);
+  $('#fab-collect')?.addEventListener('click', () => activeCol ? removeFromActiveCol() : openColPick());
   $('#col-create-cancel')?.addEventListener('click', closeColCreate);
   $('#col-create-save')?.addEventListener('click', saveNewCol);
   $('#col-name')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveNewCol(); } });

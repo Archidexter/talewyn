@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.34';
+const APP_VERSION = '1.0.35';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -240,6 +240,8 @@ const I18N = {
     colPickTitle: 'В какие коллекции добавить', colAdd2: 'Добавить',
     colNoneYet: 'Сначала создайте коллекцию', colAdded: 'Добавлено в коллекции',
     colRemoveYes: 'Убрать', colRemoveNo: 'Оставить', colRemoved: 'Убрано из коллекции',
+    timeLeft: '≈ {d} до конца', hUnit: 'ч', minUnit: 'мин',
+    statStreak: 'серия', statToday: 'сегодня', dayShort: 'дн', wpm: 'сл/мин',
     otaAvail: 'Доступно обновление {v}', otaAvailApp: 'Доступно обновление приложения {v}',
     otaDownloading: 'Загружаю обновление…', otaFail: 'Не удалось обновить',
     start: 'Начать чтение', cont: 'Продолжить чтение', nextCh: 'Следующая глава',
@@ -389,6 +391,8 @@ const I18N = {
     colPickTitle: 'Add to which collections', colAdd2: 'Add',
     colNoneYet: 'Create a collection first', colAdded: 'Added to collections',
     colRemoveYes: 'Remove', colRemoveNo: 'Keep', colRemoved: 'Removed from collection',
+    timeLeft: '≈ {d} left', hUnit: 'h', minUnit: 'min',
+    statStreak: 'streak', statToday: 'today', dayShort: 'd', wpm: 'wpm',
     otaAvail: 'Update {v} available', otaAvailApp: 'App update {v} available',
     otaDownloading: 'Downloading update…', otaFail: 'Update failed',
     start: 'Start reading', cont: 'Continue reading', nextCh: 'Next chapter',
@@ -742,9 +746,9 @@ function flushDirty() {
   dirty = null;
   postProgress(p.idx, p.position, p.percent);
 }
-addEventListener('pagehide', flushDirty);
+addEventListener('pagehide', () => { flushDirty(); statFlush(); });
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') flushDirty();
+  if (document.visibilityState === 'hidden') { flushDirty(); statFlush(); }
 });
 
 // Отметка «прочитано» меняется в памяти до записи в базу. Если запись падает, галочка
@@ -776,6 +780,138 @@ async function markChapters(idxs, read) {
   renderContinue();
   renderToc();
   renderFooter();
+}
+
+// ══════════════════ статистика чтения (локально, без сервера) ══════════════════
+// Три числа из роадмапа: сколько осталось до конца книги, личная скорость (слов/мин)
+// и серия дней подряд. Всё считается на устройстве, поверх уже существующего прогресса.
+// Главный принцип — честность времени: копим ТОЛЬКО активное чтение (глава на экране,
+// приложение не свёрнуто, человек хоть что-то делает или идёт озвучка). Отвлёкся —
+// пауза, чтобы «5 минут» не превращались в «час», пока телефон лежит открытым.
+const STAT_IDLE = 100000;   // 100 с без действий — считаем, что человек отошёл
+const STAT_TICK = 10000;    // квант учёта — 10 с
+
+function countWords(s) {
+  const m = (s || '').match(/[\p{L}\p{N}’'-]*[\p{L}\p{N}]/gu);
+  return m ? m.length : 0;
+}
+// слова по главам текущей книги: у импортированных лежат на записи (chWords),
+// у старых считаем один раз в фоне и кладём в kv
+async function ensureWords(book) {
+  if (!book) return null;
+  if (Array.isArray(book.chWords)) return book.chWords;
+  const cached = await kvGet('chWords:' + book.id);
+  if (Array.isArray(cached)) { book.chWords = cached; return cached; }
+  const rows = await dbAll('chapters', bookRange(book.id));
+  const arr = new Array(book.count || rows.length).fill(0);
+  for (const r of rows) arr[r.idx] = countWords(r.plain || (r.html || '').replace(/<[^>]+>/g, ' '));
+  await kvSet('chWords:' + book.id, arr);
+  book.chWords = arr;
+  return arr;
+}
+
+const dayKey = (d = new Date()) => {
+  const p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+};
+// серия = дни подряд, заканчивая сегодня или вчера (сегодня мог ещё не начать читать)
+function computeStreak(days) {
+  const has = k => (days[k] || 0) > 0;
+  const d = new Date();
+  if (!has(dayKey(d))) d.setDate(d.getDate() - 1);
+  let n = 0;
+  while (has(dayKey(d))) { n++; d.setDate(d.getDate() - 1); }
+  return n;
+}
+// личная скорость: копим слова↔секунды по мере реального чтения; пока данных мало —
+// берём типовые 200 сл/мин, чтобы оценка «до конца» не скакала на первых минутах
+async function readSpeed() {
+  const w = (await kvGet('stat:words')) || 0;
+  const s = (await kvGet('stat:secs')) || 0;
+  if (s < 240) return 200;
+  return Math.max(60, Math.min(700, w / s * 60));
+}
+
+const stat = {
+  bookId: null, timer: null, lastAct: 0,
+  bookSecs: 0, daySecs: 0, spdWords: 0, spdSecs: 0,
+  prevRead: 0,          // слов «прочитано» на прошлом тике (для Δ)
+  chW: null,            // слова по главам текущей книги (или null, пока не посчитаны)
+};
+const statNote = () => { stat.lastAct = Date.now(); };   // «человек тут» — зовём на любое действие
+
+function statReadWords() {   // сколько слов «прочитано» сейчас = Σ percent·слова_главы
+  if (!stat.chW) return 0;
+  let w = 0;
+  const m = state.progress.map;
+  for (const k in m) w += (m[k].percent || 0) * (stat.chW[+k] || 0);
+  return w;
+}
+function statActive() {
+  return !document.hidden
+    && !$('#reader-view').hidden
+    && (Date.now() - stat.lastAct < STAT_IDLE || (typeof tts !== 'undefined' && tts.playing));
+}
+function statTick() {
+  if (!statActive()) return;
+  const secs = STAT_TICK / 1000;
+  stat.bookSecs += secs; stat.daySecs += secs;
+  if (stat.chW) {
+    const now = statReadWords();
+    const d = now - stat.prevRead;   // сколько слов «прошло» за квант
+    stat.prevRead = now;
+    if (d > 0 && d < stat.chW.reduce((a, b) => a + b, 0)) { stat.spdWords += d; stat.spdSecs += secs; }
+  }
+  statFlush();   // сбрасываем в базу нечасто — раз в квант это ок, записи крохотные
+}
+let statFlushing = false;
+async function statFlush() {
+  if (statFlushing) return;
+  const bid = stat.bookId, aB = stat.bookSecs, aD = stat.daySecs, aW = stat.spdWords, aS = stat.spdSecs;
+  if (!aB && !aD && !aS) return;
+  stat.bookSecs = stat.daySecs = stat.spdWords = stat.spdSecs = 0;
+  statFlushing = true;
+  try {
+    if (bid && aB) await kvSet('readSecs:' + bid, ((await kvGet('readSecs:' + bid)) || 0) + aB);
+    if (aD) { const days = (await kvGet('readDays')) || {}; const k = dayKey(); days[k] = (days[k] || 0) + aD; await kvSet('readDays', days); }
+    if (aS) {
+      await kvSet('stat:words', ((await kvGet('stat:words')) || 0) + aW);
+      await kvSet('stat:secs', ((await kvGet('stat:secs')) || 0) + aS);
+    }
+  } catch { /* статистика — не критично, молча */ }
+  finally { statFlushing = false; }
+}
+// старт/продолжение сессии чтения книги (зовём при открытии главы)
+function statSessionStart(bookId, book) {
+  if (stat.bookId !== bookId) { statSessionEnd(); stat.bookId = bookId; stat.chW = null; stat.prevRead = 0; }
+  stat.lastAct = Date.now();
+  if (book) ensureWords(book).then(arr => { if (stat.bookId === bookId) { stat.chW = arr; stat.prevRead = statReadWords(); } });
+  if (!stat.timer) stat.timer = setInterval(statTick, STAT_TICK);
+}
+function statSessionEnd() {
+  if (stat.timer) { clearInterval(stat.timer); stat.timer = null; }
+  statFlush();
+  stat.bookId = null; stat.chW = null; stat.prevRead = 0;
+}
+
+// сколько минут осталось до конца книги при личной скорости (null — если не оценить)
+async function bookTimeLeft(book) {
+  const chW = await ensureWords(book);
+  if (!chW || !chW.length) return null;
+  const total = chW.reduce((a, b) => a + b, 0);
+  if (!total) return null;
+  let read = 0;
+  for (const r of await dbAll('progress', bookRange(book.id))) read += (r.percent || 0) * (chW[r.idx] || 0);
+  const remain = Math.max(0, total - read);
+  if (remain < 1) return 0;
+  return Math.max(1, Math.round(remain / (await readSpeed())));
+}
+function fmtDur(mins) {
+  if (!mins || mins < 1) return null;
+  const h = Math.floor(mins / 60), m = mins % 60;
+  if (h && m) return h + ' ' + t('hUnit') + ' ' + m + ' ' + t('minUnit');
+  if (h) return h + ' ' + t('hUnit');
+  return m + ' ' + t('minUnit');
 }
 
 // ══════════════════ сохранение импортированной книги ══════════════════
@@ -825,6 +961,7 @@ async function storeBook(data) {
       addedAt: Date.now(), cover: data.cover || null, toc: data.toc,
       count: data.chapters.length,
       titles: data.chapters.map(c => c.title),
+      chWords: data.chapters.map(c => countWords(c.plain || (c.html || '').replace(/<[^>]+>/g, ' '))),
     });
   } catch (e) {
     await dropBookLeftovers(id);
@@ -1187,6 +1324,7 @@ async function renderShelf() {
     grid.innerHTML = `<div class="shelf-empty">
       <p class="se-title">${t('emptyShelf')}</p><p class="se-hint">${t('emptyHint')}</p></div>`;
     $('#shelf-continue').innerHTML = '';
+    $('#shelf-stats').innerHTML = '';
     $('#shelf-filters').hidden = true;
     seenBookIds = new Set();
     renderShelfFooter();
@@ -1198,6 +1336,7 @@ async function renderShelf() {
     grid.innerHTML = `<div class="shelf-empty"><p class="se-hint">${t('filterNone')}</p></div>`;
     seenBookIds = new Set(state.books.map(b => b.id));
     renderShelfContinue();
+    renderShelfStats();
     renderShelfFooter();
     return;
   }
@@ -1234,6 +1373,7 @@ async function renderShelf() {
   }
   seenBookIds = new Set(state.books.map(b => b.id));
   renderShelfContinue();
+  renderShelfStats();
   renderShelfFooter();
 }
 
@@ -1284,6 +1424,7 @@ async function renderShelfContinue() {
   const face = url
     ? `<img class="cover-img" src="${url}" alt="">`
     : `<span class="cover-blank" style="--h:${hueOf(book.title)}"><span>${esc(book.title)}</span></span>`;
+  const left = fmtDur(await bookTimeLeft(book));   // ≈ сколько осталось до конца книги
   box.innerHTML = `<button class="cont-card" data-cont="${book.id}" data-ch="${lastIdx}">
     <span class="cont-cover" aria-hidden="true">${face}</span>
     <span class="cont-body">
@@ -1291,8 +1432,29 @@ async function renderShelfContinue() {
       <div class="cont-title">${esc(book.titles[lastIdx])}</div>
       <div class="cont-sub">${esc(book.title)}${pct ? ` · ${pct}%` : ''}</div>
       ${pct ? `<div class="cont-track"><div class="cont-fill" style="width:${pct}%"></div></div>` : ''}
+      ${left ? `<div class="cont-left">${T('timeLeft', { d: left })}</div>` : ''}
     </span>
   </button>`;
+}
+
+// узкая полоска статистики под «Продолжить чтение»: серия · сегодня · скорость.
+// Только на вкладке Книги и вне режима просмотра коллекции — чтобы не мельтешить.
+async function renderShelfStats() {
+  const box = $('#shelf-stats');
+  if (!box) return;
+  if (!state.books.length || shelfTab !== 'books' || activeCol) { box.innerHTML = ''; return; }
+  const days = (await kvGet('readDays')) || {};
+  const streak = computeStreak(days);
+  const todayMin = Math.round((days[dayKey()] || 0) / 60);
+  const w = (await kvGet('stat:words')) || 0, s = (await kvGet('stat:secs')) || 0;
+  const cells = [];
+  if (streak >= 2) cells.push([streak + ' ' + t('dayShort'), t('statStreak')]);
+  if (todayMin >= 1) cells.push([fmtDur(todayMin), t('statToday')]);
+  if (s >= 240) cells.push([Math.round(w / s * 60), t('wpm')]);
+  box.innerHTML = cells.length
+    ? `<div class="stat-strip">${cells.map(([v, l]) =>
+        `<span class="stat-cell"><b>${v}</b><i>${l}</i></span>`).join('')}</div>`
+    : '';
 }
 
 function renderShelfFooter() {
@@ -1866,6 +2028,7 @@ function showShelf() {
   loadingChapter = false;
   ttsStop();
   flushDirty();
+  statSessionEnd();   // вышли из книги — закрываем сессию чтения
   clearNoteHl();
   state.book = null;
   state.chapter = null;
@@ -2686,6 +2849,7 @@ async function openChapter(bookId, idx) {
   if (token !== navToken) return;
 
   state.chapter = ch;
+  statSessionStart(bookId, state.book);   // учёт активного чтения этой книги
   // уже в читалке → это смена главы, а не вход: тогда НЕ переигрываем анимацию входа
   // всей вьюхи (иначе мигали бы все панели). Меняются только названия — через crossfade.
   const wasInReader = !$('#reader-view').hidden;
@@ -2800,6 +2964,7 @@ let lastY = 0;
 addEventListener('scroll', () => {
   if ($('#reader-view').hidden || loadingChapter) return;
   userScrolled = true;
+  statNote();   // прокрутка = человек читает
   const y = scrollY;
   const frac = curFrac();
   updateReadbar(frac);

@@ -1187,7 +1187,7 @@ body.col-viewing #add-fab .fab-collect svg { transform: scaleX(-1); }
 #col-drawer {
   position: fixed; top: 0; left: 0; bottom: 0; z-index: 65;
   width: min(67vw, 460px);
-  padding: calc(12px + max(env(safe-area-inset-top, 0px), var(--sat, 0px))) 14px
+  padding: calc(4px + max(env(safe-area-inset-top, 0px), var(--sat, 0px))) 14px
            calc(14px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));
   background: var(--elev); border-right: 1px solid var(--border-strong);
   box-shadow: 14px 0 44px rgb(0 0 0 / .4);
@@ -1197,7 +1197,7 @@ body.col-viewing #add-fab .fab-collect svg { transform: scaleX(-1); }
 }
 #col-drawer::-webkit-scrollbar { display: none; }
 #col-drawer.open { transform: translateX(0); }
-.col-head { position: sticky; top: 0; z-index: 1; background: var(--elev); padding: 2px 2px 10px; border-bottom: 1px solid var(--border); }
+.col-head { position: sticky; top: 0; z-index: 1; background: var(--elev); min-height: 40px; padding: 10px 0 14px; display: grid; place-items: center; border-bottom: 1px solid var(--border); }   /* вровень с шапкой полки */
 .col-title { display: block; text-align: center; font-size: 11px; font-weight: 700; letter-spacing: .17em; text-transform: uppercase; color: var(--gild); }
 .col-list { flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px; padding: 4px 0; }
 .col-item {

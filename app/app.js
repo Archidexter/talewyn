@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.35';
+const APP_VERSION = '1.0.36';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -244,6 +244,9 @@ const I18N = {
     statStreak: 'серия', statToday: 'сегодня', dayShort: 'дн', wpm: 'сл/мин',
     otaAvail: 'Доступно обновление {v}', otaAvailApp: 'Доступно обновление приложения {v}',
     otaDownloading: 'Загружаю обновление…', otaFail: 'Не удалось обновить',
+    otaInstall: 'Установить', otaDownloadingPct: 'Загружаю обновление… {p}%',
+    otaInstalling: 'Открываю установщик…', otaNeedPerm: 'Разреши установку обновлений приложения',
+    otaGrant: 'Разрешить', otaOldApp: 'Обнови приложение вручную один раз — дальше будет само',
     start: 'Начать чтение', cont: 'Продолжить чтение', nextCh: 'Следующая глава',
     footer: 'Прочитано {r} из {t} глав ({p}%)',
     build: 'AD.Talewyn · {v}',
@@ -395,6 +398,9 @@ const I18N = {
     statStreak: 'streak', statToday: 'today', dayShort: 'd', wpm: 'wpm',
     otaAvail: 'Update {v} available', otaAvailApp: 'App update {v} available',
     otaDownloading: 'Downloading update…', otaFail: 'Update failed',
+    otaInstall: 'Install', otaDownloadingPct: 'Downloading update… {p}%',
+    otaInstalling: 'Opening installer…', otaNeedPerm: 'Allow installing app updates',
+    otaGrant: 'Allow', otaOldApp: 'Update the app manually once — after that it is automatic',
     start: 'Start reading', cont: 'Continue reading', nextCh: 'Next chapter',
     footer: '{r} of {t} chapters read ({p}%)',
     build: 'AD.Talewyn · {v}',
@@ -1094,7 +1100,10 @@ async function otaEval(m) {
   if (m.native && m.apkUrl) {                            // новый APK
     let nativeVer = APP_VERSION;
     try { const cur = await capUpdater.current(); if (cur && cur.native) nativeVer = cur.native; } catch {}
-    if (cmpVer(m.native, nativeVer) > 0) return { kind: 'native', version: m.native, apkUrl: m.apkUrl };
+    if (cmpVer(m.native, nativeVer) > 0) return {
+      kind: 'native', version: m.native, apkUrl: m.apkUrl,
+      apkSha256: m.apkSha256 || '', apkSize: +m.apkSize || 0,
+    };
   }
   if (m.web && m.bundleUrl && cmpVer(m.web, APP_VERSION) > 0) return { kind: 'web', version: m.web, bundleUrl: m.bundleUrl };
   return null;
@@ -1128,7 +1137,7 @@ async function otaManualCheck() {
   otaBusy = false;
   if (!otaInfo) { showToast(t('otaNoUpd')); return; }
   if (otaInfo.kind === 'web') showToast(T('otaAvail', { v: otaInfo.version }), t('otaApply'), otaDoWeb);
-  else showToast(T('otaAvailApp', { v: otaInfo.version }));   // нативная установка одним тапом — Фаза 2
+  else showToast(T('otaAvailApp', { v: otaInfo.version }), t('otaInstall'), otaDoNative);
 }
 // скачать и применить веб-обновление (перезагружает WebView в новую версию)
 async function otaDoWeb() {
@@ -1140,6 +1149,38 @@ async function otaDoWeb() {
     else showToast(t('otaFail'));
   } catch { showToast(t('otaFail')); }
 }
+// ── нативное самообновление APK (мост AndroidUpdate из MainActivity) ──
+// Скачивание+проверку+установку делает натив; сюда прилетают только прогресс и итог.
+let otaNativeBusy = false;
+const androidUpdate = () => window.AndroidUpdate || null;
+function otaDoNative() {
+  if (!isNativeApp() || !otaInfo || otaInfo.kind !== 'native') return;
+  const U = androidUpdate();
+  // старый APK без моста самообновиться не может — просим поставить новый вручную один раз
+  if (!U || typeof U.download !== 'function') { showToast(t('otaOldApp')); return; }
+  try {
+    if (typeof U.canInstall === 'function' && !U.canInstall()) {
+      // Android 8+: сначала разрешить установку из приложения, потом тап ещё раз
+      showToast(t('otaNeedPerm'), t('otaGrant'), () => { try { U.openInstallSettings(); } catch {} });
+      return;
+    }
+  } catch {}
+  if (otaNativeBusy) return;
+  otaNativeBusy = true;
+  showProgress(t('otaDownloading'), 0);   // держим тост открытым с полосой загрузки
+  try {
+    U.download(otaInfo.apkUrl, String(otaInfo.version),
+      String(otaInfo.apkSize || 0), otaInfo.apkSha256 || '');
+  } catch { otaNativeBusy = false; showToast(t('otaFail')); }
+}
+// колбэки из натива (вызываются через evaluateJavascript)
+window.__otaNativeProgress = pct => {
+  const p = Math.max(0, Math.min(100, Math.round(+pct || 0)));
+  if (p >= 100) showProgress(t('otaInstalling'), null);   // качается проверка → бегущая полоса
+  else showProgress(T('otaDownloadingPct', { p }), p / 100);
+};
+window.__otaNativeReady = () => { otaNativeBusy = false; hideToast(); };   // системный установщик открылся
+window.__otaNativeError = () => { otaNativeBusy = false; showToast(t('otaFail')); };
 
 // ══════════════════ маршрутизация ══════════════════
 let navToken = 0;

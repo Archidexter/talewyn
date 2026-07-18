@@ -1,7 +1,7 @@
 {
-  "web": "1.0.35",
+  "web": "1.0.36",
   "native": "1.0.24",
-  "bundleUrl": "https://github.com/Archidexter/talewyn/releases/download/web-1.0.35/bundle-1.0.35.zip",
+  "bundleUrl": "https://github.com/Archidexter/talewyn/releases/download/web-1.0.36/bundle-1.0.36.zip",
   "apkUrl": "",
   "notes": ""
 }

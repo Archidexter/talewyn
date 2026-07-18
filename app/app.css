@@ -1662,6 +1662,40 @@ body.tts-on .chapter:has(.pdf-text) { padding-bottom: calc(14px + max(env(safe-a
   margin-top: 8px; font-size: 12px; font-weight: 700; color: var(--gild);
   letter-spacing: .04em; text-transform: uppercase;
 }
+/* попап слова: два действия в ряд (произношение · подробнее) */
+.wp-actions { display: flex; gap: 18px; margin-top: 8px; }
+.wp-actions .wp-more { margin-top: 0; background: none; border: 0; padding: 0; cursor: pointer; }
+
+/* ── словарь произношений (экран настроек) ── */
+.pronun-block { width: 100%; display: flex; flex-direction: column; gap: 10px; }
+.pronun-hint { font-size: 12.5px; color: var(--dim); line-height: 1.4; }
+.pronun-list { display: flex; flex-direction: column; gap: 6px; }
+.pronun-empty { font-size: 13px; color: var(--faint); padding: 4px 2px; }
+.pronun-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border-radius: var(--r-md);
+  border: 1px solid var(--border); background: var(--elev);
+}
+.pronun-from { color: var(--dim); font-weight: 600; max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pronun-to { color: var(--text); font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pronun-arrow { color: var(--faint); flex: none; }
+.pronun-del {
+  flex: none; width: 26px; height: 26px; border-radius: 50%;
+  border: 0; background: transparent; color: var(--faint); cursor: pointer;
+  font-size: 13px; line-height: 1; display: grid; place-items: center;
+  -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) { .pronun-del:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); } }
+.pronun-add { display: flex; align-items: center; gap: 8px; }
+.pronun-in { width: auto; flex: 1; min-width: 0; }
+.pronun-add .pronun-arrow { font-size: 15px; }
+.pronun-add-btn {
+  flex: none; width: 40px; height: 40px; border-radius: var(--r-md);
+  border: 1px solid var(--border-strong); background: transparent; color: var(--accent-hi);
+  font-size: 22px; line-height: 1; cursor: pointer; display: grid; place-items: center;
+  -webkit-tap-highlight-color: transparent; transition: border-color .18s, background .18s;
+}
+@media (hover: hover) { .pronun-add-btn:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); } }
 
 #sel-toolbar {
   position: fixed; left: 50%; translate: -50% 0; z-index: 62;

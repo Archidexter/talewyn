@@ -760,7 +760,7 @@ html.t-light .ch-row.current .ch-name, html.t-sepia .ch-row.current .ch-name { c
 .ia-pop{animation:ia-pop .5s cubic-bezier(.34,1.7,.5,1)}
 .ia-tick{animation:ia-tick .5s cubic-bezier(.34,1.56,.64,1)}
 .ia-twist{animation:ia-twist .55s ease}
-.ia-seek{animation:ia-seek .6s cubic-bezier(.4,0,.3,1)}
+.ia-seek{animation:ia-seek .5s cubic-bezier(.3,.7,.35,1)}
 .ia-flow{animation:ia-flow .65s ease}
 .ia-shrink{animation:ia-shrink .5s cubic-bezier(.34,1.56,.64,1)}
 .ia-beat{animation:ia-beat .5s ease}
@@ -775,7 +775,7 @@ html.t-light .ch-row.current .ch-name, html.t-sepia .ch-row.current .ch-name { c
 @keyframes ia-pop{40%{scale:1.28}72%{scale:.94}}
 @keyframes ia-tick{50%{rotate:42deg}}
 @keyframes ia-twist{25%{rotate:18deg}62%{rotate:-10deg}}
-@keyframes ia-seek{30%{translate:1.6px -1.6px;rotate:-11deg}66%{translate:-1.8px 1.2px;rotate:9deg}}
+@keyframes ia-seek{0%{scale:1}45%{scale:1.26}100%{scale:1}}
 @keyframes ia-flow{22%{translate:0 4px}48%{translate:0 0}74%{translate:0 4px}}
 @keyframes ia-shrink{42%{scale:.55;opacity:.4}}
 @keyframes ia-beat{25%{scale:1.16}55%{scale:.95}}
@@ -1290,7 +1290,7 @@ body.col-open #col-tab svg { transform: rotate(180deg); }
 
 /* ── автопоиск книг: кнопка-лупа + окно выбора/сканирования/результатов ── */
 .fab-scan { color: var(--gild); }
-.fab-scan .scan-ic { transform-origin: 58% 58%; }   /* анимация «поиска» проигрывается ТОЛЬКО на нажатии (.ia-seek), лупа стоит неподвижно */
+.fab-scan .scan-ic { transform-origin: 44% 44%; }   /* центр линзы — от него лупа «приближается»; анимация ТОЛЬКО на нажатии (.ia-seek), иначе стоит неподвижно */
 /* окно автопоиска использует ТУ ЖЕ механику, что «вставить ссылку» (#confirm-modal):
    карточка .confirm-card влетает из-за левого края и так же закрывается. Здесь — раскладка. */
 .scan-box { display: flex; flex-direction: column; gap: 13px; }

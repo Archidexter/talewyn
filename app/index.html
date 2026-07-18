@@ -10,7 +10,7 @@
 if(th==='auto')th=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <link rel="stylesheet" href="fonts.css?v=9">
-<link rel="stylesheet" href="app.css?v=157">
+<link rel="stylesheet" href="app.css?v=158">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -151,6 +151,43 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
   </div>
 </div>
 
+<!-- автопоиск книг на устройстве: выбор области → сканирование → чеклист найденного -->
+<div id="scan-scrim" class="sheet-scrim" hidden></div>
+<div id="scan-modal" hidden>
+  <div class="col-modal-box scan-box">
+    <div class="col-modal-title" data-i18n="scanTitle">Автопоиск книг</div>
+
+    <div id="scan-choose">
+      <button class="scan-opt" id="scan-all">
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg>
+        <span><b data-i18n="scanAll">Весь телефон</b><i data-i18n="scanAllSub">Просканировать всю память</i></span>
+      </button>
+      <button class="scan-opt" id="scan-folder">
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h6a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        <span><b data-i18n="scanFolder">Отдельная папка</b><i data-i18n="scanFolderSub">Выбрать, где искать</i></span>
+      </button>
+    </div>
+
+    <div id="scan-busy" hidden>
+      <svg class="scan-radar" viewBox="0 0 24 24" width="46" height="46" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="7"/><path d="M20.5 20.5l-5-5"/></svg>
+      <div class="scan-stat" id="scan-stat"></div>
+    </div>
+
+    <div id="scan-results" hidden>
+      <div class="scan-res-head">
+        <span id="scan-res-count"></span>
+        <button id="scan-toggle-all" class="scan-mini-btn" data-i18n="scanSelAll">Все</button>
+      </div>
+      <div class="scan-list" id="scan-list"></div>
+    </div>
+
+    <div class="col-modal-actions">
+      <button id="scan-cancel" class="ghost-btn" data-i18n="colCancel">Отменить</button>
+      <button id="scan-add" class="primary-btn" hidden>Добавить</button>
+    </div>
+  </div>
+</div>
+
 <div id="add-fab" hidden>
   <button id="fab-del" class="fab-mini fab-del" title="Удалить выбранное" aria-label="Удалить выбранное">
     <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
@@ -166,6 +203,9 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
   </button>
   <button id="import-btn" class="fab-main" data-i18n-title="addFile" title="Добавить файл" aria-label="Добавить файл">
     <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+  <button id="scan-btn" class="fab-mini fab-scan" data-i18n-title="scanTitleT" title="Найти книги на устройстве" aria-label="Найти книги на устройстве">
+    <svg class="scan-ic" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg>
   </button>
 </div>
 
@@ -710,6 +750,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=172"></script>
+<script src="app.js?v=173"></script>
 </body>
 </html>

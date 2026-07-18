@@ -1136,8 +1136,7 @@ html.t-dark .chapter-body img { opacity: .9; }
 .reader-fabnav {
   position: fixed; z-index: 46;
   left: 0; right: 0;
-  /* ниже аудиопанели (её низ 136px), ближе к нижнему краю. Опущены на высоту кнопки (44px)
-     + ещё её четверть (11px) от прежних 72px → 17px. По центру ширины (20%/80%). */
+  /* ниже аудиопанели (её низ 92px), у самого нижнего края. По центру ширины (20%/80%). */
   bottom: calc(17px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));
   display: flex; justify-content: space-between; align-items: center;
   padding-left: calc(20% - 22px);
@@ -1628,7 +1627,7 @@ body.col-open #col-tab svg { transform: rotate(180deg); }
 /* ═══ Озвучка — плавающая капсула, оторванная от краёв (как панель заметок) ═══ */
 #tts-bar {
   position: fixed; left: 50%; translate: -50% 0; z-index: 55;
-  bottom: calc(136px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));   /* заметно приподнята над нижним краем */
+  bottom: calc(92px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));   /* приподнята над нижним краем, но не слишком — иначе под текстом зияет пустота */
   width: min(calc(100% - 24px), 480px);
   display: flex; flex-direction: column; gap: 4px;
   padding: 6px 12px 10px;
@@ -1744,7 +1743,7 @@ body.col-open #col-tab svg { transform: rotate(180deg); }
 /* текстовой главе резерв под панель нужен — чтобы последнюю строку можно было доскроллить
    ВЫШЕ панели. Раньше был :has(#tts-bar.tucked) с уменьшением до 20px — он менял padding
    при каждом сворачивании панели на скролле, отчего страница дёргалась/лагала. Убран. */
-body.tts-on .chapter { padding-bottom: calc(232px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px))); }
+body.tts-on .chapter { padding-bottom: calc(196px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px))); }
 /* PDF/сканы (изображение + скрытый текст): резерв НЕ нужен — панель просто накрывает низ
    картинки, а не толкает её вверх (иначе снизу зияла пустота, и при скролле были глючи). */
 body.tts-on .chapter:has(.pdf-text) { padding-bottom: calc(14px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px))); }

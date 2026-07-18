@@ -1206,6 +1206,10 @@ body.sel-mode .ab-card.sel .ab-card-cover { outline: 2.5px solid var(--gild); ou
    выезжает из-за правого края экрана */
 body.sel-mode #add-fab .fab-del { display: grid; animation: fab-del-in .3s cubic-bezier(.2, .8, .3, 1); }
 @keyframes fab-del-in { from { transform: translateX(160%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+/* выход из выбора — кружки так же плавно уезжают за правый край, а не пропадают резко */
+body.sel-exiting #add-fab .fab-del,
+body.sel-exiting #add-fab .fab-collect { display: grid; pointer-events: none; animation: fab-del-out .28s cubic-bezier(.4, 0, .2, 1) forwards; }
+@keyframes fab-del-out { from { transform: translateX(0); opacity: 1; } to { transform: translateX(160%); opacity: 0; } }
 .fab-del .trash-lid { transform-origin: 19px 7px; transition: transform .2s cubic-bezier(.3, 1.5, .5, 1); }
 .fab-del:active { filter: brightness(1.1); border-color: #ff8080; }
 .fab-del:active .trash-lid { transform: rotate(26deg) translateY(-1px); }   /* крышка поднимается ВВЕРХ */
@@ -1312,8 +1316,9 @@ body.col-open #col-tab svg { transform: rotate(180deg); }
 .scan-opt b { font-weight: 600; font-size: 15px; }
 .scan-opt i { font-style: normal; font-size: 12.5px; color: var(--dim); }
 #scan-busy { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 18px 0 8px; }
-.scan-radar { color: var(--gild); animation: scan-radar 1.4s cubic-bezier(.5, 0, .5, 1) infinite; }
-@keyframes scan-radar { to { transform: rotate(360deg); } }
+/* индикатор поиска пульсирует зумом от центра линзы — в одном стиле с кнопкой (.ia-seek), не крутится */
+.scan-radar { color: var(--gild); transform-origin: 44% 44%; animation: scan-radar 1.3s ease-in-out infinite; }
+@keyframes scan-radar { 0%, 100% { scale: 1; } 50% { scale: 1.18; } }
 .scan-stat { font-size: 13px; color: var(--dim); font-variant-numeric: tabular-nums; }
 /* результаты: строка фильтра (кастомная выпадашка + чекбокс «Все») + список найденного */
 .scan-ctl { display: flex; align-items: center; gap: 9px; }

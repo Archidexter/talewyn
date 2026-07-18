@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.41';
+const APP_VERSION = '1.0.42';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -253,6 +253,7 @@ const I18N = {
     scanNeedPerm: 'Дай доступ к файлам, чтобы искать книги', scanGrant: 'Дать доступ',
     scanBusyStat: 'папок: {d} · найдено: {n}', scanFound: 'Найдено книг: {n}', scanNone: 'Книги не найдены',
     scanSelAll: 'Все', scanSelNone: 'Снять', scanReading: 'Читаю {i} из {n}…',
+    scanAdd: 'Добавить ({n})', scanAllFmt: 'Все форматы · {n}',
     scanErr: 'Не удалось просканировать', scanNoNative: 'Автопоиск доступен только в приложении',
     start: 'Начать чтение', cont: 'Продолжить чтение', nextCh: 'Следующая глава',
     footer: 'Прочитано {r} из {t} глав ({p}%)',
@@ -414,6 +415,7 @@ const I18N = {
     scanNeedPerm: 'Grant file access to search for books', scanGrant: 'Grant',
     scanBusyStat: 'folders: {d} · found: {n}', scanFound: 'Books found: {n}', scanNone: 'No books found',
     scanSelAll: 'All', scanSelNone: 'None', scanReading: 'Reading {i} of {n}…',
+    scanAdd: 'Add ({n})', scanAllFmt: 'All formats · {n}',
     scanErr: 'Scan failed', scanNoNative: 'Auto-search works only in the app',
     start: 'Start reading', cont: 'Continue reading', nextCh: 'Next chapter',
     footer: '{r} of {t} chapters read ({p}%)',
@@ -1202,9 +1204,71 @@ window.__otaNativeError = () => { otaNativeBusy = false; showToast(t('otaFail'))
 // Capacitor.convertFileSrc и прогоняем через обычный doImport — дедуп и импорт уже там.
 const scanBridge = () => window.AndroidScan || null;
 let scanFiles = [];        // [{p,n,s}]
-let scanSel = new Set();   // индексы отмеченных
+let scanSel = new Set();   // индексы отмеченных (глобально, поверх фильтра)
 let scanBusyFlag = false;
+let scanFmt = '';          // текущий фильтр формата ('' = все)
 const scanFmtSize = b => b >= 1048576 ? (b / 1048576).toFixed(1) + ' МБ' : Math.max(1, Math.round(b / 1024)) + ' КБ';
+const scanExt = n => { const m = String(n).toLowerCase().match(/\.([a-z0-9]+)$/); return m ? m[1] : ''; };
+const scanStripExt = n => String(n).replace(/\.[a-z0-9]+$/i, '');   // формат виден тегом → из имени убираем
+// цвет тега по формату (книги/тексты/комиксы — разными оттенками)
+const SCAN_FMT_COLOR = {
+  pdf: '#cf7b6f', epub: '#8fb182', fb2: '#7f9fc4', fbook: '#7f9fc4', docx: '#7f9fc4',
+  mobi: '#c9a45f', azw: '#c9a45f', azw3: '#c9a45f', prc: '#c9a45f',
+  cbz: '#b58bcf', cbr: '#b58bcf', cb7: '#b58bcf', cbt: '#b58bcf',
+  txt: '#93a1a6', html: '#93a1a6', htm: '#93a1a6', xhtml: '#93a1a6', zip: '#93a1a6',
+};
+const scanColor = f => SCAN_FMT_COLOR[f] || '#c9a45f';
+const scanShownIdx = () => scanFiles.map((_, i) => i).filter(i => !scanFmt || scanExt(scanFiles[i].n) === scanFmt);
+
+// ── универсальная кастомная выпадашка: тот же вид/механика, что выбор голоса/языка ──
+// (buildLangPicker привязан к языкам перевода, поэтому здесь отдельная, но 1-в-1 по стилю)
+function buildDropdown(container, options, value, onChange) {
+  if (!container) return;
+  if (container._ddMenu) container._ddMenu.remove();   // пересборка — убираем прежнее меню-портал
+  container.innerHTML =
+    '<button class="lang-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">'
+    + '<span class="lang-cur"></span>'
+    + '<svg class="lang-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>';
+  const trigger = container.querySelector('.lang-trigger');
+  const cur = container.querySelector('.lang-cur');
+  const menu = document.createElement('div');
+  menu.className = 'lang-menu dd-menu'; menu.setAttribute('role', 'listbox');
+  menu.innerHTML = options.map(o =>
+    `<button class="lang-opt" type="button" role="option" data-v="${esc(String(o.v))}">${esc(o.label)}</button>`).join('');
+  document.body.appendChild(menu);
+  container._ddMenu = menu;
+  let val = String(value);
+  const lbl = v => { const o = options.find(x => String(x.v) === String(v)); return o ? o.label : (options[0] ? options[0].label : ''); };
+  const sync = () => { cur.textContent = lbl(val); menu.querySelectorAll('.lang-opt').forEach(o => o.classList.toggle('sel', o.dataset.v === val)); };
+  const place = () => {
+    const r = trigger.getBoundingClientRect(); const w = Math.max(r.width, 170);
+    menu.style.width = w + 'px'; menu.style.maxHeight = 'none';
+    const full = menu.scrollHeight, cap = Math.min(280, innerHeight - 24), h = Math.min(full, cap);
+    const left = Math.min(Math.max(8, r.right - w), innerWidth - w - 8);
+    menu.style.left = Math.max(8, left) + 'px';
+    menu.style.top = (r.top > h + 12 ? r.top - h - 8 : r.bottom + 8) + 'px';
+    menu.style.maxHeight = h + 'px'; menu.style.overflowY = full > cap + 1 ? 'auto' : 'hidden';
+  };
+  trigger.addEventListener('click', e => {
+    e.stopPropagation();
+    const open = menu.classList.contains('open');
+    document.querySelectorAll('.dd-menu.open').forEach(m => m.classList.remove('open'));
+    if (!open) { place(); menu.classList.add('open'); trigger.setAttribute('aria-expanded', 'true'); }
+    else trigger.setAttribute('aria-expanded', 'false');
+  });
+  menu.addEventListener('click', e => {
+    const b = e.target.closest('.lang-opt'); if (!b) return;
+    val = b.dataset.v; sync(); menu.classList.remove('open'); trigger.setAttribute('aria-expanded', 'false');
+    onChange(val);
+  });
+  sync();
+}
+// клик вне выпадашки — закрыть (только свои dd-menu, чужие меню не трогаем)
+addEventListener('pointerdown', e => {
+  if (!e.target.closest('.lang-trigger, .dd-menu'))
+    document.querySelectorAll('.dd-menu.open').forEach(m => m.classList.remove('open'));
+}, true);
+
 function scanState(s) {     // 'choose' | 'busy' | 'results'
   $('#scan-choose').hidden = s !== 'choose';
   $('#scan-busy').hidden = s !== 'busy';
@@ -1215,7 +1279,7 @@ function scanState(s) {     // 'choose' | 'busy' | 'results'
 // два кадра до .open (иначе стартовое положение за краем не отрисуется), уход за 400мс.
 function openScan() {
   if (!isNativeApp() || !scanBridge()) { showToast(t('scanNoNative')); return; }   // только в приложении
-  scanFiles = []; scanSel = new Set(); scanBusyFlag = false;
+  scanFiles = []; scanSel = new Set(); scanBusyFlag = false; scanFmt = '';
   scanState('choose');
   const modal = $('#scan-modal'), scrim = $('#scan-scrim');
   scrim.hidden = false; modal.hidden = false;
@@ -1224,6 +1288,7 @@ function openScan() {
 function scanOpen() { return !$('#scan-modal').hidden; }
 function closeScan() {
   scanBusyFlag = false;
+  document.querySelectorAll('.dd-menu.open').forEach(m => m.classList.remove('open'));   // закрыть выпадашку формата
   const modal = $('#scan-modal'), scrim = $('#scan-scrim');
   modal.classList.remove('open'); scrim.classList.remove('open');
   setTimeout(() => { modal.hidden = true; scrim.hidden = true; }, 400);
@@ -1247,33 +1312,49 @@ window.__scanResult = list => {
   scanBusyFlag = false;
   scanFiles = Array.isArray(list) ? list : [];
   scanSel = new Set(scanFiles.map((_, i) => i));   // по умолчанию отмечены все найденные
+  scanFmt = '';
+  buildScanFmtDD();
   renderScanResults();
   scanState('results');
 };
 window.__scanError = () => { scanBusyFlag = false; showToast(t('scanErr')); scanState('choose'); };
 window.__scanCancelled = () => { scanBusyFlag = false; scanState('choose'); };
+// выпадашка форматов: «Все форматы · N» + каждый найденный формат со счётчиком
+function buildScanFmtDD() {
+  const fmts = [...new Set(scanFiles.map(f => scanExt(f.n)).filter(Boolean))].sort();
+  const opts = [{ v: '', label: T('scanAllFmt', { n: scanFiles.length }) }]
+    .concat(fmts.map(f => ({ v: f, label: `${f.toUpperCase()} · ${scanFiles.filter(x => scanExt(x.n) === f).length}` })));
+  buildDropdown($('#scan-fmt'), opts, '', v => { scanFmt = v; renderScanResults(); });
+}
 function renderScanResults() {
   const box = $('#scan-list');
-  if (!scanFiles.length) {
-    $('#scan-res-count').textContent = t('scanNone');
-    $('#scan-toggle-all').hidden = true;
-    box.innerHTML = '';
-    $('#scan-add').hidden = true;
-    return;
-  }
-  $('#scan-res-count').textContent = T('scanFound', { n: scanFiles.length });
-  $('#scan-toggle-all').hidden = false;
-  box.innerHTML = scanFiles.map((f, i) =>
-    `<label class="scan-item"><input type="checkbox" data-si="${i}"${scanSel.has(i) ? ' checked' : ''}>` +
-    `<span class="scan-item-n">${esc(f.n)}</span><span class="scan-item-s">${scanFmtSize(+f.s || 0)}</span></label>`).join('');
+  if (!scanFiles.length) { box.innerHTML = `<div class="scan-empty">${t('scanNone')}</div>`; $('#scan-add').hidden = true; return; }
+  const ix = scanShownIdx();
+  box.innerHTML = ix.map(i => {
+    const f = scanFiles[i], ex = scanExt(f.n), col = scanColor(ex);
+    return `<label class="scan-row">`
+      + `<span class="scan-tag" style="color:${col};border-color:${col}55;background:${col}1f">${esc(ex || '—')}</span>`
+      + `<span class="scan-name"><span class="txt">${esc(scanStripExt(f.n))}</span></span>`
+      + `<span class="scan-size">${scanFmtSize(+f.s || 0)}</span>`
+      + `<input type="checkbox" class="scan-cb" data-i="${i}"${scanSel.has(i) ? ' checked' : ''}></label>`;
+  }).join('');
   updateScanAdd();
+  // бегущая строка для длинных имён: сначала все замеры (без перекладок), потом навешиваем
+  requestAnimationFrame(() => {
+    const rows = [...box.querySelectorAll('.scan-name')];
+    const over = rows.map(nm => { const tx = nm.querySelector('.txt'); return tx ? tx.scrollWidth - nm.clientWidth : 0; });
+    rows.forEach((nm, k) => {
+      if (over[k] > 2) { nm.classList.add('marq'); nm.style.setProperty('--mshift', (-over[k] - 4) + 'px'); nm.style.setProperty('--mdur', Math.max(5, over[k] / 22) + 's'); }
+    });
+  });
 }
 function updateScanAdd() {
+  const selN = scanSel.size;
   const btn = $('#scan-add');
-  btn.hidden = false;
-  btn.disabled = !scanSel.size;
-  btn.textContent = T('scanAdd', { n: scanSel.size });
-  $('#scan-toggle-all').textContent = (scanFiles.length && scanSel.size === scanFiles.length) ? t('scanSelNone') : t('scanSelAll');
+  btn.hidden = false; btn.disabled = !selN;
+  btn.textContent = T('scanAdd', { n: selN });
+  const shown = scanShownIdx(), cb = $('#scan-allcb');
+  if (cb) cb.checked = shown.length > 0 && shown.every(i => scanSel.has(i));
 }
 async function scanDoAdd() {
   if (!scanSel.size) return;
@@ -1299,15 +1380,18 @@ $('#scan-folder')?.addEventListener('click', () => startScan('folder'));
 $('#scan-cancel')?.addEventListener('click', closeScan);
 $('#scan-scrim')?.addEventListener('click', closeScan);
 // тап мимо карточки закрывает окно — как у «вставить ссылку» (#scan-modal лежит поверх скрима)
-$('#scan-modal')?.addEventListener('click', e => { if (!e.target.closest('.confirm-card')) closeScan(); });
+$('#scan-modal')?.addEventListener('click', e => { if (!e.target.closest('.confirm-card, .dd-menu')) closeScan(); });
 $('#scan-add')?.addEventListener('click', scanDoAdd);
-$('#scan-toggle-all')?.addEventListener('click', () => {
-  scanSel = (scanFiles.length && scanSel.size === scanFiles.length) ? new Set() : new Set(scanFiles.map((_, i) => i));
-  renderScanResults();
+// «Все» — отметить/снять все ВИДИМЫЕ (под текущим фильтром), обновляя галочки на месте
+$('#scan-allcb')?.addEventListener('change', () => {
+  const shown = scanShownIdx(), all = shown.every(i => scanSel.has(i));
+  shown.forEach(i => all ? scanSel.delete(i) : scanSel.add(i));
+  $('#scan-list').querySelectorAll('input[data-i]').forEach(cb => { cb.checked = scanSel.has(+cb.dataset.i); });
+  updateScanAdd();
 });
 $('#scan-list')?.addEventListener('change', e => {
-  const cb = e.target.closest('input[data-si]'); if (!cb) return;
-  const i = +cb.dataset.si;
+  const cb = e.target.closest('input[data-i]'); if (!cb) return;
+  const i = +cb.dataset.i;
   if (cb.checked) scanSel.add(i); else scanSel.delete(i);
   updateScanAdd();
 });
@@ -3114,7 +3198,7 @@ async function openChapter(bookId, idx) {
   // а запуск речи — нет: ему нужен только разобранный текст главы, он уже в DOM.
   if (pendingAutoplay && token === navToken) {
     pendingAutoplay = false;
-    ttsStart();
+    ttsStart(null, 0, null, true);   // автопереход — озвучка с начала новой главы, а не с видимого места
   }
 }
 
@@ -3968,7 +4052,7 @@ function clearAudioCache() {
   audioCache.clear();
 }
 
-function ttsStart(fromEl = null, charOffset = 0, boundary = null) {
+function ttsStart(fromEl = null, charOffset = 0, boundary = null, fromStart = false) {
   unlockAudio();   // тап по абзацу — это жест: сразу снимаем автоплей-замок для нейроголосов
   loadNeuralVoices().then(resolveVoice);
   resolveVoice();
@@ -3988,9 +4072,10 @@ function ttsStart(fromEl = null, charOffset = 0, boundary = null) {
       catch { return false; }
     });
   }
-  if (pos < 0) pos = fromEl
-    ? tts.items.findIndex(it => it.el === fromEl)
-    : tts.items.findIndex(it => it.el.getBoundingClientRect().bottom > 70);
+  if (pos < 0) pos = fromStart ? 0                       // автопереход между главами — строго с начала главы
+    : fromEl
+      ? tts.items.findIndex(it => it.el === fromEl)
+      : tts.items.findIndex(it => it.el.getBoundingClientRect().bottom > 70);
   if (pos < 0) pos = 0;
   if (!boundary && fromEl && charOffset > 0) {
     // запасной путь — по смещению: последнее предложение абзаца, чьё начало не дальше каретки

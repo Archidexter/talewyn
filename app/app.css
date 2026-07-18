@@ -760,6 +760,7 @@ html.t-light .ch-row.current .ch-name, html.t-sepia .ch-row.current .ch-name { c
 .ia-pop{animation:ia-pop .5s cubic-bezier(.34,1.7,.5,1)}
 .ia-tick{animation:ia-tick .5s cubic-bezier(.34,1.56,.64,1)}
 .ia-twist{animation:ia-twist .55s ease}
+.ia-seek{animation:ia-seek .6s cubic-bezier(.4,0,.3,1)}
 .ia-flow{animation:ia-flow .65s ease}
 .ia-shrink{animation:ia-shrink .5s cubic-bezier(.34,1.56,.64,1)}
 .ia-beat{animation:ia-beat .5s ease}
@@ -774,6 +775,7 @@ html.t-light .ch-row.current .ch-name, html.t-sepia .ch-row.current .ch-name { c
 @keyframes ia-pop{40%{scale:1.28}72%{scale:.94}}
 @keyframes ia-tick{50%{rotate:42deg}}
 @keyframes ia-twist{25%{rotate:18deg}62%{rotate:-10deg}}
+@keyframes ia-seek{30%{translate:1.6px -1.6px;rotate:-11deg}66%{translate:-1.8px 1.2px;rotate:9deg}}
 @keyframes ia-flow{22%{translate:0 4px}48%{translate:0 0}74%{translate:0 4px}}
 @keyframes ia-shrink{42%{scale:.55;opacity:.4}}
 @keyframes ia-beat{25%{scale:1.16}55%{scale:.95}}
@@ -1288,16 +1290,12 @@ body.col-open #col-tab svg { transform: rotate(180deg); }
 
 /* ── автопоиск книг: кнопка-лупа + окно выбора/сканирования/результатов ── */
 .fab-scan { color: var(--gild); }
-.fab-scan .scan-ic { animation: scan-sweep 3.2s ease-in-out infinite; transform-origin: 58% 58%; }
-@keyframes scan-sweep {
-  0%, 100% { transform: translate(0, 0) rotate(0deg); }
-  30% { transform: translate(1px, -1.3px) rotate(-9deg); }
-  65% { transform: translate(-1.4px, 1px) rotate(7deg); }
-}
+.fab-scan .scan-ic { transform-origin: 58% 58%; }   /* анимация «поиска» проигрывается ТОЛЬКО на нажатии (.ia-seek), лупа стоит неподвижно */
 /* окно автопоиска использует ТУ ЖЕ механику, что «вставить ссылку» (#confirm-modal):
-   карточка .confirm-card влетает из-за левого края и так же закрывается (скрим/мимо
-   карточки/аппаратная «назад»). Здесь только внутренняя раскладка содержимого. */
-.scan-box { display: flex; flex-direction: column; gap: 14px; }
+   карточка .confirm-card влетает из-за левого края и так же закрывается. Здесь — раскладка. */
+.scan-box { display: flex; flex-direction: column; gap: 13px; }
+.scan-title { font-family: var(--serif); font-weight: 600; font-size: 19px; text-align: center; color: var(--text); margin: 0; }
+.scan-box .confirm-orn { margin: 0; }
 #scan-choose { display: flex; flex-direction: column; gap: 10px; }
 .scan-opt {
   display: flex; align-items: center; gap: 14px; text-align: left; width: 100%;
@@ -1314,16 +1312,39 @@ body.col-open #col-tab svg { transform: rotate(180deg); }
 .scan-radar { color: var(--gild); animation: scan-radar 1.4s cubic-bezier(.5, 0, .5, 1) infinite; }
 @keyframes scan-radar { to { transform: rotate(360deg); } }
 .scan-stat { font-size: 13px; color: var(--dim); font-variant-numeric: tabular-nums; }
-.scan-res-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-#scan-res-count { font-size: 13px; color: var(--dim); }
-.scan-mini-btn { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--gild); border: 1px solid color-mix(in srgb, var(--gild) 34%, transparent); border-radius: 99px; padding: 4px 12px; background: none; -webkit-tap-highlight-color: transparent; }
-.scan-mini-btn:active { background: var(--accent-soft); }
-.scan-list { display: flex; flex-direction: column; gap: 6px; max-height: 44vh; overflow-y: auto; margin: 0 -4px; padding: 2px 4px; }
-.scan-item { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--bg); cursor: pointer; -webkit-tap-highlight-color: transparent; }
-.scan-item input { flex: none; width: 18px; height: 18px; accent-color: var(--accent); }
-.scan-item-n { flex: 1; min-width: 0; font-size: 13.5px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.scan-item-s { flex: none; font-size: 11.5px; color: var(--dim); font-variant-numeric: tabular-nums; }
-@media (prefers-reduced-motion: reduce) { .fab-scan .scan-ic, .scan-radar { animation: none; } }
+/* результаты: строка фильтра (кастомная выпадашка + чекбокс «Все») + список найденного */
+.scan-ctl { display: flex; align-items: center; gap: 9px; }
+.fmt-pick { flex: 1; min-width: 0; }
+.scan-all-lbl { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--dim);
+  cursor: pointer; border: 1px solid var(--border-strong); border-radius: var(--r-sm); padding: 9px 14px;
+  white-space: nowrap; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+.scan-cb { appearance: none; -webkit-appearance: none; flex: none; width: 21px; height: 21px;
+  border: 1.5px solid var(--border-strong); border-radius: 6px; background: var(--elev2);
+  cursor: pointer; position: relative; transition: background .12s, border-color .12s; }
+.scan-all-lbl .scan-cb { width: 18px; height: 18px; }
+.scan-cb:checked { background: var(--gild); border-color: var(--gild); }
+.scan-cb:checked::after { content: ''; position: absolute; inset: 0; background: no-repeat center/12px
+  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23231a10' stroke-width='3.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 12l5 5L20 6'/%3E%3C/svg%3E"); }
+/* только вертикальный скролл; справа — гуттер, чтобы полоса не наезжала на галочки */
+.scan-list { max-height: 42vh; overflow-y: auto; overflow-x: hidden; padding-right: 12px; margin-top: 2px;
+  scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--gild) 40%, transparent) transparent; }
+.scan-list::-webkit-scrollbar { width: 5px; }
+.scan-list::-webkit-scrollbar-track { background: transparent; }
+.scan-list::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--gild) 40%, transparent); border-radius: 3px; }
+.scan-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto 21px; align-items: center; gap: 11px;
+  padding: 11px 2px; border-bottom: 1px solid var(--border); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.scan-row:last-child { border-bottom: none; }
+.scan-tag { font-family: var(--sans); font-weight: 800; font-size: 9px; letter-spacing: .06em;
+  text-transform: uppercase; padding: 3px 6px; border-radius: 5px; border: 1px solid; }
+.scan-name { overflow: hidden; }
+.scan-name .txt { display: inline-block; white-space: nowrap; font-family: var(--serif); font-size: 14px; color: var(--text); }
+.scan-name.marq .txt { animation: scan-marq var(--mdur, 7s) linear infinite alternate; }
+@keyframes scan-marq { 0%, 14% { transform: translateX(0); } 86%, 100% { transform: translateX(var(--mshift, 0)); } }
+.scan-size { color: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.scan-empty { text-align: center; color: var(--dim); font-size: 13.5px; padding: 22px 0; }
+.scan-acts { display: flex; gap: 10px; margin-top: 4px; }
+.scan-acts > * { flex: 1; }
+@media (prefers-reduced-motion: reduce) { .scan-radar, .scan-name.marq .txt { animation: none; } }
 .col-pick-list { display: flex; flex-direction: column; gap: 8px; max-height: 46vh; overflow-y: auto; }
 .col-pick-item { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; font-size: 14.5px; text-align: left; -webkit-tap-highlight-color: transparent; transition: border-color .15s, background .15s; }
 .col-pick-item.on { border-color: var(--gild); background: color-mix(in srgb, var(--gild) 14%, var(--bg)); }
@@ -2267,13 +2288,13 @@ html.t-dark #sel-tr, html.t-dark #sel-note, html.t-dark #sel-speak { color: var(
 }
 #confirm-modal.open .confirm-card,
 #scan-modal.open .confirm-card { transform: translate(0, calc(-1 * var(--lift))); }
-.confirm-orn { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.confirm-orn { display: flex; align-items: center; gap: 10px; margin: 0 0 16px; }   /* разделитель ПОД заголовком */
 .confirm-orn::before, .confirm-orn::after { content: ''; height: 1px; flex: 1; }
 .confirm-orn::before { background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--gild) 34%, transparent)); }
 .confirm-orn::after { background: linear-gradient(90deg, color-mix(in srgb, var(--gild) 34%, transparent), transparent); }
 .confirm-orn span { color: var(--accent); font-size: 11px; }
 #confirm-msg {
-  margin: 0 0 20px; text-align: center;
+  margin: 0 0 12px; text-align: center;
   font-family: var(--serif); font-size: 16px; line-height: 1.5; color: var(--text);
 }
 /* Поле ввода в диалоге — капсула со значком внутри (как поиск на полке). Раньше поле

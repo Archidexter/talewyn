@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.49';
+const APP_VERSION = '1.0.50';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -257,7 +257,7 @@ const I18N = {
     scanErr: 'Не удалось просканировать', scanNoNative: 'Автопоиск доступен только в приложении',
     start: 'Начать чтение', cont: 'Продолжить чтение', nextCh: 'Следующая глава',
     footer: 'Прочитано {r} из {t} глав ({p}%)',
-    build: 'AD.Talewyn · {v}',
+    build: 'AD.Talewyn · {v}', buildBoth: 'AD.Talewyn · прил. {app} · веб {web}',
     meta: '{i} из {t}',
     back: 'Назад', next: 'Дальше',
     theme: 'Тема', textSec: 'Текст', auto: 'Авто', light: 'Светлая', sepia: 'Сепия', dark: 'Тёмная',
@@ -424,7 +424,7 @@ const I18N = {
     scanErr: 'Scan failed', scanNoNative: 'Auto-search works only in the app',
     start: 'Start reading', cont: 'Continue reading', nextCh: 'Next chapter',
     footer: '{r} of {t} chapters read ({p}%)',
-    build: 'AD.Talewyn · {v}',
+    build: 'AD.Talewyn · {v}', buildBoth: 'AD.Talewyn · app {app} · web {web}',
     meta: '{i} of {t}',
     back: 'Back', next: 'Next',
     theme: 'Theme', textSec: 'Text', auto: 'Auto', light: 'Light', sepia: 'Sepia', dark: 'Dark',
@@ -1125,9 +1125,11 @@ async function otaFetchManifest() {
 async function otaEval(m) {
   if (!m) return null;
   if (m.native && m.apkUrl) {                            // новый APK
-    let nativeVer = APP_VERSION;
+    // ВАЖНО: сравниваем manifest.native с УСТАНОВЛЕННОЙ нативной версией (versionName APK),
+    // а НЕ с APP_VERSION (это версия веб-бандла — она уходит вперёд при веб-OTA и врёт).
+    let nativeVer = null;
     try { const cur = await capUpdater.current(); if (cur && cur.native) nativeVer = cur.native; } catch {}
-    if (cmpVer(m.native, nativeVer) > 0) return {
+    if (nativeVer && cmpVer(m.native, nativeVer) > 0) return {
       kind: 'native', version: m.native, apkUrl: m.apkUrl,
       apkSha256: m.apkSha256 || '', apkSize: +m.apkSize || 0,
     };
@@ -7818,6 +7820,15 @@ function closePronunList() { sheetHide($('#pronun-sheet'), $('#pronun-overlay'))
 
 function openInfo() {
   $('#info-version').textContent = T('build', { v: APP_VERSION });
+  // натив (APK, versionName) и веб (докачанный бандл) могут расходиться — показываем оба,
+  // если различаются, чтобы было видно реальное состояние, а не одну цифру
+  (async () => {
+    try {
+      const c = capUpdater && await capUpdater.current();
+      const nat = c && c.native;
+      if (nat && nat !== APP_VERSION) $('#info-version').textContent = T('buildBoth', { app: nat, web: APP_VERSION });
+    } catch {}
+  })();
   sheetShow($('#info-sheet'), $('#info-overlay'));
 }
 function closeInfo() { sheetHide($('#info-sheet'), $('#info-overlay')); }

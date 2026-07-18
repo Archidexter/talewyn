@@ -10,7 +10,7 @@
 if(th==='auto')th=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <link rel="stylesheet" href="fonts.css?v=9">
-<link rel="stylesheet" href="app.css?v=163">
+<link rel="stylesheet" href="app.css?v=164">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -484,13 +484,19 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
       <button class="chip" data-v="en">English</button>
     </div>
   </div>
-  <div class="set-section" data-i18n="secLibrary">Библиотека</div>
+  <div class="set-section" data-i18n="syncT">Синхронизация и копия</div>
   <div class="set-group backup-row">
+    <button id="sync-light-btn" class="tool-btn" hidden>
+      <span data-i18n="syncLight">Синхра прогресса</span>
+      <small data-i18n="syncLightSub">Лёгкий файл: прогресс, заметки, коллекции — без самих книг</small>
+    </button>
     <button id="backup-btn" class="tool-btn" hidden>
-      <span data-i18n="backupT">Сохранить копию библиотеки</span>
+      <span data-i18n="syncFull">Полная копия</span>
+      <small data-i18n="syncFullSub">Всё вместе с книгами — для резервной копии</small>
     </button>
     <button id="restore-btn" class="tool-btn">
-      <span data-i18n="restoreT">Восстановить из копии</span>
+      <span data-i18n="syncLoad">Загрузить файл (слияние)</span>
+      <small data-i18n="syncLoadSub">Примет и синхру, и полную копию — сольёт без дублей</small>
     </button>
     <input id="restore-input" type="file" hidden accept=".tlib">
     <button id="reset-progress-btn" class="danger-btn" data-i18n="reset" hidden>Сбросить прогресс этой книги</button>
@@ -751,6 +757,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=180"></script>
+<script src="app.js?v=181"></script>
 </body>
 </html>

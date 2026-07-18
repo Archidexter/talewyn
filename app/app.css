@@ -1178,26 +1178,28 @@ body.sel-mode #add-fab .fab-del { display: grid; animation: fab-del-in .3s cubic
 /* иконка «в коллекцию» — как урна: только в режиме выбора, стоит над ней */
 #add-fab .fab-collect { display: none; }
 body.sel-mode #add-fab .fab-collect { display: grid; animation: fab-del-in .3s cubic-bezier(.2, .8, .3, 1); }
+/* внутри коллекции стрелка разворачивается — «убрать из коллекции» */
+body.col-viewing #add-fab .fab-collect svg { transform: scaleX(-1); }
 
 /* ══════════ коллекции («свои полки») ══════════ */
 #col-scrim { position: fixed; inset: 0; z-index: 64; background: rgb(9 11 6 / .4); opacity: 0; transition: opacity .3s ease; }
 #col-scrim.open { opacity: 1; }
 #col-drawer {
   position: fixed; top: 0; left: 0; bottom: 0; z-index: 65;
-  width: clamp(160px, 40vw, 224px);
-  padding: calc(14px + max(env(safe-area-inset-top, 0px), var(--sat, 0px))) 12px
+  width: min(67vw, 460px);
+  padding: calc(12px + max(env(safe-area-inset-top, 0px), var(--sat, 0px))) 14px
            calc(14px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));
   background: var(--elev); border-right: 1px solid var(--border-strong);
   box-shadow: 14px 0 44px rgb(0 0 0 / .4);
   transform: translateX(-100%); transition: transform .32s cubic-bezier(.32, .72, 0, 1);
-  display: flex; flex-direction: column; gap: 10px; overscroll-behavior: contain;
+  display: flex; flex-direction: column; gap: 8px;
+  overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
 }
+#col-drawer::-webkit-scrollbar { display: none; }
 #col-drawer.open { transform: translateX(0); }
-.col-head { display: flex; align-items: baseline; gap: 8px; padding: 2px 2px 8px; border-bottom: 1px solid var(--border); }
-.col-title { font-family: var(--display); font-size: 17px; font-weight: 700; color: var(--gild); }
-.col-active-name { font-size: 11.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.col-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 4px 0; scrollbar-width: none; }
-.col-list::-webkit-scrollbar { display: none; }
+.col-head { position: sticky; top: 0; z-index: 1; background: var(--elev); padding: 2px 2px 10px; border-bottom: 1px solid var(--border); }
+.col-title { display: block; text-align: center; font-size: 11px; font-weight: 700; letter-spacing: .17em; text-transform: uppercase; color: var(--gild); }
+.col-list { flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px; padding: 4px 0; }
 .col-item {
   display: flex; align-items: center; gap: 6px; padding: 9px 8px 9px 4px;
   border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg);
@@ -1205,7 +1207,7 @@ body.sel-mode #add-fab .fab-collect { display: grid; animation: fab-del-in .3s c
 }
 .col-item.active { border-color: var(--gild); background: color-mix(in srgb, var(--gild) 12%, var(--bg)); }
 .col-item.dragging { opacity: .92; border-color: var(--gild); box-shadow: 0 8px 22px rgb(0 0 0 / .4); position: relative; z-index: 2; }
-.col-grip { flex: none; width: 18px; height: 24px; display: grid; grid-template-columns: repeat(2, 4px); gap: 3px 4px; align-content: center; justify-content: center; cursor: grab; touch-action: none; }
+.col-grip { flex: none; width: 16px; height: 24px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3.5px; cursor: grab; touch-action: none; }
 .col-grip i { width: 4px; height: 4px; border-radius: 50%; background: var(--faint); }
 .col-item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 600; font-size: 14px; }
 .col-item-count { flex: none; font-size: 11.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
@@ -1214,13 +1216,13 @@ body.sel-mode #add-fab .fab-collect { display: grid; animation: fab-del-in .3s c
 .col-add {
   flex: none; align-self: center; width: 54px; height: 54px; border-radius: 50%;
   border: 1.5px dashed var(--border-strong); background: transparent; color: var(--gild);
-  display: grid; place-items: center; cursor: pointer; margin: 6px auto 2px;
+  display: grid; place-items: center; cursor: pointer; margin: 12px auto 6px;
   -webkit-tap-highlight-color: transparent; transition: transform .14s, border-color .15s, background .15s;
 }
 .col-add:active { transform: scale(.9); }
 @media (hover: hover) { .col-add:hover { border-color: var(--gild); background: color-mix(in srgb, var(--gild) 10%, transparent); } }
-#col-drawer.col-empty .col-list { flex: 0 0 auto; }
-#col-drawer.col-empty .col-add { margin: auto; }   /* пусто → «+» ровно по центру раздела */
+/* пусто → «+» ровно по центру (на уровне язычка); есть коллекции → сразу после списка (не внизу) */
+#col-drawer.col-empty .col-add { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0; }
 
 /* язычок на левом краю (только на полке) */
 #col-tab {
@@ -1234,7 +1236,7 @@ body.sel-mode #add-fab .fab-collect { display: grid; animation: fab-del-in .3s c
   transition: left .32s cubic-bezier(.32, .72, 0, 1);
 }
 #col-tab svg { transition: transform .3s; }
-body.col-open #col-tab { left: clamp(160px, 40vw, 224px); }   /* открыто — язычок едет на край раздела */
+body.col-open #col-tab { left: min(67vw, 460px); }   /* открыто — язычок едет на край раздела */
 body.col-open #col-tab svg { transform: rotate(180deg); }
 #shelf-view[hidden] ~ #col-tab { display: none; }   /* язычок виден только на главной полке */
 

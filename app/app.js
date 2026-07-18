@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.68';
+const APP_VERSION = '1.0.69';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -236,6 +236,7 @@ const I18N = {
     pronunEmpty: 'Пока пусто', wpPron: 'Произношение', wpSay: 'Озвучить',
     otaReady: 'Обновление {v} готово', otaApply: 'Обновить',
     updateT: 'Проверить обновления', otaNoUpd: 'Обновлять нечего',
+    dlTitle: 'Загрузки', dlQueued: 'в очереди', dlWorking: 'обработка…', dlProgN: 'файл {i} из {n}', dlCancel: 'Отменить загрузку',
     colTitle: 'Коллекции', colNew: 'Новая коллекция', colNamePh: 'Название коллекции',
     colCancel: 'Отменить', colSave: 'Сохранить', colDelete: 'Удалить коллекцию',
     colDelConfirm: 'Удалить коллекцию «{n}»?', colAddT: 'В коллекцию',
@@ -409,6 +410,7 @@ const I18N = {
     pronunEmpty: 'Empty', wpPron: 'Pronunciation', wpSay: 'Speak',
     otaReady: 'Update {v} ready', otaApply: 'Update',
     updateT: 'Check for updates', otaNoUpd: 'Nothing to update',
+    dlTitle: 'Downloads', dlQueued: 'queued', dlWorking: 'processing…', dlProgN: 'file {i} of {n}', dlCancel: 'Cancel download',
     colTitle: 'Collections', colNew: 'New collection', colNamePh: 'Collection name',
     colCancel: 'Cancel', colSave: 'Save', colDelete: 'Delete collection',
     colDelConfirm: 'Delete collection "{n}"?', colAddT: 'To collection',
@@ -2075,6 +2077,8 @@ function setupColDrawer() {
   tab.addEventListener('pointercancel', () => { cs = null; dr.style.transition = ''; if (!colDrawerOpen) closeColDrawer(); });
   // клики внутри раздела
   dr.addEventListener('click', e => {
+    const dlx = e.target.closest('[data-dlcancel]');
+    if (dlx) { e.stopPropagation(); dlCancel(dlx.dataset.dlcancel); return; }   // отмена единицы загрузки
     const del = e.target.closest('[data-coldel]');
     if (del) { e.stopPropagation(); deleteCollection(del.dataset.coldel); return; }
     if (e.target.closest('#col-add')) { openColCreate(); return; }
@@ -2563,8 +2567,9 @@ async function dlNative(url, cookie) {
   return { blob: new Blob([bin], { type: h['content-type'] || '' }), headers: h, url: r.url || url };
 }
 
-async function dlWeb(url, onFrac) {
+async function dlWeb(url, onFrac, extSignal) {
   const c = new AbortController();
+  if (extSignal) extSignal.addEventListener('abort', () => c.abort());   // отмена из очереди загрузок
   const to = setTimeout(() => c.abort(), 20000);   // таймаут только на заголовки, не на всю качку
   const res = await fetch(url, { redirect: 'follow', cache: 'no-store', signal: c.signal });
   clearTimeout(to);
@@ -2620,17 +2625,21 @@ async function importFromUrl() {
   }
   if (!netOnline) { probeNet(); showToast(t('urlNoNet')); return; }
   urlBusy = true;
+  const job = dlAdd('url', u.hostname); job.status = 'active'; renderDlList();
+  const ctrl = new AbortController(); job.abort = () => ctrl.abort();   // отмена из очереди рвёт закачку (веб)
+  const dropped = () => { if (job.cancelled) { dlRemove(job); urlBusy = false; return true; } return false; };
   try {
     const msg = T('urlDl', { h: u.hostname });
     showProgress(msg, null);
     let got = (isNative && capHttp) ? await dlNative(u.href)
-                                    : await dlWeb(u.href, frac => showProgress(msg, frac));
+                                    : await dlWeb(u.href, frac => { job.frac = frac; renderDlList(); showProgress(msg, frac); }, ctrl.signal);
+    if (dropped()) return;                       // отменили, пока качалось (натив не прервать — просто не берём)
     if (!got.blob.size) throw new Error(t('urlEmpty'));
     // антибот-заглушка (beget и подобные): крошечный HTML ставит куку и перезагружается —
     // читаем куку из скрипта, ставим её и повторяем запрос, иначе получаем пустышку
     if (isNative && capHttp && got.blob.size < 4000) {
       const cookie = cookieChallenge(await got.blob.text());
-      if (cookie) { got = await dlNative(u.href, cookie); if (!got.blob.size) throw new Error(t('urlEmpty')); }
+      if (cookie) { got = await dlNative(u.href, cookie); if (dropped()) return; if (!got.blob.size) throw new Error(t('urlEmpty')); }
     }
     const name = fileNameFrom(got.url, got.headers);
     const isAudio = AUDIO_EXT.test(name) || (got.blob.type || '').startsWith('audio/');
@@ -2642,7 +2651,7 @@ async function importFromUrl() {
         const html = await got.blob.text();
         const found = extractAudioTracks(html, got.url || u.href);
         if (found.length) {
-          urlBusy = false; hideToast();
+          urlBusy = false; hideToast(); dlRemove(job);
           const rec = await addStreamAudiobook(found, pageTitle(html));
           if (typeof loadAudiobooks === 'function') await loadAudiobooks();
           setShelfTab('audio'); renderAudioShelf();
@@ -2655,11 +2664,51 @@ async function importFromUrl() {
       }
     }
     const f = new File([got.blob], name, { type: got.blob.type || 'application/octet-stream' });
-    urlBusy = false;
+    urlBusy = false; dlRemove(job);              // закачка завершена — дальше книгу ведёт своя единица в очереди
     await doImport([f]);   // дальше как у обычного файла: дедуп, квота, тосты, перерисовка полки
   } catch (e) {
-    showToast(T('urlFail', { e: (e && e.message) || t('urlBlocked') }));
-  } finally { urlBusy = false; }
+    dlRemove(job);
+    if (!(job.cancelled || (e && e.name === 'AbortError'))) showToast(T('urlFail', { e: (e && e.message) || t('urlBlocked') }));
+  } finally { urlBusy = false; dlRemove(job); }
+}
+
+// ══════════════════ очередь загрузок (сегмент «Загрузки» в левой панели) ══════════════════
+// Показываем ЕДИНИЦЫ импорта (книга / аудиокнига из N файлов / ссылка), а не отдельные файлы.
+// Отмена: очередную единицу убираем из очереди; текущую — прерываем (job.abort: fetch-abort или
+// флаг cancelled, который проверяет цикл импорта аудиокниги между треками).
+const DL_ICON = {
+  book: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11a1 1 0 0 1 1 1v15H6a1 1 0 0 1-1-1z"/><path d="M9 4v16"/></svg>',
+  audio: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.4"/><circle cx="16.5" cy="16" r="2.4"/></svg>',
+  url: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>',
+};
+let dlJobs = [], dlSeq = 0;
+function dlAdd(kind, title, count) {
+  const j = { id: ++dlSeq, kind, title: title || '', count: count || 0, done: 0, frac: null, status: 'queued', cancelled: false, abort: null };
+  dlJobs.push(j); renderDlList(); return j;
+}
+function dlRemove(j) { if (!j) return; dlJobs = dlJobs.filter(x => x !== j); renderDlList(); }
+function dlCancel(id) {
+  const j = dlJobs.find(x => x.id === +id); if (!j) return;
+  j.cancelled = true;                        // активная аудиокнига увидит флаг между треками
+  if (j.abort) { try { j.abort(); } catch {} }   // прервать текущую закачку
+  dlRemove(j);
+}
+function renderDlList() {
+  const list = $('#dl-list'); if (!list) return;
+  const sec = $('#dl-section'); if (sec) sec.hidden = !dlJobs.length;
+  const tab = $('#col-tab'); if (tab) tab.classList.toggle('has-dl', dlJobs.length > 0);
+  list.innerHTML = dlJobs.map(j => {
+    const det = j.status === 'active' && (j.frac != null || j.count > 1);
+    const pct = j.frac != null ? Math.round(j.frac * 100) : (j.count ? Math.round(j.done / j.count * 100) : 0);
+    const sub = j.status !== 'active' ? t('dlQueued')
+      : j.count > 1 ? T('dlProgN', { i: j.done, n: j.count })
+      : j.frac != null ? pct + '%' : t('dlWorking');
+    return `<div class="dl-item"><span class="dl-ic">${DL_ICON[j.kind] || DL_ICON.book}</span>`
+      + `<span class="dl-body"><span class="dl-name">${esc(j.title)}</span>`
+      + `<span class="dl-sub">${esc(sub)}</span>`
+      + `<span class="dl-bar${det ? '' : ' indet'}">${det ? `<i style="width:${pct}%"></i>` : '<i></i>'}</span></span>`
+      + `<button class="dl-cancel" data-dlcancel="${j.id}" aria-label="${esc(t('dlCancel'))}">✕</button></div>`;
+  }).join('');
 }
 
 let importBusy = false;
@@ -2672,20 +2721,29 @@ async function doImport(files) {
   const audioFiles = files.filter(f => AUDIO_EXT.test(f.name) || (f.type || '').startsWith('audio/'));
   const bookFiles = files.filter(f => !audioFiles.includes(f));
   const seenKeys = new Set(state.books.map(bookKey));   // уже в библиотеке + добавленные в этот заход
-  for (const file of bookFiles) {
+  // единицы в очередь загрузок заводим заранее — видно всю очередь сверху вниз
+  const bookJobs = bookFiles.map(f => dlAdd('book', f.name));
+  const audioJob = audioFiles.length ? dlAdd('audio', rec_name(audioFiles), audioFiles.length) : null;
+  for (let bi = 0; bi < bookFiles.length; bi++) {
+    const file = bookFiles[bi], job = bookJobs[bi];
+    if (job.cancelled) { dlRemove(job); continue; }
+    job.status = 'active'; renderDlList();
     showProgress(T('importing', { n: file.name }), null);
     await new Promise(r => setTimeout(r, 60));   // даём тосту отрисоваться
     try {
       // файл синхры/копии (.tlib) — отдельный путь: умное слияние. Узнаём по началу файла.
       const head = await file.slice(0, 200).text();
       if (/"fmt"\s*:\s*"talewyn-(library|full|sync)"/.test(head)) {
-        added += (await mergeImport(file)).added;
+        added += (await mergeImport(file)).added; dlRemove(job);
         continue;
       }
       const res = await Importers.importFile(file,
-        frac => showProgress(T('importing', { n: file.name }), frac));
-      // архив с аудио — все дорожки в одну аудиокнигу (обработаем ниже, вместе с аудио)
-      if (res && res.kind === 'audio-archive') { archiveAudioSets.push(res); continue; }
+        frac => { job.frac = frac; renderDlList(); showProgress(T('importing', { n: file.name }), frac); });
+      // архив с аудио — задача превращается в аудиокнигу (обработаем ниже, вместе с аудио)
+      if (res && res.kind === 'audio-archive') {
+        job.kind = 'audio'; job.count = (res.files || []).length; job.frac = null; job.status = 'queued'; renderDlList();
+        archiveAudioSets.push({ set: res, job }); continue;
+      }
       // архив может вернуть НЕСКОЛЬКО книг — нормализуем к списку
       const list = Array.isArray(res) ? res : [res];
       for (const data of list) {
@@ -2696,7 +2754,9 @@ async function doImport(files) {
         added++;
         showToast(T('imported', { n: data.title }));
       }
+      dlRemove(job);
     } catch (e) {
+      dlRemove(job);
       // у QuotaExceededError пустое message — «Не получилось добавить книгу: » ни о чём
       // не говорит, а починить нехватку места человек как раз может
       if (isQuota(e)) { quotaToastAt = 0; quotaToast(); }
@@ -2705,32 +2765,43 @@ async function doImport(files) {
     }
   }
   // аудиокнига из набора аудиофайлов
-  if (audioFiles.length) {
+  if (audioFiles.length && audioJob && !audioJob.cancelled) {
+    audioJob.status = 'active'; renderDlList();
     showProgress(T('importing', { n: audioFiles[0].name }), null);
     await new Promise(r => setTimeout(r, 60));
     try {
-      const rec = await importAudiobook(audioFiles, frac => showProgress(T('importing', { n: rec_name(audioFiles) }), frac));
+      const rec = await importAudiobook(audioFiles,
+        (frac, i) => { audioJob.frac = frac; audioJob.done = i; renderDlList(); showProgress(T('importing', { n: rec_name(audioFiles) }), frac); }, audioJob);
       addedAudio++;
       showToast(T('imported', { n: rec.title }));
     } catch (e) {
-      if (isQuota(e)) { quotaToastAt = 0; quotaToast(); }
-      else showToast(T('importFail', { n: audioFiles[0].name, e: e.message }));
-      await new Promise(r => setTimeout(r, 1200));
+      if (!(e && e.cancelled)) {
+        if (isQuota(e)) { quotaToastAt = 0; quotaToast(); }
+        else showToast(T('importFail', { n: audioFiles[0].name, e: e.message }));
+        await new Promise(r => setTimeout(r, 1200));
+      }
     }
-  }
+    dlRemove(audioJob);
+  } else if (audioJob) dlRemove(audioJob);
   // аудиокниги из архивов: каждый архив — отдельная аудиокнига (все дорожки внутри = одна книга)
-  for (const set of archiveAudioSets) {
+  for (const { set, job } of archiveAudioSets) {
+    if (job.cancelled) { dlRemove(job); continue; }
+    job.status = 'active'; renderDlList();
     showProgress(T('importing', { n: set.name }), null);
     await new Promise(r => setTimeout(r, 60));
     try {
-      const rec = await importAudiobook(set.files, frac => showProgress(T('importing', { n: set.name }), frac));
+      const rec = await importAudiobook(set.files,
+        (frac, i) => { job.frac = frac; job.done = i; renderDlList(); showProgress(T('importing', { n: set.name }), frac); }, job);
       addedAudio++;
       showToast(T('imported', { n: rec.title }));
     } catch (e) {
-      if (isQuota(e)) { quotaToastAt = 0; quotaToast(); }
-      else showToast(T('importFail', { n: set.name, e: e.message }));
-      await new Promise(r => setTimeout(r, 1200));
+      if (!(e && e.cancelled)) {
+        if (isQuota(e)) { quotaToastAt = 0; quotaToast(); }
+        else showToast(T('importFail', { n: set.name, e: e.message }));
+        await new Promise(r => setTimeout(r, 1200));
+      }
     }
+    dlRemove(job);
   }
   importBusy = false;
   if (added) {
@@ -5163,7 +5234,7 @@ function pageTitle(html) {
 }
 
 // набор аудиофайлов → одна аудиокнига (треки в естественном порядке)
-async function importAudiobook(files, onProgress) {
+async function importAudiobook(files, onProgress, job) {
   const list = [...files].sort((a, b) => abNatSort(a.name, b.name));
   const first = await readTags(list[0]).catch(() => null);
   const cover = tagCover(first);
@@ -5177,7 +5248,11 @@ async function importAudiobook(files, onProgress) {
   // кончается место) они остались бы в базе навсегда: на полке пусто, удалить нечем.
   try {
     for (let i = 0; i < list.length; i++) {
-      if (onProgress) onProgress(i / list.length);
+      if (job && job.cancelled) {           // отмена из очереди загрузок — чистим недописанное
+        await dropAudiobookLeftovers(id);
+        const e = new Error('cancelled'); e.cancelled = true; throw e;
+      }
+      if (onProgress) onProgress(i / list.length, i);
       const f = list[i];
       const tt = i === 0 ? first : await readTags(f).catch(() => null);
       const trackTitle = (tt && tt.title) || abClean(f.name) || ('Трек ' + (i + 1));

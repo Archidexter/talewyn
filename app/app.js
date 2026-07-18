@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.29';
+const APP_VERSION = '1.0.30';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -25,7 +25,7 @@ let _db = null;
 function idb() {
   if (_db) return _db;
   _db = new Promise((res, rej) => {
-    const rq = indexedDB.open('talewyn', 3);
+    const rq = indexedDB.open('talewyn', 4);
     rq.onupgradeneeded = () => {
       const d = rq.result;
       if (!d.objectStoreNames.contains('books')) {
@@ -43,6 +43,9 @@ function idb() {
       if (!d.objectStoreNames.contains('audiobooks')) {   // версия 3: аудиокниги
         d.createObjectStore('audiobooks', { keyPath: 'id' });
         d.createObjectStore('audiotracks', { keyPath: ['book', 'idx'] });
+      }
+      if (!d.objectStoreNames.contains('collections')) {   // версия 4: свои коллекции
+        d.createObjectStore('collections', { keyPath: 'id' });
       }
     };
     rq.onsuccess = () => res(rq.result);
@@ -231,6 +234,11 @@ const I18N = {
     pronunEmpty: 'Пока пусто', wpPron: 'Произношение', wpSay: 'Озвучить',
     otaReady: 'Обновление {v} готово', otaApply: 'Обновить',
     updateT: 'Проверить обновления', otaNoUpd: 'Обновлять нечего',
+    colTitle: 'Коллекции', colNew: 'Новая коллекция', colNamePh: 'Название коллекции',
+    colCancel: 'Отменить', colSave: 'Сохранить', colDelete: 'Удалить коллекцию',
+    colDelConfirm: 'Удалить коллекцию «{n}»?', colAddT: 'В коллекцию',
+    colPickTitle: 'В какие коллекции добавить', colAdd2: 'Добавить',
+    colNoneYet: 'Сначала создайте коллекцию', colAdded: 'Добавлено в коллекции',
     otaAvail: 'Доступно обновление {v}', otaAvailApp: 'Доступно обновление приложения {v}',
     otaDownloading: 'Загружаю обновление…', otaFail: 'Не удалось обновить',
     start: 'Начать чтение', cont: 'Продолжить чтение', nextCh: 'Следующая глава',
@@ -374,6 +382,11 @@ const I18N = {
     pronunEmpty: 'Empty', wpPron: 'Pronunciation', wpSay: 'Speak',
     otaReady: 'Update {v} ready', otaApply: 'Update',
     updateT: 'Check for updates', otaNoUpd: 'Nothing to update',
+    colTitle: 'Collections', colNew: 'New collection', colNamePh: 'Collection name',
+    colCancel: 'Cancel', colSave: 'Save', colDelete: 'Delete collection',
+    colDelConfirm: 'Delete collection "{n}"?', colAddT: 'To collection',
+    colPickTitle: 'Add to which collections', colAdd2: 'Add',
+    colNoneYet: 'Create a collection first', colAdded: 'Added to collections',
     otaAvail: 'Update {v} available', otaAvailApp: 'App update {v} available',
     otaDownloading: 'Downloading update…', otaFail: 'Update failed',
     start: 'Start reading', cont: 'Continue reading', nextCh: 'Next chapter',
@@ -842,6 +855,7 @@ async function deleteBook(id) {
   await dbDel('kv', 'last:' + id);
   await dbDel('kv', 'review:' + id);
   await dbDel('books', id);
+  await purgeFromCollections('book', id);   // убрать из всех коллекций
   if ((await kvGet('lastBook')) === id) await dbDel('kv', 'lastBook');
   localStorage.removeItem('talewyn-expanded:' + id);
   if (coverUrls.has(id)) {
@@ -883,6 +897,7 @@ async function boot() {
     document.documentElement.dataset.err = 'idb: ' + e.message;
     state.books = [];
   }
+  await loadCollections();
   route();
   hideBootSplash();
   if (urlParams.get('selftest')) selftest();
@@ -1156,6 +1171,7 @@ function filteredBooks() {
     if (f.author && (b.author || '') !== f.author) return false;
     if (f.genre && bookGenre(b) !== f.genre) return false;
     if (f.status.size && !f.status.has(bookStatus(b.id))) return false;
+    if (activeCol && !colHas(activeCol, 'book', b.id)) return false;   // просмотр коллекции
     return true;
   });
 }
@@ -1341,6 +1357,7 @@ async function dropAudiobook(id) {
   await dbDel('kv', 'aprog:' + id);
   await dbDel('kv', 'review:' + id);
   if (abCoverUrls.has(id)) { try { URL.revokeObjectURL(abCoverUrls.get(id)); } catch {} abCoverUrls.delete(id); }
+  await purgeFromCollections('audio', id);   // убрать из всех коллекций
 }
 function pluralRu(n, one, few, many) {
   const m10 = n % 10, m100 = n % 100;
@@ -1373,6 +1390,224 @@ async function deleteSelected() {
     await renderShelf();
   }
   showToast(T('deletedN', { n }));
+}
+
+// ══════════════════ коллекции («свои полки») ══════════════════
+// Выдвижной раздел слева поверх интерфейса. Коллекция:
+//   { id, name, order, createdAt, items:[{k:'book'|'audio', id}] }
+// Членство хранится в самой коллекции. Просмотр: activeCol фильтрует полку.
+if (!state.collections) state.collections = [];
+let activeCol = null;          // id просматриваемой коллекции (null = все)
+let colDrawerOpen = false;
+let colPickSel = null;         // Set выбранных colId в диалоге «в коллекцию»
+
+async function loadCollections() {
+  try { state.collections = (await dbAll('collections')).sort((a, b) => (a.order || 0) - (b.order || 0)); }
+  catch { state.collections = []; }
+}
+const saveCollection = c => dbPut('collections', c);
+function colById(id) { return (state.collections || []).find(c => c.id === id) || null; }
+function colHas(colId, kind, id) {
+  const c = colById(colId);
+  return !!(c && (c.items || []).some(it => it.k === kind && it.id === id));
+}
+async function purgeFromCollections(kind, id) {   // при удалении книги — убрать её из всех коллекций
+  for (const c of (state.collections || [])) {
+    if (!c.items || !c.items.length) continue;
+    const before = c.items.length;
+    c.items = c.items.filter(it => !(it.k === kind && it.id === id));
+    if (c.items.length !== before) { try { await saveCollection(c); } catch {} }
+  }
+}
+
+// ── выдвижной раздел ──
+function openColDrawer() {
+  colDrawerOpen = true;
+  renderColDrawer();
+  const dr = $('#col-drawer'), sc = $('#col-scrim');
+  sc.hidden = false; dr.hidden = false;
+  requestAnimationFrame(() => { dr.style.transform = ''; sc.classList.add('open'); dr.classList.add('open'); });
+  document.body.classList.add('col-open');
+}
+function closeColDrawer() {
+  colDrawerOpen = false;
+  const dr = $('#col-drawer'), sc = $('#col-scrim');
+  dr.style.transform = ''; dr.classList.remove('open'); sc.classList.remove('open');
+  document.body.classList.remove('col-open');
+  setTimeout(() => { if (!colDrawerOpen) { dr.hidden = true; sc.hidden = true; } }, 320);
+}
+function toggleColDrawer() { colDrawerOpen ? closeColDrawer() : openColDrawer(); }
+
+function renderColDrawer() {
+  const list = $('#col-list'), dr = $('#col-drawer');
+  if (!list || !dr) return;
+  const cols = state.collections || [];
+  dr.classList.toggle('col-empty', !cols.length);
+  list.innerHTML = cols.map(c =>
+    `<div class="col-item${activeCol === c.id ? ' active' : ''}" data-col="${c.id}">`
+    + `<span class="col-grip" data-colgrip aria-hidden="true"><i></i><i></i><i></i></span>`
+    + `<span class="col-item-name">${esc(c.name)}</span>`
+    + `<span class="col-item-count">${(c.items || []).length}</span>`
+    + `<button class="col-item-del" data-coldel="${c.id}" aria-label="${esc(t('colDelete'))}">✕</button>`
+    + `</div>`).join('');
+}
+
+// ── создание коллекции: центральное окно ввода имени ──
+function openColCreate() {
+  const box = $('#col-create'); if (!box) return;
+  box.hidden = false;
+  requestAnimationFrame(() => box.classList.add('open'));
+  const inp = $('#col-name'); if (inp) { inp.value = ''; setTimeout(() => inp.focus(), 80); }
+}
+function closeColCreate() {
+  const box = $('#col-create'); if (!box) return;
+  box.classList.remove('open');
+  setTimeout(() => { box.hidden = true; }, 240);
+}
+async function saveNewCol() {
+  const name = (($('#col-name') || {}).value || '').trim();
+  if (!name) { closeColCreate(); return; }
+  const order = (state.collections || []).length ? Math.max(...state.collections.map(c => c.order || 0)) + 1 : 0;
+  const col = { id: newId('col'), name, order, createdAt: Date.now(), items: [] };
+  state.collections.push(col);
+  try { await saveCollection(col); } catch {}
+  closeColCreate();
+  renderColDrawer();
+}
+async function deleteCollection(id) {
+  const c = colById(id); if (!c) return;
+  if (!(await uiConfirm(T('colDelConfirm', { n: c.name }), { yes: t('dlgDelete'), danger: true }))) return;
+  state.collections = state.collections.filter(x => x.id !== id);
+  try { await dbDel('collections', id); } catch {}
+  if (activeCol === id) { activeCol = null; refreshShelfForCol(); }
+  renderColDrawer();
+}
+
+// ── просмотр коллекции ──
+function refreshShelfForCol() {
+  document.body.classList.toggle('col-viewing', !!activeCol);
+  const hdr = $('#col-active-name');
+  if (hdr) hdr.textContent = activeCol ? colName(activeCol) : '';
+  if (shelfTab === 'audio') renderAudioShelf(); else renderShelf();
+}
+function colName(id) { const c = colById(id); return c ? c.name : ''; }
+function viewCollection(id) {
+  activeCol = (activeCol === id) ? null : id;   // повторный тап — снять
+  renderColDrawer();
+  refreshShelfForCol();
+  closeColDrawer();
+}
+
+// ── добавление выбранных книг в коллекции (диалог мультивыбора) ──
+function openColPick() {
+  if (!selIds.length) return;
+  if (!(state.collections || []).length) { showToast(t('colNoneYet')); return; }
+  colPickSel = new Set();
+  const list = $('#col-pick-list');
+  if (list) list.innerHTML = state.collections.map(c =>
+    `<button class="col-pick-item" data-pick="${c.id}"><span class="col-pick-check"></span><span class="col-pick-name">${esc(c.name)}</span></button>`
+  ).join('');
+  const box = $('#col-pick'); if (!box) return;
+  box.hidden = false;
+  requestAnimationFrame(() => box.classList.add('open'));
+}
+function closeColPick() {
+  const box = $('#col-pick'); if (!box) return;
+  box.classList.remove('open');
+  setTimeout(() => { box.hidden = true; }, 240);
+}
+async function applyColPick() {
+  if (!colPickSel || !colPickSel.size || !selIds.length) { closeColPick(); return; }
+  const kind = selKind === 'audio' ? 'audio' : 'book';
+  const ids = selIds.slice();
+  for (const colId of colPickSel) {
+    const c = colById(colId); if (!c) continue;
+    c.items = c.items || [];
+    for (const id of ids) if (!c.items.some(it => it.k === kind && it.id === id)) c.items.push({ k: kind, id });
+    try { await saveCollection(c); } catch {}
+  }
+  closeColPick();
+  exitSelMode();
+  renderColDrawer();
+  showToast(T('colAdded', { n: ids.length }));
+}
+
+// ── жесты язычка/раздела + перетаскивание коллекций ──
+function setupColDrawer() {
+  const tab = $('#col-tab'), dr = $('#col-drawer'), sc = $('#col-scrim'), list = $('#col-list');
+  if (!tab || !dr || !sc) return;
+  const width = () => dr.getBoundingClientRect().width || 260;
+  sc.addEventListener('click', closeColDrawer);
+  // язычок: тап — открыть/закрыть, тянуть — следовать за пальцем
+  let cs = null;
+  tab.addEventListener('pointerdown', e => {
+    cs = { x: e.clientX, moved: false, W: width() };
+    if (!colDrawerOpen) { renderColDrawer(); dr.hidden = false; sc.hidden = false; }
+    dr.style.transition = 'none';
+    try { tab.setPointerCapture(e.pointerId); } catch {}
+  });
+  tab.addEventListener('pointermove', e => {
+    if (!cs) return;
+    const dx = e.clientX - cs.x;
+    if (Math.abs(dx) > 6) cs.moved = true;
+    const base = colDrawerOpen ? 0 : -cs.W;
+    const tx = Math.max(-cs.W, Math.min(0, base + dx));
+    dr.style.transform = 'translateX(' + tx + 'px)';
+    sc.hidden = false; sc.classList.toggle('open', tx > -cs.W * 0.5);
+  });
+  tab.addEventListener('pointerup', e => {
+    if (!cs) return;
+    dr.style.transition = '';
+    const dx = e.clientX - cs.x, base = colDrawerOpen ? 0 : -cs.W;
+    if (!cs.moved) toggleColDrawer();
+    else (base + dx > -cs.W * 0.5) ? openColDrawer() : closeColDrawer();
+    cs = null;
+  });
+  tab.addEventListener('pointercancel', () => { cs = null; dr.style.transition = ''; if (!colDrawerOpen) closeColDrawer(); });
+  // клики внутри раздела
+  dr.addEventListener('click', e => {
+    const del = e.target.closest('[data-coldel]');
+    if (del) { e.stopPropagation(); deleteCollection(del.dataset.coldel); return; }
+    if (e.target.closest('#col-add')) { openColCreate(); return; }
+    const item = e.target.closest('.col-item');
+    if (item && !e.target.closest('[data-colgrip]')) viewCollection(item.dataset.col);
+  });
+  // перетаскивание коллекций за «ручку» (реордер)
+  if (list) {
+    let drag = null;
+    list.addEventListener('pointerdown', e => {
+      const grip = e.target.closest('[data-colgrip]'); if (!grip) return;
+      const item = grip.closest('.col-item'); if (!item) return;
+      e.preventDefault();
+      drag = { item, y: e.clientY };
+      item.classList.add('dragging');
+      try { list.setPointerCapture(e.pointerId); } catch {}
+    });
+    list.addEventListener('pointermove', e => {
+      if (!drag) return;
+      drag.item.style.transform = 'translateY(' + (e.clientY - drag.y) + 'px)';
+      const mid = drag.item.getBoundingClientRect().top + drag.item.offsetHeight / 2;
+      for (const other of list.querySelectorAll('.col-item:not(.dragging)')) {
+        const r = other.getBoundingClientRect();
+        if (mid > r.top && mid < r.bottom) {
+          list.insertBefore(drag.item, mid < r.top + r.height / 2 ? other : other.nextSibling);
+          drag.y = e.clientY; drag.item.style.transform = '';
+          break;
+        }
+      }
+    });
+    const dropEnd = () => {
+      if (!drag) return;
+      drag.item.classList.remove('dragging'); drag.item.style.transform = ''; drag = null;
+      [...list.querySelectorAll('.col-item')].forEach((el, i) => {
+        const c = colById(el.dataset.col);
+        if (c && c.order !== i) { c.order = i; saveCollection(c); }
+      });
+      (state.collections || []).sort((a, b) => (a.order || 0) - (b.order || 0));
+    };
+    list.addEventListener('pointerup', dropEnd);
+    list.addEventListener('pointercancel', dropEnd);
+  }
 }
 
 // ── панель фильтров: строится по книгам, меняет список в реальном времени, плавно раскрывается ──
@@ -1814,6 +2049,7 @@ async function buildBackup() {
     settings,
     ttsBase: localStorage.getItem('talewyn-tts-base') || null,
     lastBook: (await kvGet('lastBook')) || null,
+    collections: await dbAll('collections'),   // свои полки
   };
   const parts = [JSON.stringify(head).slice(0, -1) + ',"books":['];
   for (let i = 0; i < books.length; i++) {
@@ -1945,6 +2181,16 @@ async function restoreLibrary(file) {
   }
   if (j.lastBook && existing.has(j.lastBook) && !(await kvGet('lastBook'))) {
     await kvSet('lastBook', j.lastBook);
+  }
+  // коллекции: добавляем те, которых ещё нет (по id); членство на отсутствующие книги безвредно
+  if (Array.isArray(j.collections)) {
+    const have = new Set((state.collections || []).map(c => c.id));
+    for (const c of j.collections) {
+      if (!c || !c.id || have.has(c.id)) continue;
+      const rec = { id: c.id, name: c.name || '…', order: c.order || 0, createdAt: c.createdAt || Date.now(), items: Array.isArray(c.items) ? c.items : [] };
+      try { await dbPut('collections', rec); state.collections.push(rec); have.add(c.id); } catch {}
+    }
+    state.collections.sort((a, b) => (a.order || 0) - (b.order || 0));
   }
   showToast(added && skipped ? T('restoreMixed', { n: added, s: skipped })
     : added ? T('restoreDone', { n: added }) : t('restoreNone'));
@@ -4023,6 +4269,7 @@ async function renderAudioShelf() {
     const shown = state.audiobooks.filter(r => {
       if (af.q) { const q = af.q.toLowerCase(); if (!((r.title || '').toLowerCase().includes(q) || (r.author || '').toLowerCase().includes(q))) return false; }
       if (af.status.size && !af.status.has(abStatusOf(r, progs[r.id]))) return false;
+      if (activeCol && !colHas(activeCol, 'audio', r.id)) return false;   // просмотр коллекции
       return true;
     });
     // «Продолжить слушать» — последняя аудиокнига с прогрессом (прячем при фильтре по статусу)
@@ -4390,6 +4637,7 @@ async function deleteAudiobook(id) {
   await dbDel('audiobooks', id);
   await dbDel('kv', 'aprog:' + id);
   await dbDel('kv', 'review:' + id);   // как у книг (deleteBook) — иначе отзыв остаётся сиротой
+  await purgeFromCollections('audio', id);   // убрать из всех коллекций
   if (abCoverUrls.has(id)) { try { URL.revokeObjectURL(abCoverUrls.get(id)); } catch {} abCoverUrls.delete(id); }
   await loadAudiobooks();
   renderAudioShelf();
@@ -6531,6 +6779,20 @@ function bindUI() {
   $('#update-btn')?.addEventListener('click', otaManualCheck);
   $('#info-overlay').addEventListener('click', closeInfo);
   $('#filter-btn').addEventListener('click', toggleFilters);
+  // коллекции («свои полки»)
+  setupColDrawer();
+  $('#fab-collect')?.addEventListener('click', openColPick);
+  $('#col-create-cancel')?.addEventListener('click', closeColCreate);
+  $('#col-create-save')?.addEventListener('click', saveNewCol);
+  $('#col-name')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveNewCol(); } });
+  $('#col-pick-cancel')?.addEventListener('click', closeColPick);
+  $('#col-pick-add')?.addEventListener('click', applyColPick);
+  $('#col-pick-list')?.addEventListener('click', e => {
+    const b = e.target.closest('[data-pick]'); if (!b || !colPickSel) return;
+    const id = b.dataset.pick;
+    if (colPickSel.has(id)) colPickSel.delete(id); else colPickSel.add(id);
+    b.classList.toggle('on', colPickSel.has(id));
+  });
 
   $('#reset-progress-btn').addEventListener('click', async () => {
     if (!state.book) return;

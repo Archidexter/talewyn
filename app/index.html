@@ -10,7 +10,7 @@
 if(th==='auto')th=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <link rel="stylesheet" href="fonts.css?v=9">
-<link rel="stylesheet" href="app.css?v=151">
+<link rel="stylesheet" href="app.css?v=152">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -114,7 +114,46 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
      Живёт СНАРУЖИ #shelf-view намеренно: у полки при каждом показе играет анимация
      входа с transform, а transform на предке ломает position: fixed — элемент начинает
      считать координаты от предка, и кружки ездили вместе с полкой. -->
+<!-- Коллекции: выдвижной раздел слева, лежит поверх интерфейса -->
+<div id="col-scrim" hidden></div>
+<aside id="col-drawer" hidden aria-label="Коллекции">
+  <div class="col-head"><span class="col-title" data-i18n="colTitle">Коллекции</span><span class="col-active-name" id="col-active-name"></span></div>
+  <div class="col-list" id="col-list"></div>
+  <button class="col-add" id="col-add" data-i18n-title="colNew" title="Новая коллекция" aria-label="Новая коллекция">
+    <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+</aside>
+<button id="col-tab" aria-label="Коллекции" title="Коллекции">
+  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+</button>
+
+<!-- окно ввода имени новой коллекции -->
+<div id="col-create" hidden>
+  <div class="col-modal-box">
+    <input id="col-name" type="text" class="field" maxlength="48" autocomplete="off" data-i18n-ph="colNamePh" placeholder="Название коллекции">
+    <div class="col-modal-actions">
+      <button id="col-create-cancel" class="ghost-btn" data-i18n="colCancel">Отменить</button>
+      <button id="col-create-save" class="primary-btn" data-i18n="colSave">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- выбор коллекций для добавления выбранных книг (мультивыбор) -->
+<div id="col-pick" hidden>
+  <div class="col-modal-box">
+    <div class="col-modal-title" data-i18n="colPickTitle">В какие коллекции добавить</div>
+    <div class="col-pick-list" id="col-pick-list"></div>
+    <div class="col-modal-actions">
+      <button id="col-pick-cancel" class="ghost-btn" data-i18n="colCancel">Отменить</button>
+      <button id="col-pick-add" class="primary-btn" data-i18n="colAdd2">Добавить</button>
+    </div>
+  </div>
+</div>
+
 <div id="add-fab" hidden>
+  <button id="fab-collect" class="fab-mini fab-collect" data-i18n-title="colAddT" title="В коллекцию" aria-label="В коллекцию">
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12H9"/><path d="M13 8l-4 4 4 4"/><path d="M5 5v14"/></svg>
+  </button>
   <button id="fab-del" class="fab-mini fab-del" title="Удалить выбранное" aria-label="Удалить выбранное">
     <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
       <g class="trash-lid"><path d="M4 7h16"/><path d="M9.5 7V5.3a1.3 1.3 0 0 1 1.3-1.3h2.4a1.3 1.3 0 0 1 1.3 1.3V7"/></g>
@@ -670,6 +709,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=162"></script>
+<script src="app.js?v=163"></script>
 </body>
 </html>

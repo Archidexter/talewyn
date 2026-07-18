@@ -1175,6 +1175,89 @@ body.sel-mode #add-fab .fab-del { display: grid; animation: fab-del-in .3s cubic
 /* явная анимация нажатия: кнопка «клюёт», крышка мусорки поднимается и опускается */
 .fab-del.pressing { animation: fab-del-press .3s ease; }
 .fab-del.pressing .trash-lid { animation: trash-open .44s ease; }
+/* иконка «в коллекцию» — как урна: только в режиме выбора, стоит над ней */
+#add-fab .fab-collect { display: none; }
+body.sel-mode #add-fab .fab-collect { display: grid; animation: fab-del-in .3s cubic-bezier(.2, .8, .3, 1); }
+
+/* ══════════ коллекции («свои полки») ══════════ */
+#col-scrim { position: fixed; inset: 0; z-index: 64; background: rgb(9 11 6 / .4); opacity: 0; transition: opacity .3s ease; }
+#col-scrim.open { opacity: 1; }
+#col-drawer {
+  position: fixed; top: 0; left: 0; bottom: 0; z-index: 65;
+  width: clamp(160px, 40vw, 224px);
+  padding: calc(14px + max(env(safe-area-inset-top, 0px), var(--sat, 0px))) 12px
+           calc(14px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));
+  background: var(--elev); border-right: 1px solid var(--border-strong);
+  box-shadow: 14px 0 44px rgb(0 0 0 / .4);
+  transform: translateX(-100%); transition: transform .32s cubic-bezier(.32, .72, 0, 1);
+  display: flex; flex-direction: column; gap: 10px; overscroll-behavior: contain;
+}
+#col-drawer.open { transform: translateX(0); }
+.col-head { display: flex; align-items: baseline; gap: 8px; padding: 2px 2px 8px; border-bottom: 1px solid var(--border); }
+.col-title { font-family: var(--display); font-size: 17px; font-weight: 700; color: var(--gild); }
+.col-active-name { font-size: 11.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.col-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 4px 0; scrollbar-width: none; }
+.col-list::-webkit-scrollbar { display: none; }
+.col-item {
+  display: flex; align-items: center; gap: 6px; padding: 9px 8px 9px 4px;
+  border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg);
+  touch-action: pan-y; will-change: transform; user-select: none; -webkit-user-select: none;
+}
+.col-item.active { border-color: var(--gild); background: color-mix(in srgb, var(--gild) 12%, var(--bg)); }
+.col-item.dragging { opacity: .92; border-color: var(--gild); box-shadow: 0 8px 22px rgb(0 0 0 / .4); position: relative; z-index: 2; }
+.col-grip { flex: none; width: 18px; height: 24px; display: grid; grid-template-columns: repeat(2, 4px); gap: 3px 4px; align-content: center; justify-content: center; cursor: grab; touch-action: none; }
+.col-grip i { width: 4px; height: 4px; border-radius: 50%; background: var(--faint); }
+.col-item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 600; font-size: 14px; }
+.col-item-count { flex: none; font-size: 11.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.col-item-del { flex: none; width: 24px; height: 24px; border-radius: 50%; border: 0; background: transparent; color: var(--faint); font-size: 12.5px; cursor: pointer; display: grid; place-items: center; -webkit-tap-highlight-color: transparent; transition: transform .12s, color .15s; }
+.col-item-del:active { transform: scale(.85); color: var(--accent); }
+.col-add {
+  flex: none; align-self: center; width: 54px; height: 54px; border-radius: 50%;
+  border: 1.5px dashed var(--border-strong); background: transparent; color: var(--gild);
+  display: grid; place-items: center; cursor: pointer; margin: 6px auto 2px;
+  -webkit-tap-highlight-color: transparent; transition: transform .14s, border-color .15s, background .15s;
+}
+.col-add:active { transform: scale(.9); }
+@media (hover: hover) { .col-add:hover { border-color: var(--gild); background: color-mix(in srgb, var(--gild) 10%, transparent); } }
+#col-drawer.col-empty .col-list { flex: 0 0 auto; }
+#col-drawer.col-empty .col-add { margin: auto; }   /* пусто → «+» ровно по центру раздела */
+
+/* язычок на левом краю (только на полке) */
+#col-tab {
+  position: fixed; left: 0; top: 50%; translate: 0 -50%; z-index: 66;
+  width: 22px; height: 58px; padding: 0;
+  border: 1px solid var(--border-strong); border-left: none; border-radius: 0 14px 14px 0;
+  background: color-mix(in srgb, var(--elev) 94%, transparent);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  color: var(--gild); display: grid; place-items: center; cursor: pointer;
+  box-shadow: 4px 0 14px rgb(0 0 0 / .3); -webkit-tap-highlight-color: transparent; touch-action: none;
+  transition: left .32s cubic-bezier(.32, .72, 0, 1);
+}
+#col-tab svg { transition: transform .3s; }
+body.col-open #col-tab { left: clamp(160px, 40vw, 224px); }   /* открыто — язычок едет на край раздела */
+body.col-open #col-tab svg { transform: rotate(180deg); }
+#shelf-view[hidden] ~ #col-tab { display: none; }   /* язычок виден только на главной полке */
+
+/* центральные окна: создание имени / выбор коллекций */
+#col-create, #col-pick { position: fixed; inset: 0; z-index: 82; display: grid; place-items: center; padding: 20px; background: rgb(9 11 6 / .5); opacity: 0; transition: opacity .2s ease; }
+#col-create.open, #col-pick.open { opacity: 1; }
+.col-modal-box {
+  width: min(360px, 92vw); background: var(--elev); border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg); padding: 18px; box-shadow: 0 20px 60px rgb(0 0 0 / .5);
+  display: flex; flex-direction: column; gap: 14px;
+  transform: translateY(10px) scale(.98); transition: transform .2s ease;
+}
+#col-create.open .col-modal-box, #col-pick.open .col-modal-box { transform: none; }
+.col-modal-title { font-weight: 700; font-size: 15px; color: var(--text); text-align: center; }
+.col-modal-actions { display: flex; gap: 10px; }
+.col-modal-actions > * { flex: 1; }
+.col-pick-list { display: flex; flex-direction: column; gap: 8px; max-height: 46vh; overflow-y: auto; }
+.col-pick-item { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; font-size: 14.5px; text-align: left; -webkit-tap-highlight-color: transparent; transition: border-color .15s, background .15s; }
+.col-pick-item.on { border-color: var(--gild); background: color-mix(in srgb, var(--gild) 14%, var(--bg)); }
+.col-pick-check { flex: none; width: 20px; height: 20px; border-radius: 6px; border: 1.5px solid var(--border-strong); display: grid; place-items: center; transition: .15s; }
+.col-pick-item.on .col-pick-check { border-color: var(--gild); background: var(--gild); }
+.col-pick-item.on .col-pick-check::after { content: '✓'; color: #1b1206; font-size: 13px; font-weight: 800; line-height: 1; }
+.col-pick-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @keyframes fab-del-press { 0%, 100% { transform: scale(1); } 45% { transform: scale(.82); } }
 @keyframes trash-open { 0% { transform: rotate(0); } 40% { transform: rotate(32deg) translateY(-1.5px); } 100% { transform: rotate(0); } }
 

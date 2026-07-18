@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.32';
+const APP_VERSION = '1.0.33';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -1601,31 +1601,51 @@ function setupColDrawer() {
   });
   // перетаскивание коллекций за «ручку» (реордер)
   if (list) {
-    // реордер: тащим за ручку, элемент следует за пальцем; вставку считаем ТОЛЬКО на отпускании
-    // (никаких перестановок DOM во время жеста — оттого и не спотыкается)
+    // реордер: таскаемый следует за пальцем, а СОСЕДИ плавно сдвигаются на слот, открывая щель
+    // в целевом месте. DOM переставляем один раз на отпускании — оттого не спотыкается.
     let drag = null;
     list.addEventListener('pointerdown', e => {
       const grip = e.target.closest('[data-colgrip]'); if (!grip) return;
       const item = grip.closest('.col-item'); if (!item) return;
       e.preventDefault();
-      drag = { item, y0: e.clientY, top0: item.getBoundingClientRect().top, h: item.offsetHeight,
-               others: [...list.querySelectorAll('.col-item')].filter(x => x !== item) };
+      const items = [...list.querySelectorAll('.col-item')];
+      const from = items.indexOf(item);
+      const rects = items.map(el => el.getBoundingClientRect());
+      const rowH = rects.length > 1 ? Math.abs(rects[1].top - rects[0].top) : (item.offsetHeight + 8);
+      drag = { item, items, from, to: from, rects, rowH, h: item.offsetHeight, y0: e.clientY };
       item.classList.add('dragging');
+      for (const el of items) el.style.transition = 'transform .16s ease';
+      item.style.transition = 'none';
       try { list.setPointerCapture(e.pointerId); } catch {}
     });
     list.addEventListener('pointermove', e => {
       if (!drag) return;
-      drag.item.style.transform = 'translateY(' + (e.clientY - drag.y0) + 'px)';
+      const dy = e.clientY - drag.y0;
+      drag.item.style.transform = 'translateY(' + dy + 'px)';
+      const slot0C = drag.rects[0].top + drag.h / 2;
+      const cur = drag.rects[drag.from].top + drag.h / 2 + dy;
+      let to = Math.round((cur - slot0C) / drag.rowH);
+      to = Math.max(0, Math.min(drag.items.length - 1, to));
+      if (to === drag.to) return;
+      drag.to = to;
+      drag.items.forEach((el, i) => {
+        if (i === drag.from) return;
+        let s = 0;
+        if (drag.from < to && i > drag.from && i <= to) s = -drag.rowH;        // едут вверх, освобождая место
+        else if (drag.from > to && i >= to && i < drag.from) s = drag.rowH;    // едут вниз
+        el.style.transform = s ? 'translateY(' + s + 'px)' : '';
+      });
     });
-    const dropEnd = e => {
+    const dropEnd = () => {
       if (!drag) return;
-      const item = drag.item;
-      const endY = (e && e.clientY != null) ? e.clientY : drag.y0;
-      const centerY = drag.top0 + drag.h / 2 + (endY - drag.y0);
-      item.classList.remove('dragging'); item.style.transform = '';
-      let ref = null;   // вставить перед первым соседом, чей центр ниже нашего
-      for (const o of drag.others) { const r = o.getBoundingClientRect(); if (centerY < r.top + r.height / 2) { ref = o; break; } }
-      list.insertBefore(item, ref);
+      const { item, items, from, to } = drag;
+      for (const el of items) { el.style.transition = ''; if (el !== item) el.style.transform = ''; }
+      item.classList.remove('dragging'); item.style.transform = ''; item.style.transition = '';
+      if (to !== from) {                     // применяем новый порядок в DOM
+        const arr = items.filter(el => el !== item);
+        arr.splice(to, 0, item);
+        arr.forEach(el => list.appendChild(el));
+      }
       [...list.querySelectorAll('.col-item')].forEach((el, i) => {
         const c = colById(el.dataset.col);
         if (c && c.order !== i) { c.order = i; saveCollection(c); }

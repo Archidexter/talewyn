@@ -10,7 +10,7 @@
 if(th==='auto')th=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <link rel="stylesheet" href="fonts.css?v=9">
-<link rel="stylesheet" href="app.css?v=143">
+<link rel="stylesheet" href="app.css?v=144">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -377,6 +377,20 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     </div>
   </div>
 
+  <div class="set-section" data-i18n="pronunSec">Произношение</div>
+  <div class="v3row fullrow">
+    <div class="pronun-block">
+      <div class="pronun-hint" data-i18n="pronunHint">Как читать слово при озвучке. Например: Hermione → Хермайони.</div>
+      <div class="pronun-list" id="pronun-list"></div>
+      <div class="pronun-add">
+        <input class="field pronun-in" id="pronun-from" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" data-i18n-ph="pronunFromPh" placeholder="Слово">
+        <span class="pronun-arrow" aria-hidden="true">→</span>
+        <input class="field pronun-in" id="pronun-to" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" data-i18n-ph="pronunToPh" placeholder="Как читать">
+        <button class="pronun-add-btn" id="pronun-add" data-i18n-title="pronunAdd" title="Добавить" aria-label="Добавить">+</button>
+      </div>
+    </div>
+  </div>
+
   <div class="set-section" data-i18n="secApp">Приложение</div>
   <div class="v3row fullrow">
     <div class="chips" id="seg-lang">
@@ -430,7 +444,10 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <div id="word-pop" hidden>
   <div class="wp-word" id="wp-word"></div>
   <div class="wp-tr" id="wp-tr"></div>
-  <button class="wp-more" id="wp-more" data-i18n="wpMore">Подробнее</button>
+  <div class="wp-actions">
+    <button class="wp-more" id="wp-pron" data-i18n="wpPron">Произношение</button>
+    <button class="wp-more" id="wp-more" data-i18n="wpMore">Подробнее</button>
+  </div>
 </div>
 
 <div id="sel-toolbar" hidden>
@@ -632,6 +649,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=148"></script>
+<script src="app.js?v=149"></script>
 </body>
 </html>

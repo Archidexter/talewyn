@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.15';
+const APP_VERSION = '1.0.16';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -165,6 +165,7 @@ const DEFAULT_SETTINGS = {
   theme: 'dark', font: 'serif', size: 18, lh: 1.65, width: 'medium',
   align: 'justify',
   wake: 'off',
+  pronun: [],         // словарь произношений для озвучки: [{from, to, lang}]
   trChoice: 'auto',   // язык перевода по умолчанию (когда книга не открыта)
   lang: (navigator.language || 'ru').toLowerCase().startsWith('ru') ? 'ru' : 'en',
 };
@@ -223,6 +224,9 @@ const I18N = {
     booksN: 'Книг на полке: {n}',
     toShelf: 'К полке',
     searchPh: 'Поиск по книге…', reading: 'Читаю',
+    pronunSec: 'Произношение', pronunHint: 'Как читать слово при озвучке. Например: Hermione → Хермайони.',
+    pronunFromPh: 'Слово', pronunToPh: 'Как читать', pronunAdd: 'Добавить', pronunDel: 'Убрать',
+    pronunEmpty: 'Пока пусто. Добавь слово и то, как его произносить.', wpPron: 'Произношение',
     start: 'Начать чтение', cont: 'Продолжить чтение', nextCh: 'Следующая глава',
     footer: 'Прочитано {r} из {t} глав ({p}%)',
     build: 'AD.Talewyn · {v}',
@@ -357,6 +361,9 @@ const I18N = {
     booksN: 'Books on the shelf: {n}',
     toShelf: 'To the shelf',
     searchPh: 'Search this book…', reading: 'Reading',
+    pronunSec: 'Pronunciation', pronunHint: 'How a word is read aloud. E.g. Hermione → Hermaioni.',
+    pronunFromPh: 'Word', pronunToPh: 'How to read it', pronunAdd: 'Add', pronunDel: 'Remove',
+    pronunEmpty: 'Empty for now. Add a word and how to pronounce it.', wpPron: 'Pronunciation',
     start: 'Start reading', cont: 'Continue reading', nextCh: 'Next chapter',
     footer: '{r} of {t} chapters read ({p}%)',
     build: 'AD.Talewyn · {v}',
@@ -503,6 +510,12 @@ function loadSettings() {
     s.trLang = s.lang === 'ru' ? 'ru' : 'en';
   if (!['auto', 'ru', 'en', 'ja', 'de', 'fr', 'es', 'it', 'pt', 'pl', 'uk', 'zh-CN', 'ko', 'tr'].includes(s.trChoice))
     s.trChoice = 'auto';
+  // словарь произношений: только валидные пары {from, to} (+ необязательный lang на будущее)
+  s.pronun = Array.isArray(s.pronun)
+    ? s.pronun
+        .filter(e => e && typeof e.from === 'string' && typeof e.to === 'string' && e.from.trim() && e.to.trim())
+        .map(e => ({ from: e.from.trim(), to: e.to.trim(), lang: typeof e.lang === 'string' ? e.lang : '' }))
+    : [];
   return s;
 }
 
@@ -2953,6 +2966,39 @@ function splitSentences(text) {
 // caretOffsetAt по тапу). Раньше предложения резались по innerText, а base искался через
 // textContent.indexOf(нормализованной строки) — из-за trim/склейки коротких строка часто
 // не находилась (base=-1 или смещался), и тап попадал не в то предложение (задача 5).
+// ── словарь произношений ──────────────────────────────────────────────────
+// Подменяем слова ПЕРЕД синтезом (имена/аббревиатуры, которые движок коверкает).
+// Меняется только произносимая строка (speakTextOf), сам it.text остаётся оригиналом —
+// поэтому подсветка/смещения караоке не съезжают. Границы слова юникодные: JS `\b`
+// знает лишь латиницу, поэтому кириллица матчится через lookaround по \p{L}/\p{N}.
+let _pronunRE = null, _pronunMap = null, _pronunDirty = true;
+function pronunInvalidate() { _pronunDirty = true; }
+function pronunBuild() {
+  _pronunDirty = false; _pronunRE = null; _pronunMap = null;
+  const list = (settings.pronun || []).filter(e => e && e.from && e.to);
+  if (!list.length) return;
+  const byLen = [...list].sort((a, b) => b.from.length - a.from.length);   // длинные вперёд
+  _pronunMap = new Map();
+  const alts = [];
+  for (const e of byLen) {
+    const key = e.from.toLowerCase();
+    if (_pronunMap.has(key)) continue;
+    _pronunMap.set(key, e.to);
+    alts.push(e.from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  }
+  try {
+    _pronunRE = new RegExp('(?<![\\p{L}\\p{N}_])(' + alts.join('|') + ')(?![\\p{L}\\p{N}_])', 'giu');
+  } catch { _pronunRE = null; }   // старый движок без lookbehind/\p{} — словарь просто не применяется
+}
+function applyPronun(text) {
+  if (_pronunDirty) pronunBuild();
+  if (!_pronunRE || !text) return text;
+  _pronunRE.lastIndex = 0;
+  return text.replace(_pronunRE, m => { const r = _pronunMap.get(m.toLowerCase()); return r == null ? m : r; });
+}
+// произносимая строка предложения (с учётом словаря) — отдельная от it.text
+function speakTextOf(it) { return applyPronun(it.text); }
+
 function ttsCollect() {
   const paras = [...document.querySelectorAll(
     '#chapter-body p, #chapter-body h3, #chapter-body h4, #chapter-body blockquote')]
@@ -3495,7 +3541,7 @@ function neuralData(pos) {
       for (let attempt = 1; attempt <= MAX_TRIES; attempt++) {
         const started = performance.now();
         try {
-          const eng = new window.TalewynEdgeTTS(it.text, voice);
+          const eng = new window.TalewynEdgeTTS(speakTextOf(it), voice);   // словарь произношений
           // страховка от зависания: не молчим вечно, отклоняемся по таймауту
           const res = await Promise.race([
             eng.synthesize(),
@@ -3605,11 +3651,11 @@ function deviceSpeakOnce(pos) {
   const advance = () => { if (token === tts.token && tts.playing) speakCurrent(pos + 1); };
   if (capTTS) {
     if (it.base >= 0) capKaraoke(it, token);
-    capTTS.speak({ text: it.text, lang: 'ru-RU', rate: settings.ttsRate, category: 'playback' })
+    capTTS.speak({ text: speakTextOf(it), lang: 'ru-RU', rate: settings.ttsRate, category: 'playback' })   // словарь произношений
       .then(advance, advance);
   } else if (ttsSupported) {
     speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(it.text);
+    const u = new SpeechSynthesisUtterance(speakTextOf(it));   // словарь произношений
     if (ttsVoices[0]) u.voice = ttsVoices[0];
     u.lang = 'ru-RU'; u.rate = settings.ttsRate;
     u.onend = advance; u.onerror = advance;
@@ -3637,13 +3683,15 @@ function browserSpeak(pos) {
   ttsHighlight(it.el);
   updPos();
   if (it.base >= 0) hlSet('sent', it.el, it.base, it.base + it.text.length);
-  const u = new SpeechSynthesisUtterance(it.text);
+  const speak = speakTextOf(it);           // словарь произношений
+  const sub = speak !== it.text;           // строка изменилась → charIndex боундари уже не про it.text
+  const u = new SpeechSynthesisUtterance(speak);
   const v = ttsVoices.find(x => x.voiceURI === settings.ttsVoice) || ttsVoices[0];
   if (v) u.voice = v;
   u.lang = 'ru-RU';
   u.rate = settings.ttsRate;
   u.addEventListener('boundary', e => {
-    if (token !== tts.token || it.base < 0) return;
+    if (token !== tts.token || it.base < 0 || sub) return;   // при подмене — только подсветка предложения
     if (e.name && e.name !== 'word') return;
     const start = it.base + e.charIndex;
     let len = e.charLength;
@@ -3708,7 +3756,7 @@ async function capSpeak(pos) {
   updPos();
   if (it.base >= 0) { hlSet('sent', it.el, it.base, it.base + it.text.length); capKaraoke(it, token); }
   try {
-    const opts = { text: it.text, lang: 'ru-RU', rate: settings.ttsRate, category: 'playback' };
+    const opts = { text: speakTextOf(it), lang: 'ru-RU', rate: settings.ttsRate, category: 'playback' };   // словарь произношений
     const sel = settings.ttsVoice.slice(4);            // после 'cap:'
     if (sel && sel !== 'device' && !isNaN(+sel)) opts.voice = +sel;   // конкретный голос устройства
     await capTTS.speak(opts);
@@ -6214,6 +6262,12 @@ function bindUI() {
     onCommit: i => autoScrollSet(i),
     onTap: () => autoScrollCycle(),
   });
+  // словарь произношений: добавить/удалить + Enter, и быстрый ввод из попапа слова
+  $('#pronun-add')?.addEventListener('click', addPronun);
+  $('#pronun-from')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('#pronun-to').focus(); } });
+  $('#pronun-to')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addPronun(); } });
+  $('#pronun-list')?.addEventListener('click', e => { const b = e.target.closest('[data-pi]'); if (b) delPronun(+b.dataset.pi); });
+  $('#wp-pron')?.addEventListener('click', e => { e.stopPropagation(); openPronunFor(wordPopHit && wordPopHit.word); });
   $('#bm-list-btn').addEventListener('click', () => toggleBmList());
   $('#bm-list').addEventListener('click', e => {
     const del = e.target.closest('[data-bmdel]');
@@ -6640,12 +6694,56 @@ function bindAllSheets() {
 
 function openSettings() {
   syncSettingsUI();
+  renderPronun();
   sheetShow($('#settings-sheet'), $('#settings-overlay'));
   // список языков переводчика подводим к текущему, когда шторка уже видна (есть размеры)
   requestAnimationFrame(() => requestAnimationFrame(() => scrollTrPickerToCurrent(false)));
 }
 function closeSettings() {
   sheetHide($('#settings-sheet'), $('#settings-overlay'));
+}
+
+// ── словарь произношений: экран управления ──
+function renderPronun() {
+  const box = $('#pronun-list');
+  if (!box) return;
+  const list = settings.pronun || [];
+  box.innerHTML = list.length
+    ? list.map((e, i) =>
+        `<div class="pronun-item"><span class="pronun-from">${esc(e.from)}</span>`
+        + `<span class="pronun-arrow" aria-hidden="true">→</span>`
+        + `<span class="pronun-to">${esc(e.to)}</span>`
+        + `<button class="pronun-del" data-pi="${i}" title="${esc(t('pronunDel'))}" aria-label="${esc(t('pronunDel'))}">✕</button></div>`
+      ).join('')
+    : `<div class="pronun-empty">${esc(t('pronunEmpty'))}</div>`;
+}
+function addPronun() {
+  const fromEl = $('#pronun-from'), toEl = $('#pronun-to');
+  if (!fromEl || !toEl) return;
+  const from = (fromEl.value || '').trim(), to = (toEl.value || '').trim();
+  if (!from || !to) return;
+  settings.pronun = settings.pronun || [];
+  const ex = settings.pronun.find(e => e.from.toLowerCase() === from.toLowerCase());
+  if (ex) ex.to = to; else settings.pronun.push({ from, to, lang: '' });   // слово уже есть → обновляем
+  saveSettings(); pronunInvalidate(); renderPronun();
+  fromEl.value = ''; toEl.value = ''; fromEl.focus();
+}
+function delPronun(i) {
+  if (!settings.pronun || !settings.pronun[i]) return;
+  settings.pronun.splice(i, 1);
+  saveSettings(); pronunInvalidate(); renderPronun();
+}
+// быстрое добавление из попапа слова: открываем настройки с уже вписанным словом
+function openPronunFor(word) {
+  closeWordPop();
+  openSettings();
+  const fromEl = $('#pronun-from'), toEl = $('#pronun-to');
+  if (fromEl) fromEl.value = word || '';
+  if (toEl) toEl.value = '';
+  requestAnimationFrame(() => {
+    $('#pronun-list')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    (word ? toEl : fromEl)?.focus();
+  });
 }
 
 function openInfo() {

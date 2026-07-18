@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.65';
+const APP_VERSION = '1.0.66';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -2339,7 +2339,73 @@ function setShelfTab(tab) {
 // поэтому показываем и прячем их вместе с ней вручную.
 function syncAddFab() {
   const f = $('#add-fab');
-  if (f) f.hidden = !!$('#shelf-view').hidden;
+  if (f) { f.hidden = !!$('#shelf-view').hidden; if (!f.hidden) applyFabDock(); }
+}
+
+// ── перетаскивание кластера #add-fab по L-рельсе (правый край ↔ низ) с запоминанием позиции ──
+// позицию храним как ДОЛЮ вдоль рельсы (0..1) — переживает поворот и смену размера экрана.
+let fabDock = null;   // {edge:'right'|'bottom', frac} или null = дефолт из CSS (справа-снизу)
+const clamp01 = x => Math.max(0, Math.min(1, x));
+function cssInset(n) { const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(n)); return isFinite(v) ? v : 0; }
+function applyFabDock() {
+  const fab = $('#add-fab');
+  if (!fab || fab.hidden || !fabDock) return;
+  const bottom = fabDock.edge === 'bottom';
+  fab.classList.toggle('fab-dock-bottom', bottom);
+  const r = fab.getBoundingClientRect();
+  if (!r.width || !r.height) return;            // ещё не в потоке — применим при следующем показе
+  const W = innerWidth, H = innerHeight, m = 16;
+  if (bottom) {   // нижняя рельса: фикс снизу (из CSS), двигаем по X, не вылезая за края
+    const left = Math.max(m, Math.min(W - r.width - m, fabDock.frac * W - r.width / 2));
+    fab.style.top = 'auto'; fab.style.left = left + 'px'; fab.style.right = 'auto'; fab.style.bottom = '';
+  } else {        // правая рельса: фикс справа (из CSS), двигаем по Y
+    const top = Math.max(m + cssInset('--sat'), Math.min(H - r.height - m - cssInset('--sab'), fabDock.frac * H - r.height / 2));
+    fab.style.top = top + 'px'; fab.style.left = 'auto'; fab.style.right = ''; fab.style.bottom = 'auto';
+  }
+}
+function initFabDrag() {
+  const fab = $('#add-fab'); if (!fab) return;
+  try { const s = JSON.parse(localStorage.getItem('talewyn-fab-dock') || 'null'); if (s && s.edge) fabDock = s; } catch {}
+  applyFabDock();
+  let holdT = 0, dragging = false, pid = null, sx = 0, sy = 0, justDragged = false;
+  const startDrag = () => {
+    dragging = true;
+    fab.classList.add('fab-dragging');
+    try { fab.setPointerCapture(pid); } catch {}
+    if (!fabDock) { const r = fab.getBoundingClientRect(); fabDock = { edge: 'right', frac: clamp01((r.top + r.height / 2) / innerHeight) }; }
+  };
+  const moveDock = (fx, fy) => {
+    const W = innerWidth, H = innerHeight, band = 92;   // палец ближе band к низу → нижняя рельса
+    fabDock = (fy > H - band) ? { edge: 'bottom', frac: clamp01(fx / W) } : { edge: 'right', frac: clamp01(fy / H) };
+    applyFabDock();
+  };
+  fab.addEventListener('pointerdown', e => {
+    if (e.button && e.button !== 0) return;
+    pid = e.pointerId; sx = e.clientX; sy = e.clientY;
+    clearTimeout(holdT); holdT = setTimeout(startDrag, 380);   // удержание ~0.38с → захват
+  });
+  fab.addEventListener('pointermove', e => {
+    if (e.pointerId !== pid) return;
+    if (!dragging) { if (Math.abs(e.clientX - sx) > 8 || Math.abs(e.clientY - sy) > 8) clearTimeout(holdT); return; }
+    e.preventDefault();
+    moveDock(e.clientX, e.clientY);
+  });
+  const end = e => {
+    if (pid == null || (e && e.pointerId !== pid)) return;
+    clearTimeout(holdT);
+    if (dragging) {
+      dragging = false; fab.classList.remove('fab-dragging');
+      try { localStorage.setItem('talewyn-fab-dock', JSON.stringify(fabDock)); } catch {}
+      justDragged = true; setTimeout(() => { justDragged = false; }, 80);
+    }
+    try { fab.releasePointerCapture(pid); } catch {}
+    pid = null;
+  };
+  fab.addEventListener('pointerup', end);
+  fab.addEventListener('pointercancel', end);
+  // клик сразу после перетаскивания глушим (в фазе перехвата, до обработчиков кнопок)
+  fab.addEventListener('click', e => { if (justDragged) { e.preventDefault(); e.stopPropagation(); } }, true);
+  addEventListener('resize', applyFabDock);
 }
 function showShelf() {
   navToken++;
@@ -7017,6 +7083,7 @@ function bindUI() {
   // импорт: кнопка, выбор файла, перетаскивание
   $('#import-btn').addEventListener('click', () => $('#file-input').click());
   $('#url-btn').addEventListener('click', importFromUrl);
+  initFabDrag();   // кластер кнопок можно перетаскивать по правому/нижнему краю (удержанием)
   $('#file-input').addEventListener('change', e => {
     doImport([...e.target.files]);
     e.target.value = '';

@@ -10,7 +10,7 @@
 if(th==='auto')th=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <link rel="stylesheet" href="fonts.css?v=9">
-<link rel="stylesheet" href="app.css?v=172">
+<link rel="stylesheet" href="app.css?v=173">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -118,16 +118,19 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <!-- Коллекции: выдвижной раздел слева, лежит поверх интерфейса -->
 <div id="col-scrim" hidden></div>
 <aside id="col-drawer" hidden aria-label="Коллекции">
-  <!-- сегмент «Загрузки»: текущие единицы импорта (книга/аудиокнига/ссылка целиком), с отменой -->
-  <section id="dl-section" hidden>
+  <!-- верхняя часть (прокручиваемая): коллекции -->
+  <div class="col-scroll">
+    <div class="col-head"><span class="col-title" data-i18n="colTitle">Коллекции</span></div>
+    <div class="col-list" id="col-list"></div>
+    <button class="col-add" id="col-add" data-i18n-title="colNew" title="Новая коллекция" aria-label="Новая коллекция">
+      <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+  </div>
+  <!-- сегмент «Загрузки» ВНИЗУ, всегда виден, ~1/4 высоты: единицы импорта (книга/аудиокнига/ссылка), с отменой -->
+  <section id="dl-section">
     <div class="col-head"><span class="col-title" data-i18n="dlTitle">Загрузки</span></div>
     <div class="dl-list" id="dl-list"></div>
   </section>
-  <div class="col-head"><span class="col-title" data-i18n="colTitle">Коллекции</span></div>
-  <div class="col-list" id="col-list"></div>
-  <button class="col-add" id="col-add" data-i18n-title="colNew" title="Новая коллекция" aria-label="Новая коллекция">
-    <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-  </button>
 </aside>
 <button id="col-tab" aria-label="Коллекции" title="Коллекции">
   <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
@@ -763,6 +766,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=202"></script>
+<script src="app.js?v=203"></script>
 </body>
 </html>

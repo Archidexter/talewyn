@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.69';
+const APP_VERSION = '1.0.70';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -236,7 +236,7 @@ const I18N = {
     pronunEmpty: 'Пока пусто', wpPron: 'Произношение', wpSay: 'Озвучить',
     otaReady: 'Обновление {v} готово', otaApply: 'Обновить',
     updateT: 'Проверить обновления', otaNoUpd: 'Обновлять нечего',
-    dlTitle: 'Загрузки', dlQueued: 'в очереди', dlWorking: 'обработка…', dlProgN: 'файл {i} из {n}', dlCancel: 'Отменить загрузку',
+    dlTitle: 'Загрузки', dlQueued: 'в очереди', dlWorking: 'обработка…', dlProgN: 'файл {i} из {n}', dlCancel: 'Отменить загрузку', dlEmpty: 'Нет активных загрузок',
     colTitle: 'Коллекции', colNew: 'Новая коллекция', colNamePh: 'Название коллекции',
     colCancel: 'Отменить', colSave: 'Сохранить', colDelete: 'Удалить коллекцию',
     colDelConfirm: 'Удалить коллекцию «{n}»?', colAddT: 'В коллекцию',
@@ -256,7 +256,7 @@ const I18N = {
     scanFolder: 'Отдельная папка', scanFolderSub: 'Выбрать, где искать',
     scanNeedPerm: 'Дай доступ к файлам, чтобы искать книги', scanGrant: 'Дать доступ',
     scanBusyStat: 'папок: {d} · найдено: {n}', scanFound: 'Найдено книг: {n}', scanNone: 'Книги не найдены',
-    scanSelAll: 'Все', scanSelNone: 'Снять', scanReading: 'Читаю {i} из {n}…',
+    scanSelAll: 'Все', scanSelNone: 'Снять', scanReading: 'Читаю {i} из {n}…', scanTracks: '· {n} файлов',
     scanAdd: 'Добавить ({n})', scanAllFmt: 'Все форматы · {n}',
     scanErr: 'Не удалось просканировать', scanNoNative: 'Автопоиск доступен только в приложении',
     start: 'Начать чтение', cont: 'Продолжить чтение', nextCh: 'Следующая глава',
@@ -410,7 +410,7 @@ const I18N = {
     pronunEmpty: 'Empty', wpPron: 'Pronunciation', wpSay: 'Speak',
     otaReady: 'Update {v} ready', otaApply: 'Update',
     updateT: 'Check for updates', otaNoUpd: 'Nothing to update',
-    dlTitle: 'Downloads', dlQueued: 'queued', dlWorking: 'processing…', dlProgN: 'file {i} of {n}', dlCancel: 'Cancel download',
+    dlTitle: 'Downloads', dlQueued: 'queued', dlWorking: 'processing…', dlProgN: 'file {i} of {n}', dlCancel: 'Cancel download', dlEmpty: 'No active downloads',
     colTitle: 'Collections', colNew: 'New collection', colNamePh: 'Collection name',
     colCancel: 'Cancel', colSave: 'Save', colDelete: 'Delete collection',
     colDelConfirm: 'Delete collection "{n}"?', colAddT: 'To collection',
@@ -430,7 +430,7 @@ const I18N = {
     scanFolder: 'A folder', scanFolderSub: 'Choose where to look',
     scanNeedPerm: 'Grant file access to search for books', scanGrant: 'Grant',
     scanBusyStat: 'folders: {d} · found: {n}', scanFound: 'Books found: {n}', scanNone: 'No books found',
-    scanSelAll: 'All', scanSelNone: 'None', scanReading: 'Reading {i} of {n}…',
+    scanSelAll: 'All', scanSelNone: 'None', scanReading: 'Reading {i} of {n}…', scanTracks: '· {n} files',
     scanAdd: 'Add ({n})', scanAllFmt: 'All formats · {n}',
     scanErr: 'Scan failed', scanNoNative: 'Auto-search works only in the app',
     start: 'Start reading', cont: 'Continue reading', nextCh: 'Next chapter',
@@ -1265,6 +1265,36 @@ const SCAN_FMT_COLOR = {
 const scanColor = f => SCAN_FMT_COLOR[f] || '#c9a45f';
 const scanShownIdx = () => scanFiles.map((_, i) => i).filter(i => !scanFmt || scanExt(scanFiles[i].n) === scanFmt);
 
+// ── группировка находок: аудио с похожим именем в ОДНОЙ ПАПКЕ = одна аудиокнига-единица ──
+// (иначе «Гарри Поттер» на 125 треков показывался бы 125 строками, и чтобы добавить только его,
+//  пришлось бы снимать десятки лишних галочек). Книги — каждая своя единица.
+let scanGroups = [];
+const scanDir = p => String(p).replace(/[^/\\]*$/, '');
+// имя-основа: убираем расширение и хвостовую нумерацию трека (…-001, «часть 2», cd1, №3, гл. 4)
+function scanStem(n) {
+  const s = scanStripExt(n).toLowerCase()
+    .replace(/[\s._\-–—(\[#№]*(?:part|глава|гл|chapter|ch|track|cd|disc|диск|том|vol|часть)?\.?\s*\d{1,4}[\s._\-–—)\]]*$/i, '');
+  return s.replace(/[\s._\-–—]+$/, '').trim();
+}
+function buildScanGroups() {
+  const map = new Map();
+  scanFiles.forEach((f, i) => {
+    const audio = AUDIO_EXT.test(f.n);
+    const key = audio ? ('a|' + scanDir(f.p) + '|' + (scanStem(f.n) || scanDir(f.p))) : ('b|' + i);
+    let g = map.get(key);
+    if (!g) { g = { key, kind: audio ? 'audio' : 'book', ex: scanExt(f.n), idxs: [], size: 0, title: '', count: 0 }; map.set(key, g); }
+    g.idxs.push(i); g.size += (+f.s || 0);
+  });
+  const arr = [...map.values()];
+  arr.forEach(g => {
+    g.count = g.idxs.length;
+    const names = g.idxs.map(i => scanFiles[i].n);
+    g.title = (g.kind === 'audio' && g.count > 1) ? (abCommonName(names) || scanStripExt(names[0])) : scanStripExt(names[0]);
+  });
+  return arr;
+}
+const scanShownGroups = () => scanGroups.filter(g => !scanFmt || g.ex === scanFmt);
+
 // ── универсальная кастомная выпадашка: тот же вид/механика, что выбор голоса/языка ──
 // (buildLangPicker привязан к языкам перевода, поэтому здесь отдельная, но 1-в-1 по стилю)
 function buildDropdown(container, options, value, onChange) {
@@ -1324,7 +1354,7 @@ function scanState(s) {     // 'choose' | 'busy' | 'results'
 // два кадра до .open (иначе стартовое положение за краем не отрисуется), уход за 400мс.
 function openScan() {
   if (!isNativeApp() || !scanBridge()) { showToast(t('scanNoNative')); return; }   // только в приложении
-  scanFiles = []; scanSel = new Set(); scanBusyFlag = false; scanFmt = '';
+  scanFiles = []; scanGroups = []; scanSel = new Set(); scanBusyFlag = false; scanFmt = '';
   scanState('choose');
   const modal = $('#scan-modal'), scrim = $('#scan-scrim');
   scrim.hidden = false; modal.hidden = false;
@@ -1356,7 +1386,8 @@ window.__scanProgress = (d, n) => { if (scanBusyFlag) $('#scan-stat').textConten
 window.__scanResult = list => {
   scanBusyFlag = false;
   scanFiles = Array.isArray(list) ? list : [];
-  scanSel = new Set(scanFiles.map((_, i) => i));   // по умолчанию отмечены все найденные
+  scanGroups = buildScanGroups();
+  scanSel = new Set(scanGroups.map(g => g.key));   // по умолчанию отмечены все единицы
   scanFmt = '';
   buildScanFmtDD();
   renderScanResults();
@@ -1374,14 +1405,15 @@ function buildScanFmtDD() {
 function renderScanResults() {
   const box = $('#scan-list');
   if (!scanFiles.length) { box.innerHTML = `<div class="scan-empty">${t('scanNone')}</div>`; $('#scan-add').hidden = true; return; }
-  const ix = scanShownIdx();
-  box.innerHTML = ix.map(i => {
-    const f = scanFiles[i], ex = scanExt(f.n), col = scanColor(ex);
+  const groups = scanShownGroups();
+  box.innerHTML = groups.map(g => {
+    const col = scanColor(g.ex);
+    const cnt = (g.kind === 'audio' && g.count > 1) ? ` <span class="scan-cnt">${T('scanTracks', { n: g.count })}</span>` : '';
     return `<label class="scan-row">`
-      + `<span class="scan-tag" style="color:${col};border-color:${col}55;background:${col}1f">${esc(ex || '—')}</span>`
-      + `<span class="scan-name"><span class="txt">${esc(scanStripExt(f.n))}</span></span>`
-      + `<span class="scan-size">${scanFmtSize(+f.s || 0)}</span>`
-      + `<input type="checkbox" class="scan-cb" data-i="${i}"${scanSel.has(i) ? ' checked' : ''}></label>`;
+      + `<span class="scan-tag" style="color:${col};border-color:${col}55;background:${col}1f">${esc(g.ex || '—')}</span>`
+      + `<span class="scan-name"><span class="txt">${esc(g.title)}${cnt}</span></span>`
+      + `<span class="scan-size">${scanFmtSize(g.size)}</span>`
+      + `<input type="checkbox" class="scan-cb" data-key="${esc(g.key)}"${scanSel.has(g.key) ? ' checked' : ''}></label>`;
   }).join('');
   updateScanAdd();
   // бегущая строка для длинных имён: сначала все замеры (без перекладок), потом навешиваем
@@ -1393,10 +1425,10 @@ function renderScanResults() {
     });
   });
 }
-// счётчик и «Все» — ПО ТЕКУЩЕМУ ФИЛЬТРУ: считаем/отмечаем только видимые файлы
+// счётчик и «Все» — ПО ТЕКУЩЕМУ ФИЛЬТРУ: считаем/отмечаем только видимые ЕДИНИЦЫ
 function updateScanAdd() {
-  const shown = scanShownIdx();
-  const selN = shown.filter(i => scanSel.has(i)).length;   // выбрано среди ВИДИМЫХ
+  const shown = scanShownGroups();
+  const selN = shown.filter(g => scanSel.has(g.key)).length;   // выбрано среди ВИДИМЫХ единиц
   const btn = $('#scan-add');
   btn.hidden = false; btn.disabled = !selN;
   btn.textContent = T('scanAdd', { n: selN });
@@ -1404,31 +1436,34 @@ function updateScanAdd() {
   if (cb) cb.checked = shown.length > 0 && selN === shown.length;
 }
 async function scanDoAdd() {
-  // добавляем только выбранное среди ВИДИМЫХ под текущим фильтром (фильтр epub → только epub)
-  const chosen = scanShownIdx().filter(i => scanSel.has(i)).map(i => scanFiles[i]).filter(Boolean);
+  // добавляем только выбранные ЕДИНИЦЫ среди видимых под текущим фильтром
+  const chosen = scanShownGroups().filter(g => scanSel.has(g.key));
   if (!chosen.length) return;
   closeScan();
   const conv = (window.Capacitor && window.Capacitor.convertFileSrc) || (x => x);
-  const books = [];
-  const audioByDir = new Map();   // аудио группируем по родительской папке: папка = одна аудиокнига
-  let i = 0;
-  for (const it of chosen) {
-    i++;
-    showProgress(T('scanReading', { i, n: chosen.length }), i / chosen.length);
-    let file;
-    try { const r = await fetch(conv(it.p)); file = new File([await r.blob()], it.n); }
-    catch { continue; }   // нечитаемый файл пропускаем
-    if (AUDIO_EXT.test(it.n)) {
-      const dir = String(it.p).replace(/[^/\\]*$/, '');
-      if (!audioByDir.has(dir)) audioByDir.set(dir, []);
-      audioByDir.get(dir).push(file);
-    } else books.push(file);
+  const total = chosen.reduce((s, g) => s + g.idxs.length, 0);
+  let done = 0;
+  const read = async i => {
+    done++;
+    showProgress(T('scanReading', { i: done, n: total }), done / total);
+    const it = scanFiles[i];
+    try { const r = await fetch(conv(it.p)); return new File([await r.blob()], it.n); } catch { return null; }
+  };
+  const bookFiles = [];
+  let anyAudio = false;
+  // аудио-группы импортируем сразу по одной (каждая = одна аудиокнига, память освобождается);
+  // книги собираем и добавляем разом в конце (там дедуп по библиотеке)
+  for (const g of chosen) {
+    if (g.kind === 'audio') {
+      const files = [];
+      for (const i of g.idxs) { const f = await read(i); if (f) files.push(f); }
+      if (files.length) { anyAudio = true; await doImport(files); }   // одна аудиокнига из своих треков
+    } else {
+      const f = await read(g.idxs[0]); if (f) bookFiles.push(f);
+    }
   }
-  if (!books.length && !audioByDir.size) { showToast(t('scanErr')); return; }
-  // книги — все разом (doImport заведёт каждую отдельно); аудио — по папкам,
-  // каждая папка отдельным вызовом → отдельная аудиокнига (иначе разные книги слились бы в одну)
-  if (books.length) await doImport(books);
-  for (const grp of audioByDir.values()) await doImport(grp);
+  if (bookFiles.length) await doImport(bookFiles);
+  else if (!anyAudio) showToast(t('scanErr'));
 }
 $('#scan-btn')?.addEventListener('click', openScan);
 $('#scan-all')?.addEventListener('click', () => startScan('all'));
@@ -1440,15 +1475,14 @@ $('#scan-modal')?.addEventListener('click', e => { if (!e.target.closest('.confi
 $('#scan-add')?.addEventListener('click', scanDoAdd);
 // «Все» — отметить/снять все ВИДИМЫЕ (под текущим фильтром), обновляя галочки на месте
 $('#scan-allcb')?.addEventListener('change', () => {
-  const shown = scanShownIdx(), all = shown.every(i => scanSel.has(i));
-  shown.forEach(i => all ? scanSel.delete(i) : scanSel.add(i));
-  $('#scan-list').querySelectorAll('input[data-i]').forEach(cb => { cb.checked = scanSel.has(+cb.dataset.i); });
+  const shown = scanShownGroups(), all = shown.every(g => scanSel.has(g.key));
+  shown.forEach(g => all ? scanSel.delete(g.key) : scanSel.add(g.key));
+  $('#scan-list').querySelectorAll('input[data-key]').forEach(cb => { cb.checked = scanSel.has(cb.dataset.key); });
   updateScanAdd();
 });
 $('#scan-list')?.addEventListener('change', e => {
-  const cb = e.target.closest('input[data-i]'); if (!cb) return;
-  const i = +cb.dataset.i;
-  if (cb.checked) scanSel.add(i); else scanSel.delete(i);
+  const cb = e.target.closest('input[data-key]'); if (!cb) return;
+  if (cb.checked) scanSel.add(cb.dataset.key); else scanSel.delete(cb.dataset.key);
   updateScanAdd();
 });
 
@@ -2695,8 +2729,8 @@ function dlCancel(id) {
 }
 function renderDlList() {
   const list = $('#dl-list'); if (!list) return;
-  const sec = $('#dl-section'); if (sec) sec.hidden = !dlJobs.length;
   const tab = $('#col-tab'); if (tab) tab.classList.toggle('has-dl', dlJobs.length > 0);
+  if (!dlJobs.length) { list.innerHTML = `<div class="dl-empty">${esc(t('dlEmpty'))}</div>`; return; }
   list.innerHTML = dlJobs.map(j => {
     const det = j.status === 'active' && (j.frac != null || j.count > 1);
     const pct = j.frac != null ? Math.round(j.frac * 100) : (j.count ? Math.round(j.done / j.count * 100) : 0);

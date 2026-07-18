@@ -208,13 +208,29 @@ mark { background: var(--mark); color: var(--text); border-radius: 3px; padding:
 /* внутренний логотип-монограмма (маска из logo.png, перекрашивается под тему) */
 .brand-logo {
   flex: none; width: 34px; height: 34px;
-  background: linear-gradient(150deg, var(--gild), var(--accent-hi) 90%);
+  /* золотой перелив: широкий градиент со светлой золотой полосой, которая медленно
+     перекатывается по силуэту логотипа (маска обрезает фон по форме) */
+  background: linear-gradient(115deg,
+    var(--gild) 0%, var(--gild) 30%,
+    color-mix(in srgb, var(--gild) 42%, #fff6de) 45%,
+    var(--accent-hi) 57%, var(--gild) 72%, var(--gild) 100%);
+  background-size: 220% 100%;
   -webkit-mask: url(logo.png) center / contain no-repeat;
   mask: url(logo.png) center / contain no-repeat;
+  animation: brand-sheen 5s ease-in-out infinite;
 }
 html.t-light .brand-logo, html.t-sepia .brand-logo {
-  background: linear-gradient(150deg, var(--accent2), var(--accent) 90%);
+  background: linear-gradient(115deg,
+    var(--accent2) 0%, var(--accent2) 30%,
+    color-mix(in srgb, var(--accent2) 42%, #ffffff) 45%,
+    var(--accent) 57%, var(--accent2) 72%, var(--accent2) 100%);
+  background-size: 220% 100%;
 }
+@keyframes brand-sheen {
+  0%, 100% { background-position: 135% 50%; }
+  50%      { background-position: -35% 50%; }
+}
+@media (prefers-reduced-motion: reduce) { .brand-logo { animation: none; } }
 .lib-title-block { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
 .lib-title-block h1 { flex: none; }
 .lib-title-block .lib-subtitle { margin: 0; }

@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.28';
+const APP_VERSION = '1.0.29';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -961,8 +961,13 @@ async function otaManualCheck() {
   if (otaBusy) return;
   otaBusy = true;
   const btn = document.getElementById('update-btn');
+  const t0 = Date.now();
   if (btn) btn.classList.add('ota-checking');
   otaInfo = await otaEval(await otaFetchManifest());
+  // докручиваем до конца полного оборота (минимум один), даже если проверка мгновенная
+  const spin = 800, elapsed = Date.now() - t0;
+  const wait = Math.max(1, Math.ceil(elapsed / spin)) * spin - elapsed;
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
   if (btn) btn.classList.remove('ota-checking');
   otaMarker();
   otaBusy = false;

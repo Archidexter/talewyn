@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.17';
+const APP_VERSION = '1.0.18';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -5478,14 +5478,29 @@ function wordAt(x, y) {
   return { p, a, b, word };
 }
 
-function placeWordPop(rect) {
+function placeWordPop() {
   const pop = $('#word-pop');
-  if (!rect) { pop.style.left = '8px'; pop.style.top = '20%'; return; }
-  const w = pop.offsetWidth, h = pop.offsetHeight;
-  pop.style.left = Math.max(8, Math.min(innerWidth - w - 8, rect.left + rect.width / 2 - w / 2)) + 'px';
-  let top = rect.top - h - 10;
-  if (top < 8) top = Math.min(innerHeight - h - 8, rect.bottom + 10);   // слово вверху — попап снизу
-  pop.style.top = Math.max(8, top) + 'px';
+  if (pop.hidden) return;
+  // координаты слова берём СВЕЖИЕ (за время перевода текст мог сместиться — иначе попап
+  // прыгал по устаревшему прямоугольнику, вплоть до края экрана)
+  const hit = wordPopHit;
+  const r = hit ? rangeFromOffsets(hit.p, hit.a, hit.b) : null;
+  const rect = r ? r.getBoundingClientRect() : null;
+  const w = pop.offsetWidth, h = pop.offsetHeight;   // чтение offsetWidth форсит лэйаут — размеры уже настоящие
+  // границы — по визуальному вьюпорту (учитывает зум/сдвиг), с запасом 8px
+  const vv = window.visualViewport;
+  const vx = vv ? vv.offsetLeft : 0, vy = vv ? vv.offsetTop : 0;
+  const vw = vv ? vv.width : innerWidth, vh = vv ? vv.height : innerHeight;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  if (!rect || !w || !h) {   // нет якоря/ещё не измерилось — по центру у верха, но в экране
+    pop.style.left = clamp(vx + (vw - w) / 2, vx + 8, vx + vw - w - 8) + 'px';
+    pop.style.top = (vy + 12) + 'px';
+    return;
+  }
+  pop.style.left = clamp(rect.left + rect.width / 2 - w / 2, vx + 8, vx + vw - w - 8) + 'px';
+  let top = rect.top - h - 10;                                   // над словом
+  if (top < vy + 8) top = rect.bottom + 10;                      // не влезает сверху — под словом
+  pop.style.top = clamp(top, vy + 8, vy + vh - h - 8) + 'px';    // и всегда внутри экрана
 }
 
 async function openWordPop(hit) {
@@ -5495,9 +5510,8 @@ async function openWordPop(hit) {
   hlSet('wordsel', hit.p, hit.a, hit.b);
   pop.hidden = false;
   wordPopHit = hit;
-  const r = rangeFromOffsets(hit.p, hit.a, hit.b);
-  const rect = r ? r.getBoundingClientRect() : null;
-  placeWordPop(rect);
+  placeWordPop();                           // сразу (offsetWidth форсит лэйаут)…
+  requestAnimationFrame(placeWordPop);      // …и после кадра — на случай, если шрифт/размер ещё догоняли
   const my = ++wpSeq;                       // защита от гонки: пока ждём перевод, могли тапнуть другое слово
   try {
     const res = await translateText(hit.word, curTrLang());
@@ -5507,7 +5521,7 @@ async function openWordPop(hit) {
     if (my !== wpSeq || pop.hidden) return;
     $('#wp-tr').textContent = t('trFail');
   }
-  placeWordPop(rect);                       // перевод изменил высоту — ставим заново
+  placeWordPop();                           // перевод изменил высоту — ставим заново по свежим координатам
 }
 let wordPopHit = null;
 function closeWordPop() {

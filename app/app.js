@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.56';
+const APP_VERSION = '1.0.57';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -6674,16 +6674,19 @@ let reviewTarget = null;   // { kind:'book'|'audio', id, title, author }
 async function loadReview(id) {
   return (await kvGet('review:' + id)) || { stars: 0, text: '' };
 }
+// оценка есть → просто заливаем основную звезду золотом (класс .active), без ряда звёзд
 async function refreshReviewBadge() {
   if (state.book) {
     const rv = await loadReview(state.book.id);
-    const el = $('#review-stars'); if (el) el.textContent = rv.stars ? STAR.repeat(rv.stars) : '';
+    const btn = $('#review-btn'); if (btn) btn.classList.toggle('rated', !!rv.stars);
+    const el = $('#review-stars'); if (el) el.textContent = '';
   }
 }
 async function refreshAudioReviewBadge() {
   if (!ab || !ab.rec) return;
   const rv = await loadReview(ab.rec.id);
-  const el = $('#ab-review-stars'); if (el) el.textContent = rv.stars ? STAR.repeat(rv.stars) : '';
+  const btn = $('#ab-review-btn'); if (btn) btn.classList.toggle('rated', !!rv.stars);
+  const el = $('#ab-review-stars'); if (el) el.textContent = '';
 }
 let reviewStars = 0;
 async function openReviewSheet(kind) {

@@ -1668,7 +1668,9 @@ body.tts-on .chapter:has(.pdf-text) { padding-bottom: calc(14px + max(env(safe-a
 
 /* ── словарь произношений (экран настроек) ── */
 .pronun-block { width: 100%; display: flex; flex-direction: column; gap: 10px; }
-.pronun-hint { font-size: 12.5px; color: var(--dim); line-height: 1.4; }
+.pronun-hint { font-size: 12.5px; color: var(--dim); line-height: 1.4; text-align: center; }
+.pronun-list-btn { color: var(--dim); }   /* иконка-список — вторична, «+» акцентнее */
+#pronun-sheet .pronun-list { max-height: 60vh; overflow-y: auto; }
 .pronun-list { display: flex; flex-direction: column; gap: 6px; }
 .pronun-empty { font-size: 13px; color: var(--faint); padding: 4px 2px; }
 .pronun-item {

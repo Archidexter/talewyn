@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.16';
+const APP_VERSION = '1.0.17';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -224,8 +224,10 @@ const I18N = {
     booksN: 'Книг на полке: {n}',
     toShelf: 'К полке',
     searchPh: 'Поиск по книге…', reading: 'Читаю',
-    pronunSec: 'Произношение', pronunHint: 'Как читать слово при озвучке. Например: Hermione → Хермайони.',
+    pronunSec: 'Произношение', pronunSecFull: 'Словарь произношений',
+    pronunHint: 'Как читать слово при озвучке. Напр.: GIF → джиф',
     pronunFromPh: 'Слово', pronunToPh: 'Как читать', pronunAdd: 'Добавить', pronunDel: 'Убрать',
+    pronunListT: 'Список слов', pronunAdded: 'Добавлено в словарь',
     pronunEmpty: 'Пока пусто. Добавь слово и то, как его произносить.', wpPron: 'Произношение',
     start: 'Начать чтение', cont: 'Продолжить чтение', nextCh: 'Следующая глава',
     footer: 'Прочитано {r} из {t} глав ({p}%)',
@@ -361,8 +363,10 @@ const I18N = {
     booksN: 'Books on the shelf: {n}',
     toShelf: 'To the shelf',
     searchPh: 'Search this book…', reading: 'Reading',
-    pronunSec: 'Pronunciation', pronunHint: 'How a word is read aloud. E.g. Hermione → Hermaioni.',
+    pronunSec: 'Pronunciation', pronunSecFull: 'Pronunciation dictionary',
+    pronunHint: 'How a word is read aloud. E.g. GIF → jif',
     pronunFromPh: 'Word', pronunToPh: 'How to read it', pronunAdd: 'Add', pronunDel: 'Remove',
+    pronunListT: 'Word list', pronunAdded: 'Added to dictionary',
     pronunEmpty: 'Empty for now. Add a word and how to pronounce it.', wpPron: 'Pronunciation',
     start: 'Start reading', cont: 'Continue reading', nextCh: 'Next chapter',
     footer: '{r} of {t} chapters read ({p}%)',
@@ -6268,6 +6272,8 @@ function bindUI() {
   $('#pronun-to')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addPronun(); } });
   $('#pronun-list')?.addEventListener('click', e => { const b = e.target.closest('[data-pi]'); if (b) delPronun(+b.dataset.pi); });
   $('#wp-pron')?.addEventListener('click', e => { e.stopPropagation(); openPronunFor(wordPopHit && wordPopHit.word); });
+  $('#pronun-open-list')?.addEventListener('click', openPronunList);
+  $('#pronun-overlay')?.addEventListener('click', closePronunList);
   $('#bm-list-btn').addEventListener('click', () => toggleBmList());
   $('#bm-list').addEventListener('click', e => {
     const del = e.target.closest('[data-bmdel]');
@@ -6694,7 +6700,6 @@ function bindAllSheets() {
 
 function openSettings() {
   syncSettingsUI();
-  renderPronun();
   sheetShow($('#settings-sheet'), $('#settings-overlay'));
   // список языков переводчика подводим к текущему, когда шторка уже видна (есть размеры)
   requestAnimationFrame(() => requestAnimationFrame(() => scrollTrPickerToCurrent(false)));
@@ -6726,6 +6731,7 @@ function addPronun() {
   const ex = settings.pronun.find(e => e.from.toLowerCase() === from.toLowerCase());
   if (ex) ex.to = to; else settings.pronun.push({ from, to, lang: '' });   // слово уже есть → обновляем
   saveSettings(); pronunInvalidate(); renderPronun();
+  showToast(t('pronunAdded'));   // список теперь в отдельном окне — даём обратную связь
   fromEl.value = ''; toEl.value = ''; fromEl.focus();
 }
 function delPronun(i) {
@@ -6741,10 +6747,13 @@ function openPronunFor(word) {
   if (fromEl) fromEl.value = word || '';
   if (toEl) toEl.value = '';
   requestAnimationFrame(() => {
-    $('#pronun-list')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    fromEl?.closest('.pronun-block')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     (word ? toEl : fromEl)?.focus();
   });
 }
+// отдельное окно со списком слов (открывается иконкой-списком у строки ввода)
+function openPronunList() { renderPronun(); sheetShow($('#pronun-sheet'), $('#pronun-overlay')); }
+function closePronunList() { sheetHide($('#pronun-sheet'), $('#pronun-overlay')); }
 
 function openInfo() {
   $('#info-version').textContent = T('build', { v: APP_VERSION });

@@ -10,7 +10,7 @@
 if(th==='auto')th=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <link rel="stylesheet" href="fonts.css?v=9">
-<link rel="stylesheet" href="app.css?v=144">
+<link rel="stylesheet" href="app.css?v=145">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -380,9 +380,11 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
   <div class="set-section" data-i18n="pronunSec">Произношение</div>
   <div class="v3row fullrow">
     <div class="pronun-block">
-      <div class="pronun-hint" data-i18n="pronunHint">Как читать слово при озвучке. Например: Hermione → Хермайони.</div>
-      <div class="pronun-list" id="pronun-list"></div>
+      <div class="pronun-hint" data-i18n="pronunHint">Как читать слово при озвучке. Напр.: GIF → джиф</div>
       <div class="pronun-add">
+        <button class="pronun-add-btn pronun-list-btn" id="pronun-open-list" data-i18n-title="pronunListT" title="Список слов" aria-label="Список слов">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+        </button>
         <input class="field pronun-in" id="pronun-from" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" data-i18n-ph="pronunFromPh" placeholder="Слово">
         <span class="pronun-arrow" aria-hidden="true">→</span>
         <input class="field pronun-in" id="pronun-to" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" data-i18n-ph="pronunToPh" placeholder="Как читать">
@@ -409,6 +411,13 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     <input id="restore-input" type="file" hidden accept=".tlib">
     <button id="reset-progress-btn" class="danger-btn" data-i18n="reset" hidden>Сбросить прогресс этой книги</button>
   </div>
+</div>
+
+<div id="pronun-overlay" class="sheet-scrim" hidden></div>
+<div id="pronun-sheet" class="sheet" hidden role="dialog" aria-label="Словарь произношений">
+  <div class="sheet-grip"></div>
+  <div class="set-section" data-i18n="pronunSecFull">Словарь произношений</div>
+  <div class="pronun-list" id="pronun-list"></div>
 </div>
 
 <div id="tts-bar" hidden>
@@ -649,6 +658,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=149"></script>
+<script src="app.js?v=150"></script>
 </body>
 </html>

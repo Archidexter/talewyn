@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.46';
+const APP_VERSION = '1.0.47';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -1751,16 +1751,24 @@ function refreshSelChecks() {
     if (badge) badge.textContent = pos < 0 ? '' : (selIds.length > 1 ? String(pos + 1) : '✓');
   });
 }
+let selExitTimer = null;
 function enterSelMode(kind, firstId) {
   selMode = true; selKind = kind; selIds.length = 0;
   if (firstId) selIds.push(firstId);
+  clearTimeout(selExitTimer);
+  document.body.classList.remove('sel-exiting');   // прервать уходящую анимацию, если успели
   document.body.classList.add('sel-mode');   // показывает чекбоксы и красную кнопку-мусорку
   refreshSelChecks();
 }
 function exitSelMode() {
   if (!selMode) return;
   selMode = false; selIds.length = 0;
+  // чекбоксы карточек убираем сразу, а кружки (корзина/коллекция) плавно уезжают за экран:
+  // держим их на .sel-exiting, пока играет fab-del-out, потом окончательно прячем
   document.body.classList.remove('sel-mode');
+  document.body.classList.add('sel-exiting');
+  clearTimeout(selExitTimer);
+  selExitTimer = setTimeout(() => document.body.classList.remove('sel-exiting'), 300);
   document.querySelectorAll('.book-card.sel, .ab-card.sel').forEach(c => c.classList.remove('sel'));
 }
 function toggleSel(id) {

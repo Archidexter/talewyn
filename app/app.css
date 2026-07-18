@@ -352,6 +352,30 @@ html.t-light .brand-logo, html.t-sepia .brand-logo {
   display: block; height: 100%; border-radius: 99px;
   background: linear-gradient(90deg, var(--accent), var(--accent-hi));
 }
+/* «≈ 2 ч 15 мин до конца» — тихая строка под прогрессом карточки «Продолжить» */
+.cont-left {
+  margin-top: 9px; font-size: 12px; letter-spacing: .01em;
+  color: color-mix(in srgb, var(--gild) 80%, var(--dim));
+}
+
+/* узкая полоска статистики чтения под «Продолжить»: серия · сегодня · скорость.
+   Значение — золотом, подпись — прописными вразрядку; ячейки через тонкий волосок. */
+#shelf-stats { margin: -6px 0 22px; }
+#shelf-stats:empty { margin: 0; }
+.stat-strip { display: flex; align-items: stretch; gap: 0; }
+.stat-cell {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  flex: 1; padding: 2px 6px; text-align: center;
+}
+.stat-cell + .stat-cell { border-left: 1px solid var(--border); }
+.stat-cell b {
+  font-family: var(--display); font-weight: 600; font-size: 18px;
+  line-height: 1; color: var(--gild);
+}
+.stat-cell i {
+  font-style: normal; font-size: 9.5px; font-weight: 700;
+  letter-spacing: .15em; text-transform: uppercase; color: var(--dim);
+}
 /* «Продолжить слушать»: имя конкретного трека — всегда в одну строку; если не
    влезает, едет мягкой бегущей строкой (класс is-marquee вешает JS по факту
    переполнения). Только у аудио — у книги заголовок короткий («Глава 8»). */

@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.14';
+const APP_VERSION = '1.0.15';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -3022,7 +3022,7 @@ let lastTap = null, hdrTimer = null;
 // Меню языков/голосов живут в document.body и всплывают прямо над текстом главы.
 function overlayOpen() {
   return !!document.querySelector('.sheet-scrim.open')
-    || !!document.querySelector('.lang-menu.open, .voice-menu.open, .speed-wheel')
+    || !!document.querySelector('.lang-menu.open, .voice-menu.open, .speed-wheel.open')
     || (typeof confirmOpen === 'function' && confirmOpen())
     || !$('#sel-toolbar').hidden;
 }

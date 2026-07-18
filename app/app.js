@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.33';
+const APP_VERSION = '1.0.34';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -1562,6 +1562,7 @@ async function removeFromActiveCol() {
 function setupColDrawer() {
   const tab = $('#col-tab'), dr = $('#col-drawer'), sc = $('#col-scrim'), list = $('#col-list');
   if (!tab || !dr || !sc) return;
+  let colJustDragged = false;   // подавляет click-view сразу после перетаскивания
   const width = () => dr.getBoundingClientRect().width || 260;
   sc.addEventListener('click', closeColDrawer);
   // язычок: тап — открыть/закрыть, тянуть — следовать за пальцем
@@ -1597,28 +1598,38 @@ function setupColDrawer() {
     if (del) { e.stopPropagation(); deleteCollection(del.dataset.coldel); return; }
     if (e.target.closest('#col-add')) { openColCreate(); return; }
     const item = e.target.closest('.col-item');
-    if (item && !e.target.closest('[data-colgrip]')) viewCollection(item.dataset.col);
+    if (item && !colJustDragged) viewCollection(item.dataset.col);   // после перетаскивания view не срабатывает
   });
   // перетаскивание коллекций за «ручку» (реордер)
   if (list) {
-    // реордер: таскаемый следует за пальцем, а СОСЕДИ плавно сдвигаются на слот, открывая щель
-    // в целевом месте. DOM переставляем один раз на отпускании — оттого не спотыкается.
-    let drag = null;
-    list.addEventListener('pointerdown', e => {
-      const grip = e.target.closest('[data-colgrip]'); if (!grip) return;
-      const item = grip.closest('.col-item'); if (!item) return;
-      e.preventDefault();
+    // Реордер по УДЕРЖАНИЮ на ЛЮБОЙ части элемента (~0.35с). Движение до срабатывания удержания =
+    // скролл списка (короткий свайп листает). Во время перетаскивания соседи плавно раздвигаются,
+    // открывая щель, а скролл гасится (touch-action:none + touchmove preventDefault).
+    // DOM переставляем один раз на отпускании — оттого не спотыкается.
+    let drag = null, lp = null;
+    const LP_MS = 350, MOVE_CANCEL = 12;
+    const beginDrag = (item, y, pid) => {
       const items = [...list.querySelectorAll('.col-item')];
       const from = items.indexOf(item);
       const rects = items.map(el => el.getBoundingClientRect());
       const rowH = rects.length > 1 ? Math.abs(rects[1].top - rects[0].top) : (item.offsetHeight + 8);
-      drag = { item, items, from, to: from, rects, rowH, h: item.offsetHeight, y0: e.clientY };
+      drag = { item, items, from, to: from, rects, rowH, h: item.offsetHeight, y0: y };
       item.classList.add('dragging');
       for (const el of items) el.style.transition = 'transform .16s ease';
       item.style.transition = 'none';
-      try { list.setPointerCapture(e.pointerId); } catch {}
+      list.style.touchAction = 'none';
+      try { list.setPointerCapture(pid); } catch {}
+    };
+    list.addEventListener('pointerdown', e => {
+      if (drag || lp) return;
+      const item = e.target.closest('.col-item');
+      if (!item || e.target.closest('[data-coldel]')) return;   // ✕ — не перетаскивание
+      lp = { item, x: e.clientX, y: e.clientY, pid: e.pointerId };
+      lp.timer = setTimeout(() => { if (lp) { const it = lp.item, y = lp.y, pid = lp.pid; lp = null; beginDrag(it, y, pid); } }, LP_MS);
     });
+    list.addEventListener('touchmove', e => { if (drag) e.preventDefault(); }, { passive: false });   // скролл при перетаскивании выключен
     list.addEventListener('pointermove', e => {
+      if (lp) { if (Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > MOVE_CANCEL) { clearTimeout(lp.timer); lp = null; } return; }
       if (!drag) return;
       const dy = e.clientY - drag.y0;
       drag.item.style.transform = 'translateY(' + dy + 'px)';
@@ -1637,10 +1648,12 @@ function setupColDrawer() {
       });
     });
     const dropEnd = () => {
+      if (lp) { clearTimeout(lp.timer); lp = null; }
       if (!drag) return;
       const { item, items, from, to } = drag;
       for (const el of items) { el.style.transition = ''; if (el !== item) el.style.transform = ''; }
       item.classList.remove('dragging'); item.style.transform = ''; item.style.transition = '';
+      list.style.touchAction = '';
       if (to !== from) {                     // применяем новый порядок в DOM
         const arr = items.filter(el => el !== item);
         arr.splice(to, 0, item);
@@ -1651,6 +1664,7 @@ function setupColDrawer() {
         if (c && c.order !== i) { c.order = i; saveCollection(c); }
       });
       (state.collections || []).sort((a, b) => (a.order || 0) - (b.order || 0));
+      colJustDragged = true; setTimeout(() => { colJustDragged = false; }, 80);
       drag = null;
     };
     list.addEventListener('pointerup', dropEnd);

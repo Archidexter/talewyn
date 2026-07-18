@@ -10,7 +10,7 @@
 if(th==='auto')th=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <link rel="stylesheet" href="fonts.css?v=9">
-<link rel="stylesheet" href="app.css?v=158">
+<link rel="stylesheet" href="app.css?v=159">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -154,7 +154,7 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <!-- автопоиск книг на устройстве: выбор области → сканирование → чеклист найденного -->
 <div id="scan-scrim" class="sheet-scrim" hidden></div>
 <div id="scan-modal" hidden>
-  <div class="col-modal-box scan-box">
+  <div class="confirm-card scan-box">
     <div class="col-modal-title" data-i18n="scanTitle">Автопоиск книг</div>
 
     <div id="scan-choose">
@@ -750,6 +750,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=173"></script>
+<script src="app.js?v=174"></script>
 </body>
 </html>

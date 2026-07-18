@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.40';
+const APP_VERSION = '1.0.41';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -1028,6 +1028,7 @@ async function deleteBook(id) {
 window.__appBack = () => {
   if (selMode) { exitSelMode(); return true; }   // «назад» сначала выходит из мультивыбора
   if (confirmOpen()) { closeConfirm(false); return true; }
+  if (typeof scanOpen === 'function' && scanOpen()) { closeScan(); return true; }
   if (!$('#lightbox').hidden) { closeLightbox(); return true; }
   for (const [ov, close] of [['settings-overlay', closeSettings], ['info-overlay', closeInfo], ['note-overlay', closeNoteSheet],
       ['tr-overlay', closeTrSheet], ['annot-overlay', closeAnnotSheet], ['review-overlay', closeReviewSheet]]) {
@@ -1210,17 +1211,22 @@ function scanState(s) {     // 'choose' | 'busy' | 'results'
   $('#scan-results').hidden = s !== 'results';
   $('#scan-add').hidden = s !== 'results';
 }
+// открытие/закрытие — ТА ЖЕ механика, что у диалога «вставить ссылку» (uiConfirm):
+// два кадра до .open (иначе стартовое положение за краем не отрисуется), уход за 400мс.
 function openScan() {
   if (!isNativeApp() || !scanBridge()) { showToast(t('scanNoNative')); return; }   // только в приложении
   scanFiles = []; scanSel = new Set(); scanBusyFlag = false;
   scanState('choose');
-  $('#scan-scrim').hidden = false; $('#scan-modal').hidden = false;
-  requestAnimationFrame(() => $('#scan-modal').classList.add('open'));
+  const modal = $('#scan-modal'), scrim = $('#scan-scrim');
+  scrim.hidden = false; modal.hidden = false;
+  requestAnimationFrame(() => requestAnimationFrame(() => { scrim.classList.add('open'); modal.classList.add('open'); }));
 }
+function scanOpen() { return !$('#scan-modal').hidden; }
 function closeScan() {
   scanBusyFlag = false;
-  $('#scan-modal').classList.remove('open');
-  $('#scan-modal').hidden = true; $('#scan-scrim').hidden = true;
+  const modal = $('#scan-modal'), scrim = $('#scan-scrim');
+  modal.classList.remove('open'); scrim.classList.remove('open');
+  setTimeout(() => { modal.hidden = true; scrim.hidden = true; }, 400);
 }
 function startScan(mode) {
   const B = scanBridge(); if (!B) return;
@@ -1292,6 +1298,8 @@ $('#scan-all')?.addEventListener('click', () => startScan('all'));
 $('#scan-folder')?.addEventListener('click', () => startScan('folder'));
 $('#scan-cancel')?.addEventListener('click', closeScan);
 $('#scan-scrim')?.addEventListener('click', closeScan);
+// тап мимо карточки закрывает окно — как у «вставить ссылку» (#scan-modal лежит поверх скрима)
+$('#scan-modal')?.addEventListener('click', e => { if (!e.target.closest('.confirm-card')) closeScan(); });
 $('#scan-add')?.addEventListener('click', scanDoAdd);
 $('#scan-toggle-all')?.addEventListener('click', () => {
   scanSel = (scanFiles.length && scanSel.size === scanFiles.length) ? new Set() : new Set(scanFiles.map((_, i) => i));

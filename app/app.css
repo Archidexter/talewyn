@@ -452,7 +452,16 @@ html.t-light .brand-logo, html.t-sepia .brand-logo {
      Это постоянный элемент, он просто есть. */
 }
 #add-fab button:active { transform: scale(.88); }             /* отдача на нажатие */
-.fab-main:active { filter: brightness(1.12); }
+/* «Добавить файл»: при нажатии кнопка ВДАВЛИВАЕТСЯ в поверхность — внешняя тень уходит
+   внутрь (inset), кнопка садится и чуть темнеет. Раньше был brightness(1.12) при большой
+   тени — она наоборот подсвечивалась и «лезла вперёд». */
+#add-fab .fab-main:active {
+  transform: scale(.93);
+  filter: brightness(.9);
+  box-shadow: inset 0 3px 9px rgb(0 0 0 / .5),
+              0 2px 5px rgb(0 0 0 / .28),
+              0 0 0 1px color-mix(in srgb, var(--gild) 40%, transparent);
+}
 .fab-mini:active { border-color: var(--gild); }
 .fab-mini {
   width: 50px; height: 50px;

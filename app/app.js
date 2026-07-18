@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.19';
+const APP_VERSION = '1.0.20';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -228,7 +228,7 @@ const I18N = {
     pronunHint: 'Как читать слово при озвучке. Напр.: GIF → джиф',
     pronunFromPh: 'Слово', pronunToPh: 'Как читать', pronunAdd: 'Добавить', pronunDel: 'Убрать',
     pronunListT: 'Список слов', pronunAdded: 'Добавлено в словарь',
-    pronunEmpty: 'Пока пусто. Добавь слово и то, как его произносить.', wpPron: 'Произношение', wpSay: 'Озвучить',
+    pronunEmpty: 'Пока пусто', wpPron: 'Произношение', wpSay: 'Озвучить',
     start: 'Начать чтение', cont: 'Продолжить чтение', nextCh: 'Следующая глава',
     footer: 'Прочитано {r} из {t} глав ({p}%)',
     build: 'AD.Talewyn · {v}',
@@ -367,7 +367,7 @@ const I18N = {
     pronunHint: 'How a word is read aloud. E.g. GIF → jif',
     pronunFromPh: 'Word', pronunToPh: 'How to read it', pronunAdd: 'Add', pronunDel: 'Remove',
     pronunListT: 'Word list', pronunAdded: 'Added to dictionary',
-    pronunEmpty: 'Empty for now. Add a word and how to pronounce it.', wpPron: 'Pronunciation', wpSay: 'Speak',
+    pronunEmpty: 'Empty', wpPron: 'Pronunciation', wpSay: 'Speak',
     start: 'Start reading', cont: 'Continue reading', nextCh: 'Next chapter',
     footer: '{r} of {t} chapters read ({p}%)',
     build: 'AD.Talewyn · {v}',
@@ -4793,7 +4793,7 @@ function flyAwayThenDelete(item, doDelete) {
 }
 // свайп влево по карточкам списка (delSel — селектор крестика, с него свайп не начинаем);
 // onHold (необязательно) — долгое удержание без сдвига (напр. открыть редактор заметки).
-function setupSwipeList(sel, del, delSel, onHold) {
+function setupSwipeList(sel, del, delSel, onHold, itemSel = '.note-item') {
   const list = document.querySelector(sel);
   if (!list) return;
   let item = null, x0 = 0, y0 = 0, dx = 0, mode = null, held = false, holdT = null;
@@ -4805,7 +4805,7 @@ function setupSwipeList(sel, del, delSel, onHold) {
   };
   list.addEventListener('touchstart', e => {
     if (e.touches.length !== 1) { item = null; return; }
-    const it = e.target.closest('.note-item');
+    const it = e.target.closest(itemSel);
     if (!it || (delSel && e.target.closest(delSel))) { item = null; return; }
     item = it; x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; mode = null; held = false;
     item.style.transition = 'none';
@@ -6300,7 +6300,8 @@ function bindUI() {
   $('#pronun-add')?.addEventListener('click', addPronun);
   $('#pronun-from')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('#pronun-to').focus(); } });
   $('#pronun-to')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addPronun(); } });
-  $('#pronun-list')?.addEventListener('click', e => { const b = e.target.closest('[data-pi]'); if (b) delPronun(+b.dataset.pi); });
+  $('#pronun-list')?.addEventListener('click', e => { const del = e.target.closest('[data-pdel]'); if (!del) return; const item = del.closest('[data-pi]'); if (item) delPronun(+item.dataset.pi); });
+  setupSwipeList('#pronun-list', it => delPronun(+it.dataset.pi), '[data-pdel]', null, '.pronun-item');   // смахивание влево удаляет, как у закладок
   $('#wp-pron')?.addEventListener('click', e => { e.stopPropagation(); openPronunFor(wordPopHit && wordPopHit.word); });
   $('#wp-say')?.addEventListener('click', e => { e.stopPropagation(); speakWord(wordPopHit && wordPopHit.word); });
   $('#pronun-open-list')?.addEventListener('click', openPronunList);
@@ -6746,10 +6747,10 @@ function renderPronun() {
   const list = settings.pronun || [];
   box.innerHTML = list.length
     ? list.map((e, i) =>
-        `<div class="pronun-item"><span class="pronun-from">${esc(e.from)}</span>`
+        `<div class="pronun-item" data-pi="${i}"><span class="pronun-from">${esc(e.from)}</span>`
         + `<span class="pronun-arrow" aria-hidden="true">→</span>`
         + `<span class="pronun-to">${esc(e.to)}</span>`
-        + `<button class="pronun-del" data-pi="${i}" title="${esc(t('pronunDel'))}" aria-label="${esc(t('pronunDel'))}">✕</button></div>`
+        + `<button class="pronun-del" data-pdel title="${esc(t('pronunDel'))}" aria-label="${esc(t('pronunDel'))}">✕</button></div>`
       ).join('')
     : `<div class="pronun-empty">${esc(t('pronunEmpty'))}</div>`;
 }

@@ -1647,7 +1647,7 @@ body.tts-on .chapter:has(.pdf-text) { padding-bottom: calc(14px + max(env(safe-a
 /* ── перевод слова по двойному тапу ── */
 ::highlight(word-sel) { background: color-mix(in srgb, var(--accent) 40%, transparent); }
 #word-pop {
-  position: fixed; z-index: 63; width: min(74vw, 262px);   /* фикс-ширина — три иконки ложатся ровно по краям */
+  position: fixed; z-index: 63; width: fit-content; max-width: min(82vw, 300px);   /* по ширине контента — без пустоты */
   padding: 10px 14px; border-radius: 14px;
   background: var(--elev2); border: 1px solid var(--border-strong);
   box-shadow: 0 12px 34px rgb(0 0 0 / .45);
@@ -1656,15 +1656,17 @@ body.tts-on .chapter:has(.pdf-text) { padding-bottom: calc(14px + max(env(safe-a
   animation: wp-in .14s ease-out;
 }
 @keyframes wp-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
-.wp-word { font-family: var(--display); font-weight: 600; font-size: 15px; color: var(--dim); }
-.wp-tr { font-size: 16px; color: var(--text); margin-top: 3px; line-height: 1.35;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }   /* перевод — одна строка */
+.wp-head { display: flex; align-items: baseline; gap: 6px; min-width: 0; }   /* слово · перевод — одна строка */
+.wp-word { font-family: var(--display); font-weight: 600; font-size: 15px; color: var(--dim); flex: none; white-space: nowrap; }
+.wp-sep { color: var(--faint); flex: none; }
+.wp-tr { font-size: 15px; color: var(--text); line-height: 1.3;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wp-more {
   margin-top: 8px; font-size: 12px; font-weight: 700; color: var(--gild);
   letter-spacing: .04em; text-transform: uppercase;
 }
 /* попап слова: три круглых действия, равномерно по всей ширине карточки */
-.wp-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 11px; }
+.wp-actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 11px; }
 .wp-act {
   width: 40px; height: 40px; border-radius: 50%;
   border: 1px solid var(--border-strong); background: transparent; color: var(--dim);
@@ -1683,10 +1685,11 @@ body.tts-on .chapter:has(.pdf-text) { padding-bottom: calc(14px + max(env(safe-a
 #pronun-sheet .pronun-list { max-height: 60vh; overflow-y: auto; }
 /* окно словаря открывается ПОВЕРХ настроек — поднимаем над ними (настройки z-index 71) */
 #pronun-overlay { z-index: 72; }
-#pronun-sheet { z-index: 73; }
+#pronun-sheet { z-index: 73; min-height: 40dvh; }   /* выезжает заметно, а не тонкой полоской */
 .pronun-list { display: flex; flex-direction: column; gap: 6px; }
-.pronun-empty { font-size: 13px; color: var(--faint); padding: 4px 2px; }
+.pronun-empty { font-size: 14px; color: var(--faint); padding: 30px 2px; text-align: center; }
 .pronun-item {
+  position: relative; touch-action: pan-y; will-change: transform;   /* свайп влево удаляет */
   display: flex; align-items: center; gap: 8px;
   padding: 8px 10px; border-radius: var(--r-md);
   border: 1px solid var(--border); background: var(--elev);

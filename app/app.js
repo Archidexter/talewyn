@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.63';
+const APP_VERSION = '1.0.65';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -2404,7 +2404,7 @@ function fileNameFrom(url, headers) {
   return 'book' + (ext || '');   // без расширения формат определится по сигнатуре байтов
 }
 
-async function dlNative(url) {
+async function dlNative(url, cookie) {
   // Без браузерных заголовков CapacitorHttp выглядит для сервера ботом, и Cloudflare и
   // большинство книжных сайтов отвечают 503/403. Прикидываемся мобильным браузером.
   let origin = '';
@@ -2415,6 +2415,7 @@ async function dlNative(url) {
     'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8',
   };
   if (origin) headers['Referer'] = origin + '/';
+  if (cookie) headers['Cookie'] = cookie;   // ответ на куки-челлендж антибота (beget и т.п.)
   const r = await capHttp.request({ url, method: 'GET', responseType: 'blob', headers,
                                     connectTimeout: 15000, readTimeout: 120000 });
   if (r.status < 200 || r.status >= 300) throw new Error(T('urlHttp', { c: r.status }));
@@ -2449,6 +2450,14 @@ async function dlWeb(url, onFrac) {
   return { blob: new Blob(parts, { type: h['content-type'] || '' }), headers: h, url: res.url };
 }
 
+// антибот-заглушка вида beget: крошечный HTML со скриптом document.cookie='NAME=VAL…';…location.reload()
+// — читаем куку, чтобы поставить её и повторить запрос за настоящей страницей
+function cookieChallenge(html) {
+  if (!html || html.length > 4000) return '';
+  const m = /document\.cookie\s*=\s*['"]([^'";=]+=[^'";]+)/i.exec(html);
+  return (m && /location\.(reload|href|replace)/i.test(html)) ? m[1] : '';
+}
+
 let urlBusy = false;   // свой флаг: importBusy трогать нельзя — doImport выйдет на первой строке
 async function importFromUrl() {
   if (urlBusy || importBusy) return;
@@ -2480,17 +2489,22 @@ async function importFromUrl() {
   try {
     const msg = T('urlDl', { h: u.hostname });
     showProgress(msg, null);
-    const got = (isNative && capHttp) ? await dlNative(u.href)
-                                      : await dlWeb(u.href, frac => showProgress(msg, frac));
+    let got = (isNative && capHttp) ? await dlNative(u.href)
+                                    : await dlWeb(u.href, frac => showProgress(msg, frac));
     if (!got.blob.size) throw new Error(t('urlEmpty'));
+    // антибот-заглушка (beget и подобные): крошечный HTML ставит куку и перезагружается —
+    // читаем куку из скрипта, ставим её и повторяем запрос, иначе получаем пустышку
+    if (isNative && capHttp && got.blob.size < 4000) {
+      const cookie = cookieChallenge(await got.blob.text());
+      if (cookie) { got = await dlNative(u.href, cookie); if (!got.blob.size) throw new Error(t('urlEmpty')); }
+    }
     const name = fileNameFrom(got.url, got.headers);
-    // страница логина/капчи вернёт 200 и HTML — иначе на полке появится «книга» из вёрстки сайта.
-    // Аудио не нюхаем: в двоичном потоке может случайно попасться «<html», а текстом он не является.
     const isAudio = AUDIO_EXT.test(name) || (got.blob.type || '').startsWith('audio/');
     if (!isAudio) {
       const head = await got.blob.slice(0, 1024).text();
-      if (!/\.(x?html?)$/i.test(name) && /<!doctype\s+html|<html[\s>]/i.test(head)) {
-        // это веб-страница, а не файл книги — пробуем вытащить из неё аудио (плейлист/ссылки)
+      // любая HTML-страница: СНАЧАЛА пробуем вытащить аудио (это аудиокнига), это важнее книги —
+      // иначе страница с расширением .html импортировалась бы как «книга» из вёрстки сайта
+      if (/<!doctype\s+html|<html[\s>]/i.test(head)) {
         const html = await got.blob.text();
         const found = extractAudioTracks(html, got.url || u.href);
         if (found.length) {
@@ -2502,7 +2516,8 @@ async function importFromUrl() {
           openAudiobook(rec.id);
           return;
         }
-        throw new Error(t('urlNoAudio'));
+        // аудио нет: настоящий .html-файл книги читаем как книгу, обычную веб-страницу — отвергаем
+        if (!/\.(x?html?)$/i.test(name)) throw new Error(t('urlNoAudio'));
       }
     }
     const f = new File([got.blob], name, { type: got.blob.type || 'application/octet-stream' });
@@ -4960,11 +4975,22 @@ const AUDIO_ALT = 'mp3|m4a|m4b|aac|ogg|oga|opus|flac|wav';
 function unesc(s) {
   return String(s).replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16))).replace(/\\\//g, '/');
 }
+// плееры часто прячут файл за редиректом вида /go.php?url=BASE64 — распакуем в прямой аудио-URL
+function unwrapAudioUrl(v) {
+  const m = /[?&](?:url|link|href|file)=([A-Za-z0-9%+/=_-]{16,})/i.exec(v);
+  if (!m) return '';
+  let s = m[1]; try { s = decodeURIComponent(s); } catch {}
+  s = s.replace(/-/g, '+').replace(/_/g, '/'); s += '='.repeat((4 - s.length % 4) % 4);
+  try { const dec = atob(s); if (/^https?:\/\//i.test(dec) && AUDIO_EXT.test(dec.split('?')[0])) return dec; } catch {}
+  return '';
+}
 function extractAudioTracks(html, baseUrl) {
   const out = [], seen = new Set();
   const add = (rawUrl, title) => {
     if (!rawUrl) return;
-    let abs; try { abs = new URL(unesc(rawUrl), baseUrl).href; } catch { return; }
+    const v = unesc(rawUrl).trim();
+    let abs = unwrapAudioUrl(v);                 // сперва пробуем распаковать редирект-обёртку
+    if (!abs) { try { abs = new URL(v, baseUrl).href; } catch { return; } }
     if (seen.has(abs)) return; seen.add(abs);
     out.push({ url: abs, title: (title ? unesc(title).trim() : '') });
   };
@@ -4974,10 +5000,14 @@ function extractAudioTracks(html, baseUrl) {
     doc.querySelectorAll('a[href]').forEach(e => { const h = e.getAttribute('href'); if (h && AUDIO_EXT.test(h.split('?')[0])) add(h, (e.textContent || '').trim()); });
     doc.querySelectorAll('meta[property="og:audio"], meta[property="og:audio:url"]').forEach(e => add(e.getAttribute('content'), ''));
   } catch {}
-  // JSON-плейлист: "title":"…"…"url":"…аудио…" (в т.ч. с экранированными слэшами)
-  const pr = new RegExp('"title":"((?:[^"\\\\]|\\\\.)*)"[^{}]*?"url":"((?:[^"\\\\]|\\\\.)*?\\.(?:' + AUDIO_ALT + ')[^"]*)"', 'gi');
-  let p; while ((p = pr.exec(html))) add(p[2], p[1]);
-  // сырой скан на случай, если плеер не в формате title/url
+  // JSON-плейлист: пара "title":"…" … ("file"|"url"|"src"):"ЗНАЧЕНИЕ".
+  // ключ разный у разных плееров; значение принимаем, если это аудио ИЛИ base64-обёртка на аудио
+  const pr = new RegExp('"title":"((?:[^"\\\\]|\\\\.)*)"[^{}]*?"(?:file|url|src)":"((?:[^"\\\\]|\\\\.)+?)"', 'gi');
+  let p; while ((p = pr.exec(html))) {
+    const v = p[2];
+    if (AUDIO_EXT.test(unesc(v).split('?')[0]) || unwrapAudioUrl(v)) add(v, p[1]);
+  }
+  // сырой скан прямых ссылок на аудио — если плеер не в формате title/файл
   const re = new RegExp('https?:(?:\\\\?\\/){2}[^\\s"\'<>)]+?\\.(?:' + AUDIO_ALT + ')(?:\\?[^\\s"\'<>)]*)?', 'gi');
   let m; while ((m = re.exec(html))) add(m[0], '');
   // мобильные варианты (/mobile/) — обычно ужатые дубли; отсеиваем, если есть полные

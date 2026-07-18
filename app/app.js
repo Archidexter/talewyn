@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.60';
+const APP_VERSION = '1.0.61';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -207,6 +207,7 @@ const I18N = {
     urlAdd: 'По ссылке',
     urlT: 'Вставить ссылку на файл',
     urlGo: 'Скачать', urlDl: 'Скачиваю с {h}…',
+    urlStream: 'Подключаю поток с {h}…', streamAdded: 'Аудиокнига по ссылке добавлена',
     urlBad: 'Это не похоже на ссылку',
     urlNoNet: 'Нет интернета — проверьте связь',
     urlHttp: 'сервер ответил {c}',
@@ -378,6 +379,7 @@ const I18N = {
     urlAdd: 'From link',
     urlT: 'Paste a file link',
     urlGo: 'Download', urlDl: 'Downloading from {h}…',
+    urlStream: 'Connecting stream from {h}…', streamAdded: 'Audiobook added from link',
     urlBad: 'That does not look like a link',
     urlNoNet: 'No internet — check your connection',
     urlHttp: 'server returned {c}',
@@ -2452,6 +2454,25 @@ async function importFromUrl() {
   if (!url) return;
   if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
   let u; try { u = new URL(url); } catch { showToast(t('urlBad')); return; }
+  // прямая ссылка на аудио → слушаем ПОТОКОМ, не скачивая в память (аудиокниги большие).
+  // расширение проверяем по пути URL, чтобы ?query не мешал.
+  let audioUrl = false;
+  try { audioUrl = AUDIO_EXT.test(new URL(u.href).pathname); } catch {}
+  if (audioUrl) {
+    if (!netOnline) { probeNet(); showToast(t('urlNoNet')); return; }
+    urlBusy = true;
+    try {
+      showProgress(T('urlStream', { h: u.hostname }), null);
+      const rec = await addStreamAudiobook([u.href]);
+      hideToast();
+      if (typeof loadAudiobooks === 'function') await loadAudiobooks();
+      setShelfTab('audio'); renderAudioShelf();
+      showToast(T('streamAdded', { n: rec.title }));
+      openAudiobook(rec.id);
+    } catch (e) { showToast(T('urlFail', { e: (e && e.message) || t('urlBlocked') })); }
+    finally { urlBusy = false; }
+    return;
+  }
   if (!netOnline) { probeNet(); showToast(t('urlNoNet')); return; }
   urlBusy = true;
   try {
@@ -4892,6 +4913,46 @@ function abCommonName(names) {
 }
 const abClean = n => n.replace(/\.[^.]+$/, '').replace(/^\s*\d+[\s._\-.)]*/, '').replace(/[_]+/g, ' ').trim();
 
+// длительность трека по URL (без скачивания): грузим только метаданные удалённого потока.
+// crossOrigin НЕ ставим — иначе сервер без CORS-заголовков вообще не отдаст (сломает и стрим).
+function audioUrlDuration(url) {
+  return new Promise(res => {
+    const a = new Audio();
+    let done = false;
+    const fin = d => { if (done) return; done = true; try { a.removeAttribute('src'); a.load(); } catch {} res(isFinite(d) && d > 0 ? d : 0); };
+    a.preload = 'metadata';
+    a.onloadedmetadata = () => fin(a.duration);
+    a.onerror = () => fin(0);
+    setTimeout(() => fin(a.duration || 0), 10000);
+    a.src = url;
+  });
+}
+// стрим-аудиокнига: треки — это URL (в audiotracks кладём {url} вместо {blob}), плеер играет потоком
+async function addStreamAudiobook(urls, title) {
+  const id = newId('ab');
+  const tracks = [];
+  for (let i = 0; i < urls.length; i++) {
+    const u = urls[i];
+    let name = 'Трек ' + (i + 1);
+    try {
+      const bn = decodeURIComponent(new URL(u).pathname.split('/').filter(Boolean).pop() || '');
+      if (bn) name = abClean(bn) || name;
+    } catch {}
+    const dur = await audioUrlDuration(u);
+    await dbPut('audiotracks', { book: id, idx: i, url: u });
+    tracks.push({ title: name, dur });
+  }
+  const rec = {
+    id, kind: 'audiobook', stream: true,
+    title: title || (tracks[0] && tracks[0].title) || 'Аудиокнига', author: '',
+    cover: null, tracks, count: tracks.length,
+    totalDur: tracks.reduce((s, t) => s + (t.dur || 0), 0),
+    addedAt: Date.now(),
+  };
+  await dbPut('audiobooks', rec);
+  return rec;
+}
+
 // набор аудиофайлов → одна аудиокнига (треки в естественном порядке)
 async function importAudiobook(files, onProgress) {
   const list = [...files].sort((a, b) => abNatSort(a.name, b.name));
@@ -5217,10 +5278,10 @@ async function abLoadTrack(idx, pos, autoplay) {
   let row = null;
   try { row = await dbGet('audiotracks', [ab.rec.id, idx]); } catch {}
   if (!ab) return;                 // плеер закрыли, пока читали трек из базы
-  if (!row || !row.blob) return;
-  if (ab._url) { try { URL.revokeObjectURL(ab._url); } catch {} }
-  ab._url = URL.createObjectURL(row.blob);
-  audioBookEl.src = ab._url;
+  if (!row || (!row.blob && !row.url)) return;
+  if (ab._url) { try { URL.revokeObjectURL(ab._url); } catch {} ab._url = null; }
+  if (row.url) audioBookEl.src = row.url;                    // стрим по ссылке — без скачивания
+  else { ab._url = URL.createObjectURL(row.blob); audioBookEl.src = ab._url; }
   audioBookEl.playbackRate = abRate;
   setMarquee($('#ab-track-title'), ab.rec.tracks[idx].title);   // длинное название поедет строкой
   highlightAbTrack(idx);

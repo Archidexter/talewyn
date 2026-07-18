@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.37';
+const APP_VERSION = '1.0.38';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -6748,7 +6748,7 @@ function bindUI() {
       sw.axis = Math.abs(dx) > Math.abs(dy) * 1.3 ? 'x' : 'y';
       if (sw.axis === 'x' && String(getSelection())) { sw = null; return; }
     }
-    if (sw.axis !== 'x') return;
+    if (sw.axis !== 'x') { sw.dy = dy; return; }   // вертикаль — запоминаем для свайпа-вниз (шапка)
     const ch = state.chapter;
     let d = dx;
     if ((d > 0 && !(ch && ch.prev_idx != null)) || (d < 0 && !(ch && ch.next_idx != null))) d *= 0.28;
@@ -6765,7 +6765,18 @@ function bindUI() {
     e.preventDefault();
   }, { passive: false });
   addEventListener('touchend', () => {
-    if (!sw || sw.axis !== 'x') { sw = null; return; }
+    if (!sw) return;
+    // свайп ВНИЗ открывает верхнюю панель — работает всегда, даже когда листать некуда
+    // (PDF/короткая глава): там скролла нет, и обычное «показать шапку при прокрутке вверх»
+    // не срабатывает, а вызвать меню было нечем.
+    if (sw.axis === 'y') {
+      if (sw.dy > 45) {
+        $('#reader-header').classList.remove('hidden');
+        $('#reader-fabnav')?.classList.remove('hidden');
+      }
+      sw = null; return;
+    }
+    if (sw.axis !== 'x') { sw = null; return; }
     const a = art(), ch = state.chapter;
     const dx = sw.dx, dt = performance.now() - sw.at;
     const far = Math.abs(dx) > Math.min(140, innerWidth * 0.26) || (dt < 300 && Math.abs(dx) > 55);

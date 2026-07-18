@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.42';
+const APP_VERSION = '1.0.43';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -1348,17 +1348,20 @@ function renderScanResults() {
     });
   });
 }
+// счётчик и «Все» — ПО ТЕКУЩЕМУ ФИЛЬТРУ: считаем/отмечаем только видимые файлы
 function updateScanAdd() {
-  const selN = scanSel.size;
+  const shown = scanShownIdx();
+  const selN = shown.filter(i => scanSel.has(i)).length;   // выбрано среди ВИДИМЫХ
   const btn = $('#scan-add');
   btn.hidden = false; btn.disabled = !selN;
   btn.textContent = T('scanAdd', { n: selN });
-  const shown = scanShownIdx(), cb = $('#scan-allcb');
-  if (cb) cb.checked = shown.length > 0 && shown.every(i => scanSel.has(i));
+  const cb = $('#scan-allcb');
+  if (cb) cb.checked = shown.length > 0 && selN === shown.length;
 }
 async function scanDoAdd() {
-  if (!scanSel.size) return;
-  const chosen = [...scanSel].sort((a, b) => a - b).map(i => scanFiles[i]).filter(Boolean);
+  // добавляем только выбранное среди ВИДИМЫХ под текущим фильтром (фильтр epub → только epub)
+  const chosen = scanShownIdx().filter(i => scanSel.has(i)).map(i => scanFiles[i]).filter(Boolean);
+  if (!chosen.length) return;
   closeScan();
   const conv = (window.Capacitor && window.Capacitor.convertFileSrc) || (x => x);
   const files = [];

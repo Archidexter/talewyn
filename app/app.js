@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.61';
+const APP_VERSION = '1.0.63';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -208,6 +208,7 @@ const I18N = {
     urlT: 'Вставить ссылку на файл',
     urlGo: 'Скачать', urlDl: 'Скачиваю с {h}…',
     urlStream: 'Подключаю поток с {h}…', streamAdded: 'Аудиокнига по ссылке добавлена',
+    streamAddedN: 'Аудиокнига по ссылке · треков: {n}', urlNoAudio: 'на странице не нашлось аудио',
     urlBad: 'Это не похоже на ссылку',
     urlNoNet: 'Нет интернета — проверьте связь',
     urlHttp: 'сервер ответил {c}',
@@ -380,6 +381,7 @@ const I18N = {
     urlT: 'Paste a file link',
     urlGo: 'Download', urlDl: 'Downloading from {h}…',
     urlStream: 'Connecting stream from {h}…', streamAdded: 'Audiobook added from link',
+    streamAddedN: 'Audiobook from link · tracks: {n}', urlNoAudio: 'no audio found on the page',
     urlBad: 'That does not look like a link',
     urlNoNet: 'No internet — check your connection',
     urlHttp: 'server returned {c}',
@@ -2486,9 +2488,22 @@ async function importFromUrl() {
     // Аудио не нюхаем: в двоичном потоке может случайно попасться «<html», а текстом он не является.
     const isAudio = AUDIO_EXT.test(name) || (got.blob.type || '').startsWith('audio/');
     if (!isAudio) {
-      const head = await got.blob.slice(0, 512).text();
-      if (!/\.(x?html?)$/i.test(name) && /<!doctype\s+html|<html[\s>]/i.test(head))
-        throw new Error(t('urlNotBook'));
+      const head = await got.blob.slice(0, 1024).text();
+      if (!/\.(x?html?)$/i.test(name) && /<!doctype\s+html|<html[\s>]/i.test(head)) {
+        // это веб-страница, а не файл книги — пробуем вытащить из неё аудио (плейлист/ссылки)
+        const html = await got.blob.text();
+        const found = extractAudioTracks(html, got.url || u.href);
+        if (found.length) {
+          urlBusy = false; hideToast();
+          const rec = await addStreamAudiobook(found, pageTitle(html));
+          if (typeof loadAudiobooks === 'function') await loadAudiobooks();
+          setShelfTab('audio'); renderAudioShelf();
+          showToast(T('streamAddedN', { n: found.length }));
+          openAudiobook(rec.id);
+          return;
+        }
+        throw new Error(t('urlNoAudio'));
+      }
     }
     const f = new File([got.blob], name, { type: got.blob.type || 'application/octet-stream' });
     urlBusy = false;
@@ -4913,44 +4928,69 @@ function abCommonName(names) {
 }
 const abClean = n => n.replace(/\.[^.]+$/, '').replace(/^\s*\d+[\s._\-.)]*/, '').replace(/[_]+/g, ' ').trim();
 
-// длительность трека по URL (без скачивания): грузим только метаданные удалённого потока.
-// crossOrigin НЕ ставим — иначе сервер без CORS-заголовков вообще не отдаст (сломает и стрим).
-function audioUrlDuration(url) {
-  return new Promise(res => {
-    const a = new Audio();
-    let done = false;
-    const fin = d => { if (done) return; done = true; try { a.removeAttribute('src'); a.load(); } catch {} res(isFinite(d) && d > 0 ? d : 0); };
-    a.preload = 'metadata';
-    a.onloadedmetadata = () => fin(a.duration);
-    a.onerror = () => fin(0);
-    setTimeout(() => fin(a.duration || 0), 10000);
-    a.src = url;
-  });
-}
-// стрим-аудиокнига: треки — это URL (в audiotracks кладём {url} вместо {blob}), плеер играет потоком
-async function addStreamAudiobook(urls, title) {
+// стрим-аудиокнига: треки — это URL (в audiotracks кладём {url} вместо {blob}), плеер играет потоком.
+// длительность НЕ пробим заранее (у многотрековой книги это долго) — узнаём лениво при первом
+// воспроизведении трека и запоминаем (см. abLoadTrack).
+async function addStreamAudiobook(items, title) {
   const id = newId('ab');
   const tracks = [];
-  for (let i = 0; i < urls.length; i++) {
-    const u = urls[i];
-    let name = 'Трек ' + (i + 1);
-    try {
-      const bn = decodeURIComponent(new URL(u).pathname.split('/').filter(Boolean).pop() || '');
-      if (bn) name = abClean(bn) || name;
-    } catch {}
-    const dur = await audioUrlDuration(u);
-    await dbPut('audiotracks', { book: id, idx: i, url: u });
-    tracks.push({ title: name, dur });
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    const url = typeof it === 'string' ? it : it.url;
+    let name = (it && it.title) || '';
+    if (!name) {
+      try { const bn = decodeURIComponent(new URL(url).pathname.split('/').filter(Boolean).pop() || ''); if (bn) name = abClean(bn); } catch {}
+    }
+    if (!name) name = 'Трек ' + (i + 1);
+    await dbPut('audiotracks', { book: id, idx: i, url });
+    tracks.push({ title: name, dur: 0 });
   }
   const rec = {
     id, kind: 'audiobook', stream: true,
     title: title || (tracks[0] && tracks[0].title) || 'Аудиокнига', author: '',
-    cover: null, tracks, count: tracks.length,
-    totalDur: tracks.reduce((s, t) => s + (t.dur || 0), 0),
-    addedAt: Date.now(),
+    cover: null, tracks, count: tracks.length, totalDur: 0, addedAt: Date.now(),
   };
   await dbPut('audiobooks', rec);
   return rec;
+}
+// вытащить треки аудио из HTML страницы: DOM (audio/source/ссылки/og:audio), затем JSON-плейлист
+// (пары "title"…"url") и сырой скан. Слэши в URL часто экранированы (\/), заголовки в \uXXXX —
+// раскодируем. Возвращаем [{url, title}] в порядке появления, без дублей.
+const AUDIO_ALT = 'mp3|m4a|m4b|aac|ogg|oga|opus|flac|wav';
+function unesc(s) {
+  return String(s).replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16))).replace(/\\\//g, '/');
+}
+function extractAudioTracks(html, baseUrl) {
+  const out = [], seen = new Set();
+  const add = (rawUrl, title) => {
+    if (!rawUrl) return;
+    let abs; try { abs = new URL(unesc(rawUrl), baseUrl).href; } catch { return; }
+    if (seen.has(abs)) return; seen.add(abs);
+    out.push({ url: abs, title: (title ? unesc(title).trim() : '') });
+  };
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    doc.querySelectorAll('audio[src], audio source[src], video source[src], source[src]').forEach(e => add(e.getAttribute('src'), ''));
+    doc.querySelectorAll('a[href]').forEach(e => { const h = e.getAttribute('href'); if (h && AUDIO_EXT.test(h.split('?')[0])) add(h, (e.textContent || '').trim()); });
+    doc.querySelectorAll('meta[property="og:audio"], meta[property="og:audio:url"]').forEach(e => add(e.getAttribute('content'), ''));
+  } catch {}
+  // JSON-плейлист: "title":"…"…"url":"…аудио…" (в т.ч. с экранированными слэшами)
+  const pr = new RegExp('"title":"((?:[^"\\\\]|\\\\.)*)"[^{}]*?"url":"((?:[^"\\\\]|\\\\.)*?\\.(?:' + AUDIO_ALT + ')[^"]*)"', 'gi');
+  let p; while ((p = pr.exec(html))) add(p[2], p[1]);
+  // сырой скан на случай, если плеер не в формате title/url
+  const re = new RegExp('https?:(?:\\\\?\\/){2}[^\\s"\'<>)]+?\\.(?:' + AUDIO_ALT + ')(?:\\?[^\\s"\'<>)]*)?', 'gi');
+  let m; while ((m = re.exec(html))) add(m[0], '');
+  // мобильные варианты (/mobile/) — обычно ужатые дубли; отсеиваем, если есть полные
+  const hasFull = out.some(t => !/\/mobile\//i.test(t.url));
+  return hasFull ? out.filter(t => !/\/mobile\//i.test(t.url)) : out;
+}
+function pageTitle(html) {
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const og = doc.querySelector('meta[property="og:title"]');
+    const t = (og && og.getAttribute('content')) || (doc.querySelector('title') && doc.querySelector('title').textContent) || '';
+    return t.trim().slice(0, 200);
+  } catch { return ''; }
 }
 
 // набор аудиофайлов → одна аудиокнига (треки в естественном порядке)
@@ -5289,6 +5329,13 @@ async function abLoadTrack(idx, pos, autoplay) {
   let started = false;
   const start = () => {
     if (started) return; started = true;
+    // стрим: длительность трека узнаём лениво из метаданных потока и запоминаем в записи
+    if (ab.rec.stream && !ab.rec.tracks[idx].dur && isFinite(audioBookEl.duration) && audioBookEl.duration > 0) {
+      ab.rec.tracks[idx].dur = audioBookEl.duration;
+      ab.rec.totalDur = ab.rec.tracks.reduce((s, t) => s + (t.dur || 0), 0);
+      dbPut('audiobooks', ab.rec).catch(() => {});
+      try { renderAbTracklist(); } catch {}
+    }
     if (pos > 0) { try { audioBookEl.currentTime = pos; } catch {} }
     abUpdateSeek();
     if (autoplay) abPlay();   // автопродолжение при переходе на следующий трек

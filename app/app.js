@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.45';
+const APP_VERSION = '1.0.46';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -5684,7 +5684,7 @@ function setupSwipeList(sel, del, delSel, onHold, itemSel = '.note-item') {
 const ICON_ANIM = {
   '#filter-btn': 'pop', '#info-btn': 'bob', '#shelf-settings-btn': 'tick',
   '.shelf-tab[data-tab="books"]': 'pop', '.shelf-tab[data-tab="audio"]': 'beat',
-  '#url-btn': 'twist', '#import-btn': 'pop',
+  '#url-btn': 'twist', '#import-btn': 'pop', '#scan-btn': 'seek',
   '#shelf-btn': 'nl', '#lib-settings-btn': 'tick', '#annot-more': 'nd', '#annot-edit': 'wiggle',
   '#notes-btn': 'pop', '#bm-list-btn': 'nd', '#review-btn': 'pop',
   '#notes-add-btn': 'pop', '#notes-copy': 'pop', '#notes-del-all': 'shrink',

@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.48';
+const APP_VERSION = '1.0.49';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -2620,7 +2620,7 @@ async function exportSync() {
   if (backupBusy) return; backupBusy = true;
   try {
     const blob = await buildSync();
-    downloadBlob(blob, stampName('talewyn-sync-', '.tlib'));
+    downloadBlob(blob, stampName('talewyn-sync-', '.json'));
     showToast(T('syncSaved', { s: Math.max(1, Math.round(blob.size / 1024)) }));
   } catch (e) { showToast(T('backupFail', { e: e.message })); }
   finally { backupBusy = false; }
@@ -2676,7 +2676,7 @@ async function exportLibrary() {
     const d = new Date();
     const name = 'talewyn-backup-' + d.getFullYear()
       + '-' + String(d.getMonth() + 1).padStart(2, '0')
-      + '-' + String(d.getDate()).padStart(2, '0') + '.tlib';
+      + '-' + String(d.getDate()).padStart(2, '0') + '.json';
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = name;

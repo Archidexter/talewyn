@@ -291,11 +291,12 @@ html.t-light .brand-logo, html.t-sepia .brand-logo {
 #flt-reset { align-self: flex-start; }
 .icon-btn.active { color: var(--accent); }
 
-/* включённые иконки-переключатели: рамка остаётся сплошной, а внутренность заливается
-   тем же цветом, но полупрозрачно — видно и контур, и «залито» (воронка фильтра, флажки закладок) */
+/* включённые иконки-переключатели: внутренность заливается золотом (--gild, цвет заголовков),
+   рамка остаётся своего цвета — у фильтра/списка это accent, поэтому контур и заливка различимы;
+   у закладки в читалке рамка тоже золотая — получается сплошной золотой флажок, как было раньше */
 #filter-btn.active svg path,
 #bm-list-btn.active svg path,
-#bm-btn.active svg path { fill: currentColor; fill-opacity: .28; }
+#bm-btn.active svg path { fill: var(--gild); }
 
 #shelf-continue .cont-card, #tab-audio .cont-card {
   display: flex; align-items: center; gap: 20px; width: 100%; text-align: left;

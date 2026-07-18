@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.52';
+const APP_VERSION = '1.0.53';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -335,7 +335,7 @@ const I18N = {
     restoreMixed: 'Восстановлено: {n}, уже на полке: {s}',
     restoreNone: 'Все книги из копии уже на полке',
     notBackup: 'это не копия библиотеки AD.Talewyn',
-    syncSaved: 'Файл синхронизации сохранён · {s} КБ',
+    syncSaved: 'Файл синхронизации сохранён · {s} КБ', syncShare: 'Выбери, куда сохранить файл',
     syncResHead: 'Синхронизация', syncResAdd: 'добавлено книг: {n}', syncResUpd: 'обновлено книг: {n}',
     syncResNone: 'изменений нет', syncMissing: 'не найдено на устройстве: {x}',
     syncT: 'Синхронизация и копия',
@@ -504,7 +504,7 @@ const I18N = {
     restoreMixed: 'Restored: {n}, already on the shelf: {s}',
     restoreNone: 'All books from the backup are already on the shelf',
     notBackup: 'this is not an AD.Talewyn library backup',
-    syncSaved: 'Sync file saved · {s} KB',
+    syncSaved: 'Sync file saved · {s} KB', syncShare: 'Choose where to save the file',
     syncResHead: 'Synchronization', syncResAdd: 'books added: {n}', syncResUpd: 'books updated: {n}',
     syncResNone: 'no changes', syncMissing: 'not found on device: {x}',
     syncT: 'Sync & backup',
@@ -2612,12 +2612,24 @@ async function buildSync() {
   for (const a of audio) out.audio.push(await audioState(a));
   return new Blob([JSON.stringify(out)], { type: 'application/json' });
 }
-function downloadBlob(blob, name) {
+// сохранение файла: на устройстве (WebView) браузерное <a download> blob НЕ сохраняет —
+// идём через нативный «Поделиться» (пишет файл + системный лист: в Файлы/облако/отправить).
+// Возвращает 'share' (открыт системный лист) или 'download' (обычное скачивание в браузере).
+async function downloadBlob(blob, name) {
+  const S = window.AndroidSave;
+  if (isNativeApp() && S && typeof S.share === 'function') {
+    try {
+      const b64 = await blobToB64(blob);
+      if (S.share(name, blob.type || 'application/json', b64) === 'OK') return 'share';
+    } catch { /* падаем на обычную ссылку */ }
+  }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  return 'download';
 }
+window.__saveError = () => { try { showToast(T('backupFail', { e: '' })); } catch {} };
 const stampName = (prefix, ext) => {
   const d = new Date();
   return prefix + d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + ext;
@@ -2626,8 +2638,8 @@ async function exportSync() {
   if (backupBusy) return; backupBusy = true;
   try {
     const blob = await buildSync();
-    downloadBlob(blob, stampName('talewyn-sync-', '.json'));
-    showToast(T('syncSaved', { s: Math.max(1, Math.round(blob.size / 1024)) }));
+    const how = await downloadBlob(blob, stampName('talewyn-sync-', '.json'));
+    showToast(how === 'share' ? t('syncShare') : T('syncSaved', { s: Math.max(1, Math.round(blob.size / 1024)) }));
   } catch (e) { showToast(T('backupFail', { e: e.message })); }
   finally { backupBusy = false; }
 }
@@ -2679,20 +2691,9 @@ async function exportLibrary() {
   backupBusy = true;
   try {
     const blob = await buildBackup();
-    const d = new Date();
-    const name = 'talewyn-backup-' + d.getFullYear()
-      + '-' + String(d.getMonth() + 1).padStart(2, '0')
-      + '-' + String(d.getDate()).padStart(2, '0') + '.json';
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
-    showToast(T('backupDone', {
-      n: state.books.length, s: (blob.size / 1048576).toFixed(1),
-    }));
+    const how = await downloadBlob(blob, stampName('talewyn-backup-', '.json'));
+    showToast(how === 'share' ? t('syncShare')
+      : T('backupDone', { n: state.books.length, s: (blob.size / 1048576).toFixed(1) }));
   } catch (e) {
     showToast(T('backupFail', { e: e.message }));
   } finally {

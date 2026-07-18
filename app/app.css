@@ -291,6 +291,12 @@ html.t-light .brand-logo, html.t-sepia .brand-logo {
 #flt-reset { align-self: flex-start; }
 .icon-btn.active { color: var(--accent); }
 
+/* включённые иконки-переключатели: рамка остаётся сплошной, а внутренность заливается
+   тем же цветом, но полупрозрачно — видно и контур, и «залито» (воронка фильтра, флажки закладок) */
+#filter-btn.active svg path,
+#bm-list-btn.active svg path,
+#bm-btn.active svg path { fill: currentColor; fill-opacity: .28; }
+
 #shelf-continue .cont-card, #tab-audio .cont-card {
   display: flex; align-items: center; gap: 20px; width: 100%; text-align: left;
   background: linear-gradient(140deg, var(--elev) 0%, var(--elev2) 55%, var(--elev) 100%);

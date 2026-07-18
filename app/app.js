@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.54';
+const APP_VERSION = '1.0.55';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -3168,8 +3168,7 @@ function refreshBmBtn() {
   const btn = $('#bm-btn');
   if (!btn || !state.chapter) return;
   const here = !!bmAt(state.chapter.idx, curFrac());
-  btn.classList.toggle('active', here);
-  btn.querySelector('svg').setAttribute('fill', here ? 'currentColor' : 'none');
+  btn.classList.toggle('active', here);   // заливку внутренности рисует CSS (#bm-btn.active svg path)
 }
 async function toggleBookmark() {
   if (!state.book || !state.chapter) return;

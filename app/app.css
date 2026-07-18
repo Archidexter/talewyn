@@ -497,6 +497,24 @@ html.t-light .brand-logo, html.t-sepia .brand-logo {
 /* перетаскивание файла на окно (ПК) — подсвечиваем главную кнопку */
 #shelf-view.dragging .fab-main { box-shadow: 0 0 0 4px var(--accent-soft), 0 10px 28px rgb(0 0 0 / .5); }
 
+/* ── перетаскивание кластера по рельсе: правый край (колонка) ↔ нижний край (строка) ── */
+#add-fab { touch-action: none; }   /* удержание-перетаскивание не должно скроллить полку */
+#add-fab.fab-dock-bottom {
+  flex-direction: row;
+  top: auto; right: auto;
+  bottom: max(16px, max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));
+}
+/* режим захвата: кластер приподнят, кнопки не «клюют» переходами, главная чуть крупнее */
+#add-fab.fab-dragging button { transition: none; box-shadow: 0 12px 32px rgb(0 0 0 / .6); }
+#add-fab.fab-dragging .fab-main { transform: scale(1.08); box-shadow: 0 14px 36px rgb(0 0 0 / .6), 0 0 0 2px var(--gild); }
+/* на нижней рельсе корзина/коллекция вылетают СНИЗУ и уходят туда же, а не из-за правого края */
+body.sel-mode #add-fab.fab-dock-bottom .fab-del,
+body.sel-mode #add-fab.fab-dock-bottom .fab-collect { animation-name: fab-del-in-v; }
+@keyframes fab-del-in-v { from { transform: translateY(160%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+body.sel-exiting #add-fab.fab-dock-bottom .fab-del,
+body.sel-exiting #add-fab.fab-dock-bottom .fab-collect { animation-name: fab-del-out-v; }
+@keyframes fab-del-out-v { from { transform: translateY(0); opacity: 1; } to { transform: translateY(160%); opacity: 0; } }
+
 .import-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 9px;
   min-height: 44px; padding: 10px 20px; border-radius: var(--r-md);

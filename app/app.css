@@ -2061,8 +2061,13 @@ html.t-dark #sel-tr, html.t-dark #sel-note, html.t-dark #sel-speak { color: var(
 @media (hover: hover) { .ghost-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); } }
 .danger-btn.slim { width: auto; min-height: 44px; }
 .review-book { margin: 0 0 10px; font-family: var(--display); font-weight: 600; font-size: 17px; }
-/* в шторке отзыва название книги — по центру, а звёзды растянуты на всю ширину панели */
-#review-sheet .review-book { text-align: center; }
+/* в шторке отзыва заголовок оформлен как в окнах ссылки/автопоиска: серифный, по центру,
+   под ним — разделительная полоса-ромб (.confirm-orn) */
+#review-sheet .review-book {
+  text-align: center; margin: 0 0 12px;
+  font-family: var(--serif); font-weight: 600; font-size: 19px; color: var(--text);
+}
+#review-sheet .confirm-orn { margin: 0 0 16px; }
 #review-sheet .star-row { justify-content: space-between; gap: 6px; }
 #review-sheet .star-row button { flex: 1 1 0; width: auto; }
 .star-row { display: flex; gap: 6px; margin-bottom: 14px; }

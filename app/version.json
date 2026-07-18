@@ -1,7 +1,7 @@
 {
-  "web": "1.0.24",
+  "web": "1.0.25",
   "native": "1.0.24",
-  "bundleUrl": "",
+  "bundleUrl": "https://github.com/Archidexter/talewyn/releases/download/web-1.0.25/bundle.zip",
   "apkUrl": "",
-  "notes": ""
+  "notes": "Тест OTA: обновление веба по воздуху"
 }

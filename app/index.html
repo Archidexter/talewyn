@@ -10,7 +10,7 @@
 if(th==='auto')th=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <link rel="stylesheet" href="fonts.css?v=9">
-<link rel="stylesheet" href="app.css?v=146">
+<link rel="stylesheet" href="app.css?v=147">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -451,11 +451,14 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
 
 <!-- перевод слова по двойному тапу: компактный попап у самого слова -->
 <div id="word-pop" hidden>
-  <div class="wp-word" id="wp-word"></div>
-  <div class="wp-tr" id="wp-tr"></div>
+  <div class="wp-head">
+    <span class="wp-word" id="wp-word"></span>
+    <span class="wp-sep" aria-hidden="true">·</span>
+    <span class="wp-tr" id="wp-tr"></span>
+  </div>
   <div class="wp-actions">
     <button class="wp-act" id="wp-pron" data-i18n-title="wpPron" title="Произношение" aria-label="Произношение">
-      <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="9" cy="12" rx="6.5" ry="4"/><path d="M2.8 12h12.4"/><path d="M18.4 9.6a3.6 3.6 0 0 1 0 4.8"/></svg>
+      <svg viewBox="0 0 24 24" width="19" height="19"><path d="M5 4h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-6l-4.5 3.5V16H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><text x="12" y="13" font-size="8.5" font-weight="700" text-anchor="middle" fill="currentColor" font-family="Georgia, serif">Аа</text></svg>
     </button>
     <button class="wp-act" id="wp-say" data-i18n-title="wpSay" title="Озвучить" aria-label="Озвучить">
       <svg viewBox="0 0 24 24" width="19" height="19" fill="currentColor"><path d="M4 9.5v5h3.5L13 19V5L7.5 9.5H4z"/><path d="M16 8.8a4.2 4.2 0 0 1 0 6.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M18.4 6.4a7.4 7.4 0 0 1 0 11.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
@@ -665,6 +668,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=152"></script>
+<script src="app.js?v=153"></script>
 </body>
 </html>

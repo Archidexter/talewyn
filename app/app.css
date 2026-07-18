@@ -1210,7 +1210,7 @@ body.sel-mode #add-fab .fab-del { display: grid; animation: fab-del-in .3s cubic
 }
 .sheet-scrim.open { opacity: 1; }
 /* шторки: базовый визуал */
-#settings-sheet, #note-sheet, #review-sheet, #annot-sheet, #tr-sheet, #info-sheet, #ab-notes-sheet {
+#settings-sheet, #pronun-sheet, #note-sheet, #review-sheet, #annot-sheet, #tr-sheet, #info-sheet, #ab-notes-sheet {
   position: fixed; left: 50%; bottom: 0; z-index: 71;
   width: min(100%, 480px); background: var(--elev);
   border-radius: var(--r-xl) var(--r-xl) 0 0; border: 1px solid var(--border-strong); border-bottom: none;
@@ -1232,7 +1232,7 @@ body.sel-mode #add-fab .fab-del { display: grid; animation: fab-del-in .3s cubic
   margin: 4px auto 16px; cursor: grab;
 }
 /* тонкий скролл шторок, вставленный внутрь скруглённых краёв (не вылезает по вертикали) */
-#settings-sheet, #note-sheet, #review-sheet, #annot-sheet, #tr-sheet, #info-sheet, #ab-notes-sheet {
+#settings-sheet, #pronun-sheet, #note-sheet, #review-sheet, #annot-sheet, #tr-sheet, #info-sheet, #ab-notes-sheet {
   scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--gild) 30%, transparent) transparent;
 }
 .sheet::-webkit-scrollbar { width: 7px; }
@@ -1647,7 +1647,7 @@ body.tts-on .chapter:has(.pdf-text) { padding-bottom: calc(14px + max(env(safe-a
 /* ── перевод слова по двойному тапу ── */
 ::highlight(word-sel) { background: color-mix(in srgb, var(--accent) 40%, transparent); }
 #word-pop {
-  position: fixed; z-index: 63; max-width: min(78vw, 300px);
+  position: fixed; z-index: 63; width: min(74vw, 262px);   /* фикс-ширина — три иконки ложатся ровно по краям */
   padding: 10px 14px; border-radius: 14px;
   background: var(--elev2); border: 1px solid var(--border-strong);
   box-shadow: 0 12px 34px rgb(0 0 0 / .45);
@@ -1657,20 +1657,33 @@ body.tts-on .chapter:has(.pdf-text) { padding-bottom: calc(14px + max(env(safe-a
 }
 @keyframes wp-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 .wp-word { font-family: var(--display); font-weight: 600; font-size: 15px; color: var(--dim); }
-.wp-tr { font-size: 16px; color: var(--text); margin-top: 3px; line-height: 1.35; }
+.wp-tr { font-size: 16px; color: var(--text); margin-top: 3px; line-height: 1.35;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }   /* перевод — одна строка */
 .wp-more {
   margin-top: 8px; font-size: 12px; font-weight: 700; color: var(--gild);
   letter-spacing: .04em; text-transform: uppercase;
 }
-/* попап слова: два действия в ряд (произношение · подробнее) */
-.wp-actions { display: flex; gap: 18px; margin-top: 8px; }
-.wp-actions .wp-more { margin-top: 0; background: none; border: 0; padding: 0; cursor: pointer; }
+/* попап слова: три круглых действия, равномерно по всей ширине карточки */
+.wp-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 11px; }
+.wp-act {
+  width: 40px; height: 40px; border-radius: 50%;
+  border: 1px solid var(--border-strong); background: transparent; color: var(--dim);
+  display: grid; place-items: center; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .12s ease, background .15s, color .15s, border-color .15s;
+}
+@media (hover: hover) { .wp-act:hover { color: var(--gild); border-color: var(--gild); } }
+.wp-act:active { transform: scale(.88); color: var(--gild); border-color: var(--gild);
+  background: color-mix(in srgb, var(--gild) 18%, transparent); }   /* отдача нажатия */
 
 /* ── словарь произношений (экран настроек) ── */
 .pronun-block { width: 100%; display: flex; flex-direction: column; gap: 10px; }
 .pronun-hint { font-size: 12.5px; color: var(--dim); line-height: 1.4; text-align: center; }
 .pronun-list-btn { color: var(--dim); }   /* иконка-список — вторична, «+» акцентнее */
 #pronun-sheet .pronun-list { max-height: 60vh; overflow-y: auto; }
+/* окно словаря открывается ПОВЕРХ настроек — поднимаем над ними (настройки z-index 71) */
+#pronun-overlay { z-index: 72; }
+#pronun-sheet { z-index: 73; }
 .pronun-list { display: flex; flex-direction: column; gap: 6px; }
 .pronun-empty { font-size: 13px; color: var(--faint); padding: 4px 2px; }
 .pronun-item {
@@ -1698,6 +1711,11 @@ body.tts-on .chapter:has(.pdf-text) { padding-bottom: calc(14px + max(env(safe-a
   -webkit-tap-highlight-color: transparent; transition: border-color .18s, background .18s;
 }
 @media (hover: hover) { .pronun-add-btn:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); } }
+/* отдача нажатия (её не хватало) */
+.pronun-add-btn { transition: transform .12s ease, border-color .18s, background .18s; }
+.pronun-add-btn:active { transform: scale(.9); background: color-mix(in srgb, var(--accent) 20%, transparent); border-color: var(--accent); }
+.pronun-del { transition: transform .12s ease, color .15s, background .15s; }
+.pronun-del:active { transform: scale(.84); color: var(--accent); }
 
 #sel-toolbar {
   position: fixed; left: 50%; translate: -50% 0; z-index: 62;
@@ -2138,7 +2156,7 @@ html.t-dark #sel-tr, html.t-dark #sel-note, html.t-dark #sel-speak { color: var(
 /* ═══ Адаптивность ═══ */
 @media (min-width: 700px) {
   #shelf-view, #library-view { padding-top: 32px; }
-  #settings-sheet, #note-sheet, #review-sheet, #annot-sheet, #tr-sheet, #info-sheet, #ab-notes-sheet {
+  #settings-sheet, #pronun-sheet, #note-sheet, #review-sheet, #annot-sheet, #tr-sheet, #info-sheet, #ab-notes-sheet {
     bottom: 24px; border-radius: var(--r-xl); border-bottom: 1px solid var(--border-strong);
   }
   #part-chips { flex-wrap: wrap; overflow-x: visible; }
@@ -2332,7 +2350,7 @@ body { font-size: var(--fs-body); }
 /* Ландшафт/низкая высота — нижние шторки на всю высоту (перебивает bottom:24px из min-width:700),
    превью ещё компактнее. ДОЛЖНО идти последним, чтобы перебить по порядку. */
 @media (orientation: landscape) and (max-height: 500px) {
-  #settings-sheet, #note-sheet, #review-sheet, #annot-sheet, #tr-sheet, #info-sheet, #ab-notes-sheet {
+  #settings-sheet, #pronun-sheet, #note-sheet, #review-sheet, #annot-sheet, #tr-sheet, #info-sheet, #ab-notes-sheet {
     bottom: 0; max-height: 100dvh; border-radius: var(--r-xl) var(--r-xl) 0 0; padding-top: 6px;
   }
   .settings-preview { max-height: 22dvh; }

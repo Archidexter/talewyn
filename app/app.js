@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.73';
+const APP_VERSION = '1.0.74';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -1935,15 +1935,25 @@ function uiOverlayOpen() {
   if (document.querySelector('.dd-menu.open, .lang-menu.open, .voice-menu.open, .speed-wheel.open')) return true;   // открытая выпадашка
   return false;
 }
-// пока открыто окно — НАТИВНАЯ прокрутка идёт только внутри него; тач по скриму/фону не двигает фон.
-// Флаг считаем один раз на touchstart (не на каждый touchmove — иначе просадка плавности скролла).
-let _ovlNow = false;
-document.addEventListener('touchstart', () => { _ovlNow = uiOverlayOpen(); }, { capture: true, passive: true });
+// пока открыто окно — НАТИВНАЯ прокрутка идёт только внутри него; тач по скриму/фону/короткому
+// списку не двигает фон. Разрешаем жест, ТОЛЬКО если под пальцем есть контейнер окна, который
+// реально может прокрутиться в эту сторону; иначе preventDefault (иначе браузер крутит тело сзади).
+// Флаг/старт считаем на touchstart, чтобы не дёргать плавность обычного скролла.
+let _ovlNow = false, _ovlY = 0;
+document.addEventListener('touchstart', e => { _ovlNow = uiOverlayOpen(); _ovlY = e.touches[0] ? e.touches[0].clientY : 0; }, { capture: true, passive: true });
 document.addEventListener('touchmove', e => {
-  if (!_ovlNow || e.touches.length > 1) return;
-  // прокрутка РАЗРЕШЕНА внутри самого окна (карточка/шторка/ящик/выпадашка/лайтбокс), фон — нет
-  if (e.target.closest('.confirm-card, .sheet, #col-drawer, .dd-menu, .lang-menu, .voice-menu, .col-modal-box, #lightbox, #word-pop')) return;
-  e.preventDefault();
+  if (!_ovlNow || e.touches.length !== 1) return;
+  const dy = e.touches[0].clientY - _ovlY;
+  for (let el = e.target; el && el !== document.body; el = el.parentElement) {
+    if (el.scrollHeight <= el.clientHeight + 1) continue;
+    if (!/(auto|scroll)/.test(getComputedStyle(el).overflowY)) continue;
+    // ближайший скролл-контейнер под пальцем: если может прокрутиться в эту сторону — разрешаем,
+    // иначе гасим (не чейнимся на тело за окном — контейнеры и так overscroll-behavior:contain)
+    const atTop = el.scrollTop <= 0, atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+    if (!((dy > 0 && atTop) || (dy < 0 && atBottom))) return;
+    break;
+  }
+  e.preventDefault();   // внутри окна прокручивать нечего → фон не двигаем
 }, { passive: false });
 let colPickSel = null;         // Set выбранных colId в диалоге «в коллекцию»
 

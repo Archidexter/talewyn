@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.70';
+const APP_VERSION = '1.0.71';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -1270,11 +1270,13 @@ const scanShownIdx = () => scanFiles.map((_, i) => i).filter(i => !scanFmt || sc
 //  пришлось бы снимать десятки лишних галочек). Книги — каждая своя единица.
 let scanGroups = [];
 const scanDir = p => String(p).replace(/[^/\\]*$/, '');
-// имя-основа: убираем расширение и хвостовую нумерацию трека (…-001, «часть 2», cd1, №3, гл. 4)
+// имя-основа: убираем расширение и нумерацию трека — И ХВОСТОВУЮ (…-001, «часть 2», cd1, №3),
+// И ВЕДУЩУЮ («01 - имя», «12. имя», «03_имя»). Часто есть обе: «01 - книга - 01.mp3».
 function scanStem(n) {
-  const s = scanStripExt(n).toLowerCase()
+  let s = scanStripExt(n).toLowerCase()
     .replace(/[\s._\-–—(\[#№]*(?:part|глава|гл|chapter|ch|track|cd|disc|диск|том|vol|часть)?\.?\s*\d{1,4}[\s._\-–—)\]]*$/i, '');
-  return s.replace(/[\s._\-–—]+$/, '').trim();
+  s = s.replace(/^\s*\d{1,4}\s*[.)\]\-–—_]+\s*/, '');   // ведущий номер трека
+  return s.replace(/^[\s._\-–—]+|[\s._\-–—]+$/g, '').trim();
 }
 function buildScanGroups() {
   const map = new Map();
@@ -5181,9 +5183,12 @@ function audioDuration(blob) {
 }
 function abCommonName(names) {
   if (!names.length) return '';
-  let p = names[0].replace(/\.[^.]+$/, '');
-  for (const n of names) { const s = n.replace(/\.[^.]+$/, ''); while (p && !s.startsWith(p)) p = p.slice(0, -1); }
-  return p.replace(/[\s._\-–—]*\d*[\s._\-–—]*$/, '').trim();   // убираем хвостовой номер трека
+  // убираем расширение И ВЕДУЩИЙ номер трека («01 - имя») у каждого — иначе общий префикс схлопнется
+  // до «0» и название книги потеряется (частый формат «01 - книга - 01.mp3»)
+  const strip = x => x.replace(/\.[^.]+$/, '').replace(/^\s*\d{1,4}\s*[.)\]\-–—_]+\s*/, '');
+  let p = strip(names[0]);
+  for (const n of names) { const s = strip(n); while (p && !s.startsWith(p)) p = p.slice(0, -1); }
+  return p.replace(/[\s._\-–—]*\d*[\s._\-–—]*$/, '').replace(/[\s._\-–—]+$/, '').trim();   // убираем хвостовой номер трека
 }
 const abClean = n => n.replace(/\.[^.]+$/, '').replace(/^\s*\d+[\s._\-.)]*/, '').replace(/[_]+/g, ' ').trim();
 

@@ -10,7 +10,7 @@
 if(th==='auto')th=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <link rel="stylesheet" href="fonts.css?v=9">
-<link rel="stylesheet" href="app.css?v=180">
+<link rel="stylesheet" href="app.css?v=181">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -68,10 +68,9 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
   <!-- живой фон полки (Патина) — fixed, сам исчезает на других экранах вместе с #shelf-view -->
   <div id="shelf-bg" aria-hidden="true">
     <div class="sbg-base"></div>
-    <div class="sbg-warm"></div>
+    <div class="sbg-vignette"></div>
     <div class="sbg-grain"></div>
     <div class="sbg-fleck"><svg viewBox="0 0 300 600" preserveAspectRatio="xMidYMid slice"><rect width="300" height="600" filter="url(#bgFleck)"/></svg></div>
-    <div class="sbg-gloss"></div>
     <canvas class="sbg-glint"></canvas>
   </div>
   <header class="lib-header shelf-head">
@@ -796,6 +795,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=223"></script>
+<script src="app.js?v=224"></script>
 </body>
 </html>

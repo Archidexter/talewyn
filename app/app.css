@@ -215,10 +215,8 @@ img, svg { -webkit-user-drag: none; }
 body.bg-live #shelf-bg { display: block; }
 #shelf-bg > div { position: absolute; inset: 0; }
 #shelf-bg .sbg-base { background: var(--bg); }
-#shelf-bg .sbg-warm {
-  background:
-    radial-gradient(62% 42% at 18% 6%, color-mix(in srgb, var(--gild) 13%, transparent), transparent 60%),
-    radial-gradient(72% 46% at 82% 98%, color-mix(in srgb, var(--gild) 13%, transparent), transparent 62%);
+#shelf-bg .sbg-vignette {
+  background: radial-gradient(125% 92% at 50% 48%, transparent 52%, rgba(0, 0, 0, .22) 80%, rgba(0, 0, 0, .46) 100%);
 }
 #shelf-bg .sbg-grain { filter: url(#bgGrain); opacity: .6; mix-blend-mode: overlay; }
 #shelf-bg .sbg-fleck {
@@ -227,10 +225,6 @@ body.bg-live #shelf-bg { display: block; }
   mask: linear-gradient(180deg, #000, transparent 40%, transparent 62%, #000);
 }
 #shelf-bg .sbg-fleck svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-#shelf-bg .sbg-gloss {
-  background: radial-gradient(42% 32% at 60% 42%, color-mix(in srgb, var(--gild) 15%, transparent), transparent 72%);
-  mix-blend-mode: screen; opacity: .5; translate: var(--px, 0) var(--py, 0); will-change: translate;
-}
 /* слой блеска: зажигает искры РОВНО в точках крупки (позиции считаны с неё) и
    только при наклоне; в покое пуст, поэтому патина под ним видна как есть */
 #shelf-bg .sbg-glint {

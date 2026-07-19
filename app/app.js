@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.85';
+const APP_VERSION = '1.0.86';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -665,11 +665,11 @@ mqDark.addEventListener('change', () => { if (settings.theme === 'auto') applySe
 // канву и берём точки золотых пикселей), поэтому искры падают ровно на крупинки,
 // а не куда попало. В покое слой пуст → патина видна как есть; при наклоне у
 // каждой крупинки своя грань (случайный угол), и она вспыхивает, когда её грань
-// поймала свет. Плюс мягкий gloss плавно скользит. Гироскоп — в защищённом
-// контексте (само приложение и localhost). Уважает prefers-reduced-motion.
+// поймала свет. Гироскоп — в защищённом контексте (само приложение и
+// localhost). Уважает prefers-reduced-motion.
 (function shelfBgTilt() {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  let tx = 0, ty = 0, gx = 0, gy = 0, gT = -9, T = 0, gloss = null, fleck = null;
+  let tx = 0, ty = 0, gx = 0, gy = 0, gT = -9, T = 0, fleck = null;
   let gc = null, gctx = null, GW = 0, GH = 0, parts = null, sampling = false, haloSprite = null, spriteGild = '';
   addEventListener('deviceorientation', e => {
     if (e.gamma == null && e.beta == null) return;
@@ -761,7 +761,7 @@ mqDark.addEventListener('change', () => { if (settings.theme === 'auto') applySe
     const sv = document.getElementById('shelf-view');
     const live = bg && document.body.classList.contains('bg-live') && sv && !sv.hidden;
     if (live) {
-      if (!gloss) { gloss = bg.querySelector('.sbg-gloss'); fleck = bg.querySelector('.sbg-fleck'); gc = bg.querySelector('.sbg-glint'); if (gc) gctx = gc.getContext('2d'); }
+      if (!fleck) { fleck = bg.querySelector('.sbg-fleck'); gc = bg.querySelector('.sbg-glint'); if (gc) gctx = gc.getContext('2d'); }
       if (gc && gctx) {
         const r = gc.getBoundingClientRect();
         if (Math.abs(r.width - GW) > 1 || Math.abs(r.height - GH) > 1) {   // размер сменился — пере-выборка
@@ -776,7 +776,6 @@ mqDark.addEventListener('change', () => { if (settings.theme === 'auto') applySe
       else { sx = Math.sin(T * 0.28) * 0.5; sy = Math.sin(T * 0.21) * 0.4; }
       tx += (sx - tx) * 0.06; ty += (sy - ty) * 0.06;
       const px = (tx * 7).toFixed(1) + 'px', py = (ty * 5).toFixed(1) + 'px';
-      if (gloss) { gloss.style.setProperty('--px', (tx * 44).toFixed(1) + 'px'); gloss.style.setProperty('--py', (ty * 30).toFixed(1) + 'px'); }
       if (fleck) { fleck.style.setProperty('--px', px); fleck.style.setProperty('--py', py); }
       if (gc) { gc.style.setProperty('--px', px); gc.style.setProperty('--py', py); }
       if (gc && gctx) renderGlint(getComputedStyle(document.documentElement).getPropertyValue('--gild').trim() || '#d8a54f');

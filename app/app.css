@@ -2062,18 +2062,26 @@ html.t-dark #sel-tr, html.t-dark #sel-note, html.t-dark #sel-speak { color: var(
 #sel-tr:active, #sel-note:active, #sel-speak:active { transform: scale(.94); }
 
 /* лист заметки и лист отзыва */
+/* цитата-фрагмент — по центру, курсив-сериф, БЕЗ полосы/подложки (в тон окон ссылки/оценки) */
 #note-excerpt {
-  margin: 0 0 14px; padding: 10px 14px; font-family: var(--serif);
-  font-size: 14px; color: var(--dim); line-height: 1.55;
-  border-left: 2px solid var(--accent2); background: var(--bg); border-radius: 0 8px 8px 0;
-  max-height: 110px; overflow-y: auto;
+  margin: 0; padding: 2px 4px; font-family: var(--serif); font-style: italic;
+  font-size: 14.5px; color: var(--dim); line-height: 1.62; text-align: center;
+  max-height: 120px; overflow-y: auto; border: none; background: none;
+}
+/* заголовок листа: золото в орнаменте (.confirm-orn) + разделитель-ромб — заметка/перевод/словарь */
+.confirm-orn.sheet-head { margin: 0 0 14px; }
+.confirm-orn.sheet-div { margin: 14px 0; }
+.confirm-orn span.sheet-name {
+  color: var(--gild); font-size: 11px; font-weight: 700; letter-spacing: .17em; text-transform: uppercase;
 }
 .color-row { display: flex; gap: 14px; margin-bottom: 14px; }
 /* редактор заметки — выбор цвета метки сегментами-чипами (вариант 4) */
 #note-excerpt { font-style: italic; }
 .color-row.seg { gap: 10px; }
 /* маркеры цвета — без общей обёртки-контейнера, только индивидуальные ячейки */
-#note-colors { background: transparent; border: none; padding: 0; }
+/* цветовые маркеры — голые кружки, равномерно по ширине с отступом от краёв (без коробок) */
+#note-colors { display: flex; justify-content: space-between; padding: 0 28px; margin: 4px 0 14px; background: transparent; border: none; }
+#note-colors .sel-dot { width: 30px; height: 30px; }
 .color-row.seg .sel-dot {
   flex: 1; width: auto; height: 38px; border-radius: 10px;
   border: 1px solid var(--border); background: var(--elev2);
@@ -2148,15 +2156,18 @@ html.t-dark #sel-tr, html.t-dark #sel-note, html.t-dark #sel-speak { color: var(
 }
 #tr-btn.active { color: var(--accent); background: var(--accent-soft); }
 #tr-orig {
-  margin: 0 0 12px; padding: 8px 12px; max-height: 96px; overflow-y: auto;
-  font-size: 13.5px; color: var(--dim); border-left: 2px solid var(--border-strong);
-  background: var(--bg); border-radius: 0 8px 8px 0;
+  margin: 0; padding: 2px 4px; max-height: 100px; overflow-y: auto;
+  font-family: var(--serif); font-style: italic; font-size: 14.5px; color: var(--dim);
+  line-height: 1.62; text-align: center; border: none; background: none;
   overscroll-behavior: contain;
 }
 #tr-result {
-  margin: 0 0 4px; font-size: 15px; line-height: 1.55;
-  max-height: 38vh; overflow-y: auto; overscroll-behavior: contain;
+  margin: 0 0 4px; font-family: var(--serif); font-size: 15.5px; line-height: 1.55; text-align: center;
+  color: var(--text); max-height: 38vh; overflow-y: auto; overscroll-behavior: contain;
 }
+/* выпадашка языка в листе перевода — на всю ширину (через .set-group), текст по центру, стрелка справа */
+#tr-sheet .lang-trigger { position: relative; justify-content: center; height: 44px; border-radius: var(--r-md); padding: 0 32px; }
+#tr-sheet .lang-trigger .lang-chev { position: absolute; right: 12px; top: 50%; margin-top: -8px; }
 
 /* описание книги */
 #book-annot { margin-top: 16px; }

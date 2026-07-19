@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.77';
+const APP_VERSION = '1.0.78';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -310,7 +310,7 @@ const I18N = {
     bmBtn: 'Закладки', bmNone: 'Закладок пока нет.',
     bmHere: 'Здесь', autoScrollT: 'Автопрокрутка', autoScrollOn: 'Автопрокрутка: {v}', autoScrollOff: 'Автопрокрутка выключена',
     notesBtn: 'Заметки', notePh: 'Текст заметки…',
-    noteSave: 'Сохранить', noteDelete: 'Удалить',
+    noteSave: 'Сохранить', noteDelete: 'Удалить', noteHead: 'Заметка', trHead: 'Перевод',
     noteDeleted: 'Заметка удалена', undo: 'Отменить',
     noNotes: 'Пока нет ни выделений, ни заметок.',
     noNotesA: 'Пока нет заметок. Добавьте заметку на нужном моменте.',
@@ -484,7 +484,7 @@ const I18N = {
     bmBtn: 'Bookmarks', bmNone: 'No bookmarks yet.',
     bmHere: 'Here', autoScrollT: 'Auto-scroll', autoScrollOn: 'Auto-scroll: {v}', autoScrollOff: 'Auto-scroll off',
     notesBtn: 'Notes', notePh: 'Note text…',
-    noteSave: 'Save', noteDelete: 'Delete',
+    noteSave: 'Save', noteDelete: 'Delete', noteHead: 'Note', trHead: 'Translation',
     noteDeleted: 'Note deleted', undo: 'Undo',
     noNotes: 'No highlights or notes yet.',
     noNotesA: 'No notes yet. Add one at the current moment.',

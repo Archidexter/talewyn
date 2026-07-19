@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.78';
+const APP_VERSION = '1.0.79';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -3546,6 +3546,8 @@ function autoScrollStop() {
   const n = $('#scroll-num'); if (n) n.textContent = '';
 }
 function autoScrollTick(ts) {
+  // ушли из читалки (полка/экран книги/др.) — не домотываем чужой экран глобальным scrollBy
+  if ($('#reader-view').hidden) { autoScrollStop(); return; }
   const v = SCROLL_SPEEDS[autoScroll.i];
   if (!v) { autoScrollStop(); return; }
   if (!autoScroll.last) autoScroll.last = ts;

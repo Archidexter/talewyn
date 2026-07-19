@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.92';
+const APP_VERSION = '1.0.93';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -8488,6 +8488,13 @@ function closeLightbox() {
 }
 
 // ── общий контроллер нижних шторок: плавно, со свайпом вниз ──
+// пока окно открыто — его кнопка выглядит нажатой (.sheet-on); при закрытии отжимается.
+// Карта «id окна → кнопка(и), которые его открывают».
+const SHEET_TRIGGER = {
+  'settings-sheet': '#shelf-settings-btn, #lib-settings-btn, #reader-settings-btn',
+  'info-sheet': '#info-btn',
+  'review-sheet': '#review-btn, #ab-review-btn',
+};
 function sheetShow(sheet, overlay) {
   overlay.hidden = false;
   sheet.hidden = false;
@@ -8495,6 +8502,8 @@ function sheetShow(sheet, overlay) {
   void sheet.offsetWidth;                 // reflow → анимация «въезда»
   overlay.classList.add('open');
   sheet.classList.add('open');
+  const trig = SHEET_TRIGGER[sheet.id];
+  if (trig) document.querySelectorAll(trig).forEach(b => b.classList.add('sheet-on'));
   // защита от «призрачного»/быстрого второго тапа: пока лист выезжает, скрим
   // не должен ловить закрывающий тап (иначе лист откроется и тут же скроется)
   overlay.style.pointerEvents = 'none';
@@ -8503,6 +8512,8 @@ function sheetShow(sheet, overlay) {
 }
 function sheetHide(sheet, overlay) {
   if (sheet.hidden) return;
+  const trig = SHEET_TRIGGER[sheet.id];
+  if (trig) document.querySelectorAll(trig).forEach(b => b.classList.remove('sheet-on'));
   // то же касание, что закрыло шторку, может «дострелить» кликом уже по тексту главы
   // и сбить озвучку — глушим тапы по тексту на время закрытия
   readerTapMuteUntil = performance.now() + 450;

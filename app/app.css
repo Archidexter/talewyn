@@ -128,6 +128,14 @@ button, summary, a { touch-action: manipulation; -webkit-tap-highlight-color: tr
 mark { background: var(--mark); color: var(--text); border-radius: 3px; padding: 0 2px; }
 ::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
 :focus-visible { outline: 1.5px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+/* Выделение текста/картинок отключено по ВСЕМУ интерфейсу (долгое нажатие не заливает синим
+   ни названия, ни элементы), КРОМЕ самого текста чтения (#chapter-body) и полей ввода.
+   user-select наследуется, так что достаточно задать на body и переопределить где нужно. */
+body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+#chapter-body, #chapter-body *, input, textarea, [contenteditable="true"] {
+  -webkit-user-select: text; user-select: text; -webkit-touch-callout: default;
+}
+img, svg { -webkit-user-drag: none; }
 
 /* единый кастомный скроллбар во всех меню и списках — тонкий, в тон «позолоты» */
 * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--gild) 34%, transparent) transparent; }

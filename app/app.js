@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.72';
+const APP_VERSION = '1.0.73';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -1924,6 +1924,27 @@ async function deleteSelected() {
 if (!state.collections) state.collections = [];
 let activeCol = null;          // id просматриваемой коллекции (null = все)
 let colDrawerOpen = false;
+// открыто ли какое-то вспомогательное окно/шторка/меню. Пока открыто — глобальные жесты по ФОНУ
+// (свайп вкладок, листание глав, пинч картинки, долгое нажатие карточки, перетаскивание кластера)
+// не срабатывают: взаимодействие идёт только внутри окна.
+const OVERLAY_SEL = '#scan-modal, #confirm-modal, #settings-sheet, #note-sheet, #tr-sheet, #review-sheet, '
+  + '#ab-notes-sheet, #annot-sheet, #info-sheet, #pronun-sheet, #col-create, #col-pick, #lightbox, #word-pop';
+function uiOverlayOpen() {
+  if (colDrawerOpen) return true;
+  for (const el of document.querySelectorAll(OVERLAY_SEL)) if (el && !el.hidden) return true;
+  if (document.querySelector('.dd-menu.open, .lang-menu.open, .voice-menu.open, .speed-wheel.open')) return true;   // открытая выпадашка
+  return false;
+}
+// пока открыто окно — НАТИВНАЯ прокрутка идёт только внутри него; тач по скриму/фону не двигает фон.
+// Флаг считаем один раз на touchstart (не на каждый touchmove — иначе просадка плавности скролла).
+let _ovlNow = false;
+document.addEventListener('touchstart', () => { _ovlNow = uiOverlayOpen(); }, { capture: true, passive: true });
+document.addEventListener('touchmove', e => {
+  if (!_ovlNow || e.touches.length > 1) return;
+  // прокрутка РАЗРЕШЕНА внутри самого окна (карточка/шторка/ящик/выпадашка/лайтбокс), фон — нет
+  if (e.target.closest('.confirm-card, .sheet, #col-drawer, .dd-menu, .lang-menu, .voice-menu, .col-modal-box, #lightbox, #word-pop')) return;
+  e.preventDefault();
+}, { passive: false });
 let colPickSel = null;         // Set выбранных colId в диалоге «в коллекцию»
 
 async function loadCollections() {
@@ -2482,7 +2503,7 @@ function initFabDrag() {
   };
   const flushMove = () => { rafId = 0; moveDock(pendX, pendY); };
   fab.addEventListener('pointerdown', e => {
-    if (e.button && e.button !== 0) return;
+    if ((e.button && e.button !== 0) || uiOverlayOpen()) return;   // окно открыто — кластер не таскаем
     pid = e.pointerId; sx = e.clientX; sy = e.clientY;
     clearTimeout(holdT); holdT = setTimeout(startDrag, 380);   // удержание ~0.38с → захват
   });
@@ -7297,7 +7318,7 @@ function bindUI() {
     const shelfShown = () => !$('#shelf-view').hidden;
     const cancelLp = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } };
     addEventListener('touchstart', e => {
-      if (!shelfShown() || selMode || e.touches.length !== 1) return;
+      if (!shelfShown() || selMode || uiOverlayOpen() || e.touches.length !== 1) return;
       const card = e.target.closest('.book-card, .ab-card');
       if (!card) return;
       lpStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -7316,7 +7337,7 @@ function bindUI() {
     addEventListener('touchend', cancelLp, { passive: true });
     addEventListener('touchcancel', cancelLp, { passive: true });
     addEventListener('contextmenu', e => {
-      if (!shelfShown() || selMode) return;
+      if (!shelfShown() || selMode || uiOverlayOpen()) return;
       const card = e.target.closest('.book-card, .ab-card');
       if (!card) return;
       e.preventDefault();
@@ -7339,7 +7360,7 @@ function bindUI() {
     const onShelf = () => !$('#shelf-view').hidden && $('#reader-view').hidden && $('#library-view').hidden;
     addEventListener('touchstart', e => {
       axis = null; active = false;
-      if (e.touches.length !== 1 || !onShelf()) return;
+      if (e.touches.length !== 1 || !onShelf() || uiOverlayOpen()) return;
       // Свайп начинается откуда угодно, в том числе с карточки книги/аудиокниги: тапу это не
       // мешает — вкладка листается только при сдвиге от 36px, а на таком сдвиге браузер уже
       // отменил клик по кнопке. Исключаем лишь то, где горизонталь значит своё: поля ввода
@@ -7580,8 +7601,7 @@ function bindUI() {
   // свайпы листают главы — страница «тянется» за пальцем и уезжает
   let sw = null;
   const swipeBlocked = () =>
-    $('#reader-view').hidden || !$('#settings-sheet').hidden || !$('#lightbox').hidden
-    || !$('#note-sheet').hidden || !$('#tr-sheet').hidden || !$('#sel-toolbar').hidden;
+    $('#reader-view').hidden || !$('#sel-toolbar').hidden || uiOverlayOpen();
   // свайп двигает ТОЛЬКО тело главы — заголовок/мета/крошки остаются на месте
   // и меняются затуханием (задача 2), а не уезжают вместе с текстом
   const art = () => $('#chapter-body');
@@ -7656,7 +7676,7 @@ function bindUI() {
     let img = null, startDist = 0;
     const gap = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
     addEventListener('touchstart', e => {
-      if (e.touches.length !== 2) return;
+      if (e.touches.length !== 2 || uiOverlayOpen()) return;
       const t = e.target.closest && e.target.closest('#chapter-body img');
       if (!t) return;
       img = t;

@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.90';
+const APP_VERSION = '1.0.91';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -6730,6 +6730,25 @@ async function fetchJson(url, ms = 8000) {
   } finally { clearTimeout(tm); }
 }
 
+// сеть для источников без CORS / требующих браузерный UA (Shikimori, knigavuhe):
+// на телефоне идём нативным мостом (обход CORS, отдаём UA/Referer/ru), в вебе — обычный fetch
+// (там чужой CORS может не пустить — источник просто отвалится, остальные работают).
+async function netFetch(url, type) {
+  if (isNative && capHttp) {
+    const H = {
+      'User-Agent': 'Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+      'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8',
+    };
+    try { H.Referer = new URL(url).origin + '/'; } catch {}
+    const r = await capHttp.request({ url, method: 'GET', responseType: type, headers: H, connectTimeout: 12000, readTimeout: 15000 });
+    if (r.status < 200 || r.status >= 300) throw new Error('http ' + r.status);
+    return r.data;   // 'json' → объект, 'text' → строка
+  }
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('http ' + r.status);
+  return type === 'json' ? r.json() : r.text();
+}
+
 // вычищаем HTML и bb-коды ([b]…[/b] у ФантЛаба) из чужих описаний
 function stripMarkup(s) {
   const tmp = document.createElement('div');
@@ -6859,6 +6878,41 @@ async function findOpenLibrary(title, author) {
   return out;
 }
 
+// Shikimori — аниме/манга/ранобэ с русскими описаниями (закрывает мангу и ранобэ,
+// напр. «Реинкарнация безработного»). Чистый JSON-API; на телефоне через мост (нет CORS).
+async function findShikimori(title) {
+  const out = [];
+  for (const kind of ['ranobe', 'mangas']) {
+    try {
+      const list = await netFetch('https://shikimori.one/api/' + kind + '?limit=3&search=' + encodeURIComponent(title), 'json');
+      for (const it of (Array.isArray(list) ? list : []).slice(0, 2)) {
+        try {
+          const d = await netFetch('https://shikimori.one/api/' + kind + '/' + it.id, 'json');
+          const text = stripMarkup(String(d.description || '').replace(/\[[^\]]*\]/g, ' '));   // снимаем bb-коды shikimori
+          if (text.length > 60) out.push({ src: 'Shikimori', title: (it.russian || it.name || ''), text });
+        } catch { /* без описания */ }
+      }
+      if (out.length) break;
+    } catch { /* источник недоступен */ }
+  }
+  return out;
+}
+
+// knigavuhe (аудиокниги): у страниц книг есть og:description = аннотация. CORS нет —
+// только на телефоне через мост (туда мост уже ходит: стрим аудио).
+async function findKnigavuhe(title) {
+  if (!(isNative && capHttp)) return [];
+  try {
+    const html = String(await netFetch('https://knigavuhe.org/search/?q=' + encodeURIComponent(title), 'text'));
+    const m = /href="(\/book\/[^"#]+?\/)"/i.exec(html);
+    if (!m) return [];
+    const page = String(await netFetch('https://knigavuhe.org' + m[1], 'text'));
+    const og = /<meta[^>]+property="og:description"[^>]+content="([^"]+)"/i.exec(page);
+    const text = og ? stripMarkup(og[1]) : '';
+    return text.length > 60 ? [{ src: 'КнигаВслух', title, text }] : [];
+  } catch { return []; }
+}
+
 // чистим название/автора от мусора имени файла: расширение, [скобки], (сборник),
 // метки форматов и сайтов, ведущий номер тома/части, тире-разделители.
 // Иначе запрос «Автор - Название (сборник) [fb2]» не находит НИЧЕГО.
@@ -6889,7 +6943,8 @@ async function findAnnotations() {
   // книжные базы (ФантЛаб — ранобэ/новеллы, Google Книги, OpenLibrary) — первыми;
   // Википедия последней и со строгой проверкой, чтобы не подсовывать статью об авторе/слове
   const settled = await Promise.allSettled([
-    findFantlab(title, author), findGoogleBooks(title, author),
+    findFantlab(title, author), findShikimori(title),
+    findGoogleBooks(title, author), findKnigavuhe(title),
     findOpenLibrary(title, author), findWikipedia(title, author),
   ]);
   if (seq !== findSeq || $('#annot-sheet').hidden) return;

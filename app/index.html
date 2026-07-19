@@ -10,7 +10,7 @@
 if(th==='auto')th=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <link rel="stylesheet" href="fonts.css?v=9">
-<link rel="stylesheet" href="app.css?v=176">
+<link rel="stylesheet" href="app.css?v=177">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -514,7 +514,7 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <div id="pronun-overlay" class="sheet-scrim" hidden></div>
 <div id="pronun-sheet" class="sheet" hidden role="dialog" aria-label="Словарь произношений">
   <div class="sheet-grip"></div>
-  <div class="set-section" data-i18n="pronunSecFull">Словарь произношений</div>
+  <div class="confirm-orn sheet-head"><span class="sheet-name" data-i18n="pronunSecFull">Словарь произношений</span></div>
   <div class="pronun-list" id="pronun-list"></div>
 </div>
 
@@ -625,12 +625,14 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <div id="note-overlay" class="sheet-scrim" hidden></div>
 <div id="note-sheet" class="sheet" hidden role="dialog" aria-label="Заметка">
   <div class="sheet-grip"></div>
+  <div class="confirm-orn sheet-head"><span class="sheet-name" data-i18n="noteHead">Заметка</span></div>
   <blockquote id="note-excerpt"></blockquote>
-  <div class="color-row seg" id="note-colors">
-    <button class="sel-dot c-y" data-c="y"><span class="sw"></span></button>
-    <button class="sel-dot c-g" data-c="g"><span class="sw"></span></button>
-    <button class="sel-dot c-v" data-c="v"><span class="sw"></span></button>
-    <button class="sel-dot c-t" data-c="t"><span class="sw"></span></button>
+  <div class="confirm-orn sheet-div"><span>◆</span></div>
+  <div class="color-row" id="note-colors">
+    <button class="sel-dot c-y" data-c="y"></button>
+    <button class="sel-dot c-g" data-c="g"></button>
+    <button class="sel-dot c-v" data-c="v"></button>
+    <button class="sel-dot c-t" data-c="t"></button>
   </div>
   <textarea id="note-text" rows="4" data-i18n-ph="notePh" placeholder="Текст заметки…"></textarea>
   <div class="sheet-actions">
@@ -646,10 +648,12 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <div id="tr-overlay" class="sheet-scrim" hidden></div>
 <div id="tr-sheet" class="sheet" hidden role="dialog" aria-label="Перевод">
   <div class="sheet-grip"></div>
+  <div class="confirm-orn sheet-head"><span class="sheet-name" data-i18n="trHead">Перевод</span></div>
   <div class="set-group">
     <div id="tr-lang-pick" class="lang-pick"></div>
   </div>
   <blockquote id="tr-orig"></blockquote>
+  <div class="confirm-orn sheet-div"><span>◆</span></div>
   <p id="tr-result"></p>
   <div class="sheet-actions">
     <button id="tr-copy" class="ghost-btn" data-i18n="copyOne">Скопировать</button>
@@ -766,6 +770,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=210"></script>
+<script src="app.js?v=211"></script>
 </body>
 </html>

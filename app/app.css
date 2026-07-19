@@ -1893,12 +1893,11 @@ body.col-open #col-tab svg { transform: rotate(180deg); }
 .tts-timer.on { color: var(--gild); border-color: color-mix(in srgb, var(--gild) 40%, transparent); }
 .tts-timer.on .timer-icon { display: none; }
 .tts-timer.on .timer-num { display: inline; }
-/* Резерв — РОВНО чтобы последняя строка вставала чуть ВЫШЕ панели (не под ней и не торчала
-   снизу из-под неё). Панель на 136 + высота ≈ 212 от низа → 224 даёт ~12px просвет. Больше НЕ
-   нужно — иначе под текстом зияет пустое поле. Плюс панель прячется свайпом вверх (как
-   стрелки/шапка), так что «занимать место» она перестаёт по требованию. Padding по .tucked
-   НЕ трогаем (когда-то дёргал скролл). */
-body.tts-on .chapter { padding-bottom: calc(240px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px))); }
+/* НИКАКОГО резерва под панель: панель — ОВЕРЛЕЙ (как шапка сверху), текст под неё проскальзывает.
+   Резерв и был «пустым полем под текстом при озвучке»: на конце главы юзер доскролливал вниз →
+   стрелки и панель прячутся (см. scroll-хендлеры), а зарезервированные ~200px оставались зиять.
+   Позиция текста при tts-on теперь == как без озвучки; панель просто плавает над низом. */
+body.tts-on .chapter { padding-bottom: calc(40px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px))); }
 /* PDF/сканы (изображение + скрытый текст): резерв НЕ нужен — панель просто накрывает низ
    картинки, а не толкает её вверх (иначе снизу зияла пустота, и при скролле были глючи). */
 body.tts-on .chapter:has(.pdf-text) { padding-bottom: calc(14px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px))); }

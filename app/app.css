@@ -175,10 +175,15 @@ img, svg { -webkit-user-drag: none; }
   color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   background: var(--accent-soft);
 }
-/* пока открыто окно (о приложении / настройки / оценка) — его кнопка «нажата» */
-.icon-btn.sheet-on, .tool-btn.sheet-on {
+/* пока открыто окно (о приложении / настройки / оценка) — его кнопка «нажата».
+   У кнопок шапки (.icon-btn) — с фоном, как их родное .active; у кнопок читалки
+   (.tool-btn: оценка) — только цвет+рамка, чтобы совпадало с соседними «заметки»/«закладки». */
+.icon-btn.sheet-on {
   color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   background: var(--accent-soft);
+}
+.tool-btn.sheet-on {
+  color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 /* «функция работает»: мягкая пульсация, пока идёт процесс */
 .icon-btn.busy { animation: icon-busy 1s ease-in-out infinite; }
@@ -836,9 +841,7 @@ html.t-light .ch-row.current .ch-name, html.t-sepia .ch-row.current .ch-name { c
 .shelf-tabs::after {
   content: ''; position: absolute; bottom: -1px; left: 0;
   width: 50%; height: 3px; border-radius: 3px;
-  background: linear-gradient(90deg,
-    color-mix(in srgb, var(--gild) 70%, #000) 0%, var(--gild) 50%,
-    color-mix(in srgb, var(--gild) 70%, #000) 100%);
+  background: linear-gradient(90deg, transparent, var(--gild) 50%, transparent);   /* края тают, как у орнамента-разделителя */
   box-shadow: 0 0 12px -1px color-mix(in srgb, var(--gild) 65%, transparent);
   transition: transform .32s cubic-bezier(.4, 0, .2, 1);
 }

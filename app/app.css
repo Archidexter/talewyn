@@ -175,6 +175,11 @@ img, svg { -webkit-user-drag: none; }
   color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   background: var(--accent-soft);
 }
+/* пока открыто окно (о приложении / настройки / оценка) — его кнопка «нажата» */
+.icon-btn.sheet-on, .tool-btn.sheet-on {
+  color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--accent-soft);
+}
 /* «функция работает»: мягкая пульсация, пока идёт процесс */
 .icon-btn.busy { animation: icon-busy 1s ease-in-out infinite; }
 @keyframes icon-busy { 50% { opacity: .45; } }

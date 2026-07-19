@@ -10,7 +10,7 @@
 if(th==='auto')th=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <link rel="stylesheet" href="fonts.css?v=9">
-<link rel="stylesheet" href="app.css?v=179">
+<link rel="stylesheet" href="app.css?v=180">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -57,8 +57,23 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <div id="readbar" hidden><div id="readbar-fill"></div></div>
 <input id="cover-input" type="file" hidden accept="image/*"><!-- выбор своей обложки книги/аудиокниги -->
 
+<!-- SVG-фильтры для живого фона полки (Патина): зерно + золотая крупка -->
+<svg width="0" height="0" aria-hidden="true" style="position:absolute" id="bg-defs">
+  <filter id="bgGrain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="9" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope="0.06"/></feComponentTransfer></filter>
+  <filter id="bgFleck"><feTurbulence type="turbulence" baseFrequency="0.62" numOctaves="2" seed="8" result="n"/><feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1.4 0 0 0 -0.2" result="a"/><feComponentTransfer in="a" result="s"><feFuncA type="discrete" tableValues="0 0 0 0 0 0 1 1"/></feComponentTransfer><feFlood flood-color="#d8a54f" result="f"/><feComposite in="f" in2="s" operator="in"/></filter>
+</svg>
+
 <!-- ══════════ Полка ══════════ -->
 <main id="shelf-view">
+  <!-- живой фон полки (Патина) — fixed, сам исчезает на других экранах вместе с #shelf-view -->
+  <div id="shelf-bg" aria-hidden="true">
+    <div class="sbg-base"></div>
+    <div class="sbg-warm"></div>
+    <div class="sbg-grain"></div>
+    <div class="sbg-fleck"><svg viewBox="0 0 300 600" preserveAspectRatio="xMidYMid slice"><rect width="300" height="600" filter="url(#bgFleck)"/></svg></div>
+    <div class="sbg-gloss"></div>
+    <canvas class="sbg-glint"></canvas>
+  </div>
   <header class="lib-header shelf-head">
     <div class="lib-title-row">
       <span class="brand-logo" aria-hidden="true"></span>
@@ -406,6 +421,14 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
       <button class="swatch" data-v="royal" title="Ночь"><span class="dot royal"></span></button>
       <button class="swatch" data-v="bordo" title="Бордо"><span class="dot bordo"></span></button>
       <button class="swatch" data-v="black" title="Чёрная"><span class="dot black"></span></button>
+    </div>
+  </div>
+
+  <div class="set-section" data-i18n="bgSec">Фон полки</div>
+  <div class="v3row fullrow">
+    <div class="chips" id="seg-bg">
+      <button class="chip" data-v="on" data-i18n="bgOn">Живой</button>
+      <button class="chip" data-v="off" data-i18n="bgOff">Выключен</button>
     </div>
   </div>
 
@@ -773,6 +796,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=217"></script>
+<script src="app.js?v=223"></script>
 </body>
 </html>

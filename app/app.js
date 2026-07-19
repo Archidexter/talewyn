@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.71';
+const APP_VERSION = '1.0.72';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -1275,7 +1275,7 @@ const scanDir = p => String(p).replace(/[^/\\]*$/, '');
 function scanStem(n) {
   let s = scanStripExt(n).toLowerCase()
     .replace(/[\s._\-–—(\[#№]*(?:part|глава|гл|chapter|ch|track|cd|disc|диск|том|vol|часть)?\.?\s*\d{1,4}[\s._\-–—)\]]*$/i, '');
-  s = s.replace(/^\s*\d{1,4}\s*[.)\]\-–—_]+\s*/, '');   // ведущий номер трека
+  s = s.replace(/^\s*(?:part|глава|гл|chapter|ch|track|cd|disc|диск|том|vol|часть)?\.?\s*\d{1,4}\s*[.)\]\-–—_]+\s*/i, '');   // ведущий номер трека (в т.ч. «cd1 - », «часть 1.»)
   return s.replace(/^[\s._\-–—]+|[\s._\-–—]+$/g, '').trim();
 }
 function buildScanGroups() {
@@ -5185,7 +5185,7 @@ function abCommonName(names) {
   if (!names.length) return '';
   // убираем расширение И ВЕДУЩИЙ номер трека («01 - имя») у каждого — иначе общий префикс схлопнется
   // до «0» и название книги потеряется (частый формат «01 - книга - 01.mp3»)
-  const strip = x => x.replace(/\.[^.]+$/, '').replace(/^\s*\d{1,4}\s*[.)\]\-–—_]+\s*/, '');
+  const strip = x => x.replace(/\.[^.]+$/, '').replace(/^\s*(?:part|глава|гл|chapter|ch|track|cd|disc|диск|том|vol|часть)?\.?\s*\d{1,4}\s*[.)\]\-–—_]+\s*/i, '');
   let p = strip(names[0]);
   for (const n of names) { const s = strip(n); while (p && !s.startsWith(p)) p = p.slice(0, -1); }
   return p.replace(/[\s._\-–—]*\d*[\s._\-–—]*$/, '').replace(/[\s._\-–—]+$/, '').trim();   // убираем хвостовой номер трека

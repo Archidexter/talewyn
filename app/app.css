@@ -1778,7 +1778,7 @@ body.col-open #col-tab svg { transform: rotate(180deg); }
 /* ═══ Озвучка — плавающая капсула, оторванная от краёв (как панель заметок) ═══ */
 #tts-bar {
   position: fixed; left: 50%; translate: -50% 0; z-index: 55;
-  bottom: calc(92px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));   /* приподнята над нижним краем, но не слишком — иначе под текстом зияет пустота */
+  bottom: calc(136px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));   /* удобное положение пользователя; согласовано с #sel-toolbar@228 (панель заметок встаёт НАД ней). НЕ опускать. */
   width: min(calc(100% - 24px), 480px);
   display: flex; flex-direction: column; gap: 4px;
   padding: 6px 12px 10px;
@@ -1793,7 +1793,9 @@ body.col-open #col-tab svg { transform: rotate(180deg); }
 /* появление И уход — через .tucked + transition (надёжно, в обе стороны): панель стартует
    из-под нижней грани и выезжает на место, а при закрытии уезжает туда же. CSS-animation
    slide-up убрана — она не перезапускалась при display:none→flex, и показ был резким. */
-#tts-bar.tucked { transform: translateY(calc(100% + 30px)); opacity: 0; pointer-events: none; }
+/* уезжает ПОЛНОСТЬЮ за нижнюю грань: сдвиг = высота(100%) + её отступ снизу(136+safe) + запас.
+   Иначе при низе 136 старый «100%+30» не докидывал и панель торчала снизу (баг подъёма на 136). */
+#tts-bar.tucked { transform: translateY(calc(100% + 160px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)))); opacity: 0; pointer-events: none; }
 /* ── плеер v3, одна компактная строка: голос·стоп | назад·плей·вперёд | таймер·скорость ── */
 .tts-transport { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 3px 0 2px; flex-wrap: nowrap; }
 .tts-sep { width: 1px; height: 26px; flex: none; margin: 0 2px; background: var(--border-strong); opacity: .6; }
@@ -1891,10 +1893,12 @@ body.col-open #col-tab svg { transform: rotate(180deg); }
 .tts-timer.on { color: var(--gild); border-color: color-mix(in srgb, var(--gild) 40%, transparent); }
 .tts-timer.on .timer-icon { display: none; }
 .tts-timer.on .timer-num { display: inline; }
-/* текстовой главе резерв под панель нужен — чтобы последнюю строку можно было доскроллить
-   ВЫШЕ панели. Раньше был :has(#tts-bar.tucked) с уменьшением до 20px — он менял padding
-   при каждом сворачивании панели на скролле, отчего страница дёргалась/лагала. Убран. */
-body.tts-on .chapter { padding-bottom: calc(196px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px))); }
+/* Резерв — РОВНО чтобы последняя строка вставала чуть ВЫШЕ панели (не под ней и не торчала
+   снизу из-под неё). Панель на 136 + высота ≈ 212 от низа → 224 даёт ~12px просвет. Больше НЕ
+   нужно — иначе под текстом зияет пустое поле. Плюс панель прячется свайпом вверх (как
+   стрелки/шапка), так что «занимать место» она перестаёт по требованию. Padding по .tucked
+   НЕ трогаем (когда-то дёргал скролл). */
+body.tts-on .chapter { padding-bottom: calc(240px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px))); }
 /* PDF/сканы (изображение + скрытый текст): резерв НЕ нужен — панель просто накрывает низ
    картинки, а не толкает её вверх (иначе снизу зияла пустота, и при скролле были глючи). */
 body.tts-on .chapter:has(.pdf-text) { padding-bottom: calc(14px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px))); }

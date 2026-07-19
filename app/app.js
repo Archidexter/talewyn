@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.75';
+const APP_VERSION = '1.0.76';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -7658,12 +7658,14 @@ function bindUI() {
     // (PDF/короткая глава): там скролла нет, и обычное «показать шапку при прокрутке вверх»
     // не срабатывает, а вызвать меню было нечем.
     if (sw.axis === 'y') {
-      if (sw.dy > 45) {                                    // вниз — показать панель настроек и навигацию
+      if (sw.dy > 45) {                                    // вниз — показать шапку, навигацию И аудиопанель
         $('#reader-header').classList.remove('hidden');
         $('#reader-fabnav')?.classList.remove('hidden');
-      } else if (sw.dy < -45) {                            // вверх — скрыть их (предохранитель для коротких страниц)
+        if (tts.active) { const b = $('#tts-bar'); b.hidden = false; b.classList.remove('tucked'); }
+      } else if (sw.dy < -45) {                            // вверх — скрыть всё это (чистое чтение; предохранитель для коротких страниц)
         $('#reader-header').classList.add('hidden');
         $('#reader-fabnav')?.classList.add('hidden');
+        $('#tts-bar').classList.add('tucked');
       }
       sw = null; return;
     }

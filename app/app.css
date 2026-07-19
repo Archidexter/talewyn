@@ -200,6 +200,7 @@ img, svg { -webkit-user-drag: none; }
   padding: calc(4px + max(env(safe-area-inset-top, 0px), var(--sat, 0px))) max(20px, max(env(safe-area-inset-right, 0px), var(--sar, 0px))) 48px max(20px, max(env(safe-area-inset-left, 0px), var(--sal, 0px)));
 }
 #shelf-view {
+  position: relative; z-index: 1;   /* над fixed-фоном #shelf-bg (тот лежит снаружи, z-index:0) */
   background:
     radial-gradient(720px 340px at 50% -140px, color-mix(in srgb, var(--accent) 7%, transparent), transparent 70%);
   background-repeat: no-repeat;
@@ -212,7 +213,8 @@ img, svg { -webkit-user-drag: none; }
    других экранах ([hidden]) исчезает сам. По умолчанию скрыт; включается
    классом body.bg-live (настройка «Фон полки»). Основной цвет темы доминирует. */
 #shelf-bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; display: none; }
-body.bg-live #shelf-bg { display: block; }
+/* показываем только пока активна полка (:has) и включён фон — фон вне #shelf-view, чтобы вход не дёргал */
+body.bg-live:has(#shelf-view:not([hidden])) #shelf-bg { display: block; }
 #shelf-bg > div { position: absolute; inset: 0; }
 #shelf-bg .sbg-base { background: var(--bg); }
 #shelf-bg .sbg-vignette {
@@ -231,9 +233,6 @@ body.bg-live #shelf-bg { display: block; }
   position: absolute; inset: 0; width: 100%; height: 100%;
   mix-blend-mode: screen; translate: var(--px, 0) var(--py, 0); will-change: translate;
 }
-/* контент полки поднимаем над fixed-фоном (иначе позиционированный #shelf-bg перекрыл бы его) */
-#shelf-view > .lib-header, #shelf-view > .shelf-tabs,
-#shelf-view > #tab-books, #shelf-view > #tab-audio { position: relative; z-index: 1; }
 .lib-header { padding: 10px 0 14px; border-bottom: 1px solid var(--border); }
 .lib-title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; }
 .lib-header h1 {

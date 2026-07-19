@@ -1169,6 +1169,17 @@ body:has(#reader-view:not([hidden])) #toast {
 }
 .chapter-body img:not([src]) { display: none; }
 html.t-dark .chapter-body img { opacity: .9; }
+/* PDF/комикс (body.reader-comic): страница — это картинка. Крупный заголовок
+   «Страница N» лишний (номер и так под звездой), поэтому его убираем, шапку
+   поджимаем, а саму страницу разворачиваем почти во всю ширину экрана. */
+body.reader-comic #chapter-title { display: none; }
+body.reader-comic .chapter-meta { margin: 4px 0 10px; }
+body.reader-comic .chapter {
+  max-width: 100%;
+  padding-left: max(4px, max(env(safe-area-inset-left, 0px), var(--sal, 0px)));
+  padding-right: max(4px, max(env(safe-area-inset-right, 0px), var(--sar, 0px)));
+}
+body.reader-comic .chapter-body img { margin: 0 auto; border-radius: 4px; }
 .chapter-body em { color: inherit; }
 .chapter-body table { border-collapse: collapse; margin: 1.2em auto; max-width: 100%; }
 .chapter-body td, .chapter-body th { border: 1px solid var(--border); padding: 5px 10px; }
@@ -1421,6 +1432,9 @@ body.col-open #col-tab svg { transform: rotate(180deg); }
 /* результаты: строка фильтра (кастомная выпадашка + чекбокс «Все») + список найденного */
 .scan-ctl { display: flex; align-items: center; gap: 9px; }
 .fmt-pick { flex: 1; min-width: 0; }
+.scan-ctl .scan-sort { flex: 0 1 auto; }   /* сортировка — по своей ширине; фильтр формата забирает остаток */
+.scan-ctl .lang-trigger { min-width: 0; }
+.scan-ctl .lang-cur { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .scan-all-lbl { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--dim);
   cursor: pointer; border: 1px solid var(--border-strong); border-radius: var(--r-sm); padding: 9px 14px;
   white-space: nowrap; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }

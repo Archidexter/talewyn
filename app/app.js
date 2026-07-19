@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.88';
+const APP_VERSION = '1.0.89';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -258,7 +258,8 @@ const I18N = {
     scanNeedPerm: 'Дай доступ к файлам, чтобы искать книги', scanGrant: 'Дать доступ',
     scanBusyStat: 'папок: {d} · найдено: {n}', scanFound: 'Найдено книг: {n}', scanNone: 'Книги не найдены',
     scanSelAll: 'Все', scanSelNone: 'Снять', scanReading: 'Читаю {i} из {n}…', scanTracks: '· {n} файлов',
-    scanAdd: 'Добавить ({n})', scanAllFmt: 'Все форматы · {n}',
+    scanAdd: 'Добавить ({n})', scanAllFmt: 'Все · {n}',
+    sortName: 'По алфавиту', sortDate: 'По дате', sortSize: 'По размеру',
     scanErr: 'Не удалось просканировать', scanNoNative: 'Автопоиск доступен только в приложении',
     start: 'Начать чтение', cont: 'Продолжить чтение', nextCh: 'Следующая глава',
     footer: 'Прочитано {r} из {t} глав ({p}%)',
@@ -434,6 +435,7 @@ const I18N = {
     scanBusyStat: 'folders: {d} · found: {n}', scanFound: 'Books found: {n}', scanNone: 'No books found',
     scanSelAll: 'All', scanSelNone: 'None', scanReading: 'Reading {i} of {n}…', scanTracks: '· {n} files',
     scanAdd: 'Add ({n})', scanAllFmt: 'All formats · {n}',
+    sortName: 'A–Z', sortDate: 'By date', sortSize: 'By size',
     scanErr: 'Scan failed', scanNoNative: 'Auto-search works only in the app',
     start: 'Start reading', cont: 'Continue reading', nextCh: 'Next chapter',
     footer: '{r} of {t} chapters read ({p}%)',
@@ -1387,6 +1389,7 @@ let scanFiles = [];        // [{p,n,s}]
 let scanSel = new Set();   // индексы отмеченных (глобально, поверх фильтра)
 let scanBusyFlag = false;
 let scanFmt = '';          // текущий фильтр формата ('' = все)
+let scanSort = 'name';     // сортировка списка: 'name' | 'date' | 'size'
 const scanFmtSize = b => b >= 1048576 ? (b / 1048576).toFixed(1) + ' МБ' : Math.max(1, Math.round(b / 1024)) + ' КБ';
 const scanExt = n => { const m = String(n).toLowerCase().match(/\.([a-z0-9]+)$/); return m ? m[1] : ''; };
 const scanStripExt = n => String(n).replace(/\.[a-z0-9]+$/i, '');   // формат виден тегом → из имени убираем
@@ -1421,8 +1424,8 @@ function buildScanGroups() {
     const audio = AUDIO_EXT.test(f.n);
     const key = audio ? ('a|' + scanDir(f.p) + '|' + (scanStem(f.n) || scanDir(f.p))) : ('b|' + i);
     let g = map.get(key);
-    if (!g) { g = { key, kind: audio ? 'audio' : 'book', ex: scanExt(f.n), idxs: [], size: 0, title: '', count: 0 }; map.set(key, g); }
-    g.idxs.push(i); g.size += (+f.s || 0);
+    if (!g) { g = { key, kind: audio ? 'audio' : 'book', ex: scanExt(f.n), idxs: [], size: 0, date: 0, title: '', count: 0 }; map.set(key, g); }
+    g.idxs.push(i); g.size += (+f.s || 0); g.date = Math.max(g.date, +f.d || 0);   // f.d — дата файла (нативный сканер, ≥1.0.83)
   });
   const arr = [...map.values()];
   arr.forEach(g => {
@@ -1493,7 +1496,7 @@ function scanState(s) {     // 'choose' | 'busy' | 'results'
 // два кадра до .open (иначе стартовое положение за краем не отрисуется), уход за 400мс.
 function openScan() {
   if (!isNativeApp() || !scanBridge()) { showToast(t('scanNoNative')); return; }   // только в приложении
-  scanFiles = []; scanGroups = []; scanSel = new Set(); scanBusyFlag = false; scanFmt = '';
+  scanFiles = []; scanGroups = []; scanSel = new Set(); scanBusyFlag = false; scanFmt = ''; scanSort = 'name';
   scanState('choose');
   const modal = $('#scan-modal'), scrim = $('#scan-scrim');
   scrim.hidden = false; modal.hidden = false;
@@ -1529,6 +1532,7 @@ window.__scanResult = list => {
   scanSel = new Set(scanGroups.map(g => g.key));   // по умолчанию отмечены все единицы
   scanFmt = '';
   buildScanFmtDD();
+  buildScanSortDD();
   renderScanResults();
   scanState('results');
 };
@@ -1541,10 +1545,23 @@ function buildScanFmtDD() {
     .concat(fmts.map(f => ({ v: f, label: `${f.toUpperCase()} · ${scanFiles.filter(x => scanExt(x.n) === f).length}` })));
   buildDropdown($('#scan-fmt'), opts, '', v => { scanFmt = v; renderScanResults(); });
 }
+// сортировка списка автопоиска: по алфавиту / дате файла / размеру
+function buildScanSortDD() {
+  const opts = [
+    { v: 'name', label: t('sortName') },
+    { v: 'date', label: t('sortDate') },
+    { v: 'size', label: t('sortSize') },
+  ];
+  buildDropdown($('#scan-sort'), opts, scanSort, v => { scanSort = v; renderScanResults(); });
+}
 function renderScanResults() {
   const box = $('#scan-list');
   if (!scanFiles.length) { box.innerHTML = `<div class="scan-empty">${t('scanNone')}</div>`; $('#scan-add').hidden = true; return; }
-  const groups = scanShownGroups();
+  const groups = scanShownGroups().slice().sort((a, b) => {
+    if (scanSort === 'size') return (b.size || 0) - (a.size || 0);       // крупные сверху
+    if (scanSort === 'date') return (b.date || 0) - (a.date || 0);       // новые сверху
+    return String(a.title).localeCompare(String(b.title), undefined, { numeric: true, sensitivity: 'base' });
+  });
   box.innerHTML = groups.map(g => {
     const col = scanColor(g.ex);
     const cnt = (g.kind === 'audio' && g.count > 1) ? ` <span class="scan-cnt">${T('scanTracks', { n: g.count })}</span>` : '';
@@ -3778,6 +3795,22 @@ function setChapterMeta(index, total) {
   if (totEl.textContent !== tot) totEl.textContent = tot;   // total обычно неизменен — не переписываем
 }
 
+// PDF/комикс: глава — это одна полностраничная картинка (img[data-i]) плюс, возможно,
+// скрытый текстовый слой .pdf-text; настоящих абзацев нет. В таком случае крупный
+// заголовок «Страница N» лишний (номер и так под звездой), а страницу разворачиваем
+// почти во всю ширину экрана — класс body.reader-comic рулит этим в CSS.
+function isPageImageChapter(bodyEl) {
+  const kids = bodyEl.children;
+  if (!kids.length) return false;
+  let hasImg = false;
+  for (const k of kids) {
+    if (k.tagName === 'IMG' && k.hasAttribute('data-i')) { hasImg = true; continue; }
+    if (k.classList.contains('pdf-text')) continue;
+    return false;   // есть ещё что-то (текст, заголовки) — это не страница-картинка
+  }
+  return hasImg;
+}
+
 async function openChapter(bookId, idx) {
   const token = ++navToken;
   if (!pendingAutoplay) ttsStop();
@@ -3836,6 +3869,7 @@ async function openChapter(bookId, idx) {
   const bodyEl = $('#chapter-body');
   bodyEl.style.transition = ''; bodyEl.style.transform = ''; bodyEl.style.opacity = '';   // убрать следы свайпа
   bodyEl.innerHTML = ch.html;
+  document.body.classList.toggle('reader-comic', isPageImageChapter(bodyEl));   // PDF/комикс: страница во всю ширину, без заголовка
   if (wasInReader) { bodyEl.classList.remove('body-fade'); void bodyEl.offsetWidth; bodyEl.classList.add('body-fade'); }
   for (const img of document.querySelectorAll('#chapter-body img')) {
     img.loading = 'lazy';

@@ -204,27 +204,6 @@ img, svg { -webkit-user-drag: none; }
     radial-gradient(720px 340px at 50% -140px, color-mix(in srgb, var(--accent) 7%, transparent), transparent 70%);
   background-repeat: no-repeat;
 }
-/* ── живой мраморный фон полки ─────────────────────────────────────────────
-   Фикс-слой на весь экран ПОД контентом (z-index:-1 → над фоном --bg, но под карточками).
-   Живёт внутри #shelf-view, поэтому на других экранах ([hidden]) исчезает сам.
-   Показывается только когда включён тумблер (body.bg-live). Два слоя разводов крутятся
-   навстречу с лёгким «дыханием»; наклон телефона доворачивает их (JS ставит rotate). */
-#shelf-bg { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; display: none; }
-body.bg-live #shelf-bg { display: block; }
-#shelf-bg .mbl { position: absolute; inset: -40%; will-change: transform, rotate; transition: rotate .5s ease-out; }
-#shelf-bg .m1 {
-  background: radial-gradient(40% 40% at 34% 40%, color-mix(in srgb, var(--gild) 48%, transparent), transparent 60%),
-             radial-gradient(46% 46% at 68% 62%, color-mix(in srgb, var(--accent) 38%, transparent), transparent 62%);
-  filter: blur(30px); animation: marbA 28s linear infinite;
-}
-#shelf-bg .m2 {
-  background: radial-gradient(38% 38% at 62% 32%, color-mix(in srgb, var(--gild) 34%, transparent), transparent 60%),
-             radial-gradient(42% 42% at 32% 68%, color-mix(in srgb, var(--accent) 28%, transparent), transparent 62%);
-  filter: blur(38px); mix-blend-mode: screen; animation: marbB 42s linear infinite;
-}
-@keyframes marbA { 0% { transform: rotate(0deg) scale(1); } 50% { transform: rotate(180deg) scale(1.12); } 100% { transform: rotate(360deg) scale(1); } }
-@keyframes marbB { 0% { transform: rotate(0deg) scale(1.1); } 50% { transform: rotate(-180deg) scale(1); } 100% { transform: rotate(-360deg) scale(1.1); } }
-@media (prefers-reduced-motion: reduce) { #shelf-bg .mbl { animation: none; } }
 .lib-header { padding: 10px 0 14px; border-bottom: 1px solid var(--border); }
 .lib-title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; }
 .lib-header h1 {

@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.83';
+const APP_VERSION = '1.0.84';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -168,7 +168,6 @@ const DEFAULT_SETTINGS = {
   theme: 'dark', font: 'serif', size: 18, lh: 1.65, width: 'medium',
   align: 'justify',
   wake: 'off',
-  bg: 'on',           // живой мраморный фон полки (вкл/выкл)
   pronun: [],         // словарь произношений для озвучки: [{from, to, lang}]
   trChoice: 'auto',   // язык перевода по умолчанию (когда книга не открыта)
   lang: (navigator.language || 'ru').toLowerCase().startsWith('ru') ? 'ru' : 'en',
@@ -357,7 +356,6 @@ const I18N = {
     pauseT: 'Пауза/продолжить', stopT: 'Остановить', rateT: 'Скорость',
     slowerT: 'Медленнее', fasterT: 'Быстрее', voiceT: 'Голос', ttsKick: 'Озвучка',
     secApp: 'Приложение', secLibrary: 'Библиотека',
-    bgLbl: 'Живой фон', bgOff: 'Выкл', bgOn: 'Вкл',
     prevChT: 'Предыдущая глава', nextChT: 'Следующая глава',
   },
   en: {
@@ -532,7 +530,6 @@ const I18N = {
     pauseT: 'Pause/resume', stopT: 'Stop', rateT: 'Speed',
     slowerT: 'Slower', fasterT: 'Faster', voiceT: 'Voice', ttsKick: 'Narration',
     secApp: 'Application', secLibrary: 'Library',
-    bgLbl: 'Live background', bgOff: 'Off', bgOn: 'On',
     prevChT: 'Previous chapter', nextChT: 'Next chapter',
   },
 };
@@ -581,7 +578,6 @@ function loadSettings() {
   // разовый перевод старого мобильного умолчания «по левому» → «по ширине» (по умолчанию)
   if (!raw.alignMigrated) { if (s.align === 'left') s.align = 'justify'; s.alignMigrated = true; }
   if (!['off', 'on'].includes(s.wake)) s.wake = 'off';
-  if (!['off', 'on'].includes(s.bg)) s.bg = DEFAULT_SETTINGS.bg;
   s.size = Math.min(26, Math.max(14, Number(s.size) || DEFAULT_SETTINGS.size));
   s.lh = Math.min(2.0, Math.max(1.4, Number(s.lh) || DEFAULT_SETTINGS.lh));
   if (!['ru', 'en'].includes(s.lang)) s.lang = DEFAULT_SETTINGS.lang;
@@ -615,7 +611,6 @@ function applySettings() {
     ? urlTheme : settings.theme;
   const theme = pref === 'auto' ? (mqDark.matches ? 'dark' : 'light') : pref;
   document.documentElement.className = 't-' + theme;
-  document.body.classList.toggle('bg-live', settings.bg === 'on');   // живой мраморный фон полки
   const st = document.documentElement.style;
   st.setProperty('--reader-fs', settings.size + 'px');
   st.setProperty('--reader-lh', settings.lh);
@@ -666,7 +661,7 @@ function rangeFill(el) {
 function syncSettingsUI() {
   for (const [segId, key] of [['seg-theme', 'theme'], ['seg-font', 'font'],
     ['seg-width', 'width'], ['seg-align', 'align'],
-    ['seg-lang', 'lang'], ['seg-bg', 'bg']]) {
+    ['seg-lang', 'lang']]) {
     document.querySelectorAll(`#${segId} button`).forEach(b =>
       b.classList.toggle('active', b.dataset.v === String(settings[key])));
   }
@@ -8102,18 +8097,6 @@ function bindUI() {
   bindSeg('seg-align', 'align');
   bindSeg('seg-width', 'width');
   bindSeg('seg-lang', 'lang');
-  bindSeg('seg-bg', 'bg');
-  // наклон телефона доворачивает мраморный фон (гироскоп; в нативной оболочке https-контекст — датчик доступен)
-  {
-    const m1 = $('#shelf-bg .m1'), m2 = $('#shelf-bg .m2');
-    addEventListener('deviceorientation', e => {
-      if (!document.body.classList.contains('bg-live') || $('#shelf-view').hidden) return;
-      if (e.gamma == null && e.beta == null) return;
-      const tx = Math.max(-1, Math.min(1, (e.gamma || 0) / 22));
-      if (m1) m1.style.rotate = (tx * 24) + 'deg';
-      if (m2) m2.style.rotate = (-tx * 17) + 'deg';
-    }, true);
-  }
   bindStep('size-minus', 'size-plus', 'size', 14, 26, 1, 0);
   bindStep('lh-minus', 'lh-plus', 'lh', 1.4, 2.0, 0.05, 2);
   const bindRange = (id, key, min, max, digits) => {

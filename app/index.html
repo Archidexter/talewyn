@@ -10,7 +10,7 @@
 if(th==='auto')th=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <link rel="stylesheet" href="fonts.css?v=9">
-<link rel="stylesheet" href="app.css?v=177">
+<link rel="stylesheet" href="app.css?v=178">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -59,6 +59,9 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
 
 <!-- ══════════ Полка ══════════ -->
 <main id="shelf-view">
+  <!-- живой мраморный фон: два слоя золото-аметистовых разводов, крутятся навстречу + едут от наклона.
+       Фикс-слой за контентом; виден только на полке (в других вьюхах #shelf-view скрыт [hidden]). -->
+  <div id="shelf-bg" aria-hidden="true"><div class="mbl m1"></div><div class="mbl m2"></div></div>
   <header class="lib-header shelf-head">
     <div class="lib-title-row">
       <span class="brand-logo" aria-hidden="true"></span>
@@ -495,6 +498,13 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
       <button class="chip" data-v="en">English</button>
     </div>
   </div>
+  <div class="v3row" id="bg-group">
+    <span class="v3lbl" data-i18n="bgLbl">Живой фон</span>
+    <div class="chips" id="seg-bg">
+      <button class="chip" data-v="off" data-i18n="bgOff">Выкл</button>
+      <button class="chip" data-v="on" data-i18n="bgOn">Вкл</button>
+    </div>
+  </div>
   <div class="set-section" data-i18n="syncT">Синхронизация и копия</div>
   <div class="set-group backup-row">
     <button id="sync-light-btn" class="tool-btn" hidden>
@@ -773,6 +783,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=215"></script>
+<script src="app.js?v=216"></script>
 </body>
 </html>

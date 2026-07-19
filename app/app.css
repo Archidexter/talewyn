@@ -171,20 +171,13 @@ img, svg { -webkit-user-drag: none; }
   background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 40%, transparent); color: var(--accent);
 }
 /* активное/включённое состояние (перевод главы, идёт озвучка и т.п.) */
-.icon-btn.active {
+.icon-btn.active, .icon-btn.sheet-on {
   color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   background: var(--accent-soft);
 }
-/* пока открыто окно (о приложении / настройки / оценка) — его кнопка «нажата».
-   У кнопок шапки (.icon-btn) — с фоном, как их родное .active; у кнопок читалки
-   (.tool-btn: оценка) — только цвет+рамка, чтобы совпадало с соседними «заметки»/«закладки». */
-.icon-btn.sheet-on {
-  color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-  background: var(--accent-soft);
-}
-.tool-btn.sheet-on {
-  color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-}
+/* «нажата, пока открыто окно» = .sheet-on. Оформляем ТОЧНО как родное .active
+   (см. правила .icon-btn.active / .tool-btn.active / .book-tools .tool-btn.active —
+   туда .sheet-on дописан), чтобы кнопка окна совпадала с соседними в своём контексте. */
 /* «функция работает»: мягкая пульсация, пока идёт процесс */
 .icon-btn.busy { animation: icon-busy 1s ease-in-out infinite; }
 @keyframes icon-busy { 50% { opacity: .45; } }
@@ -2342,10 +2335,10 @@ html.t-dark #sel-tr, html.t-dark #sel-note, html.t-dark #sel-speak { color: var(
   transition: color .15s, border-color .15s, background-color .15s;
 }
 .tool-btn > span { overflow: hidden; text-overflow: ellipsis; }
-.tool-btn.active, .tool-btn:active { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.tool-btn.active, .tool-btn:active, .tool-btn.sheet-on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 @media (hover: hover) { .tool-btn:hover { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); } }
 /* активная (открыта панель) или нажатая — мягкое аметистовое поле + аметистовая рамка */
-.book-tools .tool-btn.active, .book-tools .tool-btn:active { background: var(--accent-soft); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.book-tools .tool-btn.active, .book-tools .tool-btn:active, .book-tools .tool-btn.sheet-on { background: var(--accent-soft); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 .tool-count { color: var(--accent); font-weight: 700; flex: none; }
 .tool-count.stars { letter-spacing: .05em; }
 

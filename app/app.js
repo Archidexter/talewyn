@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.74';
+const APP_VERSION = '1.0.75';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -1929,8 +1929,10 @@ let colDrawerOpen = false;
 // не срабатывают: взаимодействие идёт только внутри окна.
 const OVERLAY_SEL = '#scan-modal, #confirm-modal, #settings-sheet, #note-sheet, #tr-sheet, #review-sheet, '
   + '#ab-notes-sheet, #annot-sheet, #info-sheet, #pronun-sheet, #col-create, #col-pick, #lightbox, #word-pop';
-function uiOverlayOpen() {
-  if (colDrawerOpen) return true;
+// ignoreDrawer=true — для обработчика, который САМ обслуживает свайпы ящика коллекций (закрытие
+// свайпом), иначе он глушил бы собственный жест
+function uiOverlayOpen(ignoreDrawer) {
+  if (!ignoreDrawer && colDrawerOpen) return true;
   for (const el of document.querySelectorAll(OVERLAY_SEL)) if (el && !el.hidden) return true;
   if (document.querySelector('.dd-menu.open, .lang-menu.open, .voice-menu.open, .speed-wheel.open')) return true;   // открытая выпадашка
   return false;
@@ -7370,7 +7372,9 @@ function bindUI() {
     const onShelf = () => !$('#shelf-view').hidden && $('#reader-view').hidden && $('#library-view').hidden;
     addEventListener('touchstart', e => {
       axis = null; active = false;
-      if (e.touches.length !== 1 || !onShelf() || uiOverlayOpen()) return;
+      // ящик коллекций ИГНОРИРУЕМ (его свайп-закрытие обслуживает этот же обработчик, ниже),
+      // но любое ДРУГОЕ окно поверх — глушит свайп
+      if (e.touches.length !== 1 || !onShelf() || uiOverlayOpen(true)) return;
       // Свайп начинается откуда угодно, в том числе с карточки книги/аудиокниги: тапу это не
       // мешает — вкладка листается только при сдвиге от 36px, а на таком сдвиге браузер уже
       // отменил клик по кнопке. Исключаем лишь то, где горизонталь значит своё: поля ввода

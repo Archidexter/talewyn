@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.81';
+const APP_VERSION = '1.0.82';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -619,6 +619,9 @@ function applySettings() {
   st.setProperty('--reader-align', settings.align);
   const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
   $('meta[name=theme-color]').setAttribute('content', bg);
+  // нативу: запомнить фон темы, чтобы окно старта красилось в него (не зелёный дефолт).
+  // Мост есть только в APK ≥1.0.61; guard — на старых сборках просто no-op.
+  try { if (window.AndroidTheme && AndroidTheme.setColor) AndroidTheme.setColor(bg); } catch {}
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   updateWakeLock();
   if (applyLang.last !== settings.lang) {

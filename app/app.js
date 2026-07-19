@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.87';
+const APP_VERSION = '1.0.88';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -6248,19 +6248,39 @@ async function renderNotesList() {
   const box = $('#notes-list');
   bookNotesCache = (await dbByIndex('notes', 'byBook', state.book.id))
     .sort((a, b) => a.idx - b.idx || a.start - b.start);
+  const has = bookNotesCache.length > 0;
+  // Голова (кнопка «Заметка» + действия) — ПОСТОЯННАЯ: строим один раз, дальше
+  // только переключаем класс. Тогда появление/скрытие действий и сужение кнопки
+  // идут плавным CSS-переходом (при полном innerHTML узлы пересоздавались бы = рывок).
+  let head = box.querySelector('.notes-head');
+  if (!head) {
+    box.innerHTML =
+      `<div class="notes-head">` +
+        `<button class="chip" id="notes-add-btn"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> <span id="notes-add-label"></span></button>` +
+        `<div class="notes-head-actions" aria-hidden="true">` +
+          `<button class="chip notes-copy-btn" id="notes-copy"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg></button>` +
+          `<button class="chip notes-del-all-btn" id="notes-del-all"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>` +
+        `</div>` +
+      `</div>` +
+      `<div id="notes-items"></div>`;
+    head = box.querySelector('.notes-head');
+    void head.offsetWidth;   // зафиксировать исходный стиль, чтобы первый показ действий тоже анимировался
+  }
+  // подписи/подсказки могли смениться с языком — обновляем на постоянных узлах
+  $('#notes-add-label').textContent = t('noteT');
+  const cp = $('#notes-copy'); if (cp) { cp.title = t('copyAll'); cp.setAttribute('aria-label', t('copyAll')); }
+  const delAllLabel = uiLang() === 'ru' ? 'Удалить все заметки' : 'Delete all notes';
+  const da = $('#notes-del-all'); if (da) { da.title = delAllLabel; da.setAttribute('aria-label', delAllLabel); }
+  head.classList.toggle('has-actions', has);
+  head.querySelector('.notes-head-actions').setAttribute('aria-hidden', has ? 'false' : 'true');
+
+  const items = $('#notes-items');
+  if (!has) { items.innerHTML = `<p class="sr-empty">${t('noNotes')}</p>`; return; }
+  const titles = state.book.titles || [];
   const fmtDate = ts => new Date(ts).toLocaleDateString(
     uiLang() === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short' });
-  const addBtn = `<button class="chip" id="notes-add-btn"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> ${t('noteT')}</button>`;
-  if (!bookNotesCache.length) {
-    box.innerHTML = `<div class="notes-head">${addBtn}</div><p class="sr-empty">${t('noNotes')}</p>`;
-    return;
-  }
-  const titles = state.book.titles || [];
   let lastIdx = -1;
-  const copyBtn = `<button class="chip notes-copy-btn" id="notes-copy" title="${t('copyAll')}" aria-label="${t('copyAll')}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg></button>`;
-  const delAllLabel = uiLang() === 'ru' ? 'Удалить все заметки' : 'Delete all notes';
-  const delAllBtn = `<button class="chip notes-del-all-btn" id="notes-del-all" title="${delAllLabel}" aria-label="${delAllLabel}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>`;
-  const parts = [`<div class="notes-head has-actions">${addBtn}<div class="notes-head-actions">${copyBtn}${delAllBtn}</div></div>`];
+  const parts = [];
   for (const n of bookNotesCache) {
     if (n.idx !== lastIdx) {
       lastIdx = n.idx;
@@ -6278,7 +6298,7 @@ async function renderNotesList() {
       </button>
     </div>`);
   }
-  box.innerHTML = parts.join('');
+  items.innerHTML = parts.join('');
 }
 
 // последняя читаемая глава — к ней привязываем заметку, созданную из меню (без выделения текста)

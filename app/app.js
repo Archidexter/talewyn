@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.89';
+const APP_VERSION = '1.0.90';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -1456,14 +1456,20 @@ function buildDropdown(container, options, value, onChange) {
   container._ddMenu = menu;
   let val = String(value);
   const lbl = v => { const o = options.find(x => String(x.v) === String(v)); return o ? o.label : (options[0] ? options[0].label : ''); };
-  const sync = () => { cur.textContent = lbl(val); menu.querySelectorAll('.lang-opt').forEach(o => o.classList.toggle('sel', o.dataset.v === val)); };
+  const sync = () => {
+    const o = options.find(x => String(x.v) === String(val));
+    if (o && o.icon) cur.innerHTML = o.icon;   // иконка активного режима (напр. сортировка)
+    else cur.textContent = lbl(val);
+    menu.querySelectorAll('.lang-opt').forEach(op => op.classList.toggle('sel', op.dataset.v === val));
+  };
   const place = () => {
-    const r = trigger.getBoundingClientRect(); const w = Math.max(r.width, 170);
+    const r = trigger.getBoundingClientRect(); const w = Math.max(r.width, 150);
     menu.style.width = w + 'px'; menu.style.maxHeight = 'none';
     const full = menu.scrollHeight, cap = Math.min(280, innerHeight - 24), h = Math.min(full, cap);
-    const left = Math.min(Math.max(8, r.right - w), innerWidth - w - 8);
-    menu.style.left = Math.max(8, left) + 'px';
-    menu.style.top = (r.top > h + 12 ? r.top - h - 8 : r.bottom + 8) + 'px';
+    const left = Math.min(Math.max(8, r.left), innerWidth - w - 8);   // левый край списка = левый край триггера
+    menu.style.left = left + 'px';
+    const roomBelow = innerHeight - r.bottom >= h + 10;               // раскрываем ВНИЗ, если влезает; вверх — только если снизу места нет
+    menu.style.top = (roomBelow || r.top < h + 12 ? r.bottom + 6 : r.top - h - 6) + 'px';
     menu.style.maxHeight = h + 'px'; menu.style.overflowY = full > cap + 1 ? 'auto' : 'hidden';
   };
   trigger.addEventListener('click', e => {
@@ -1545,12 +1551,18 @@ function buildScanFmtDD() {
     .concat(fmts.map(f => ({ v: f, label: `${f.toUpperCase()} · ${scanFiles.filter(x => scanExt(x.n) === f).length}` })));
   buildDropdown($('#scan-fmt'), opts, '', v => { scanFmt = v; renderScanResults(); });
 }
-// сортировка списка автопоиска: по алфавиту / дате файла / размеру
+// сортировка списка автопоиска: по алфавиту / дате файла / размеру.
+// Триггер — только иконка активного режима; полные подписи — в раскрытом списке.
+const SORT_IC = {
+  name: '<svg viewBox="0 0 24 24" width="18" height="18"><text x="12" y="17" text-anchor="middle" font-size="15" font-weight="700" fill="currentColor" style="font-family:var(--display),Georgia,serif">Ая</text></svg>',
+  date: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5l3.2 2"/></svg>',
+  size: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 6h10M10 12h6M10 18h3"/><path d="M5 5v13m0 0-2.4-2.4M5 18l2.4-2.4"/></svg>',
+};
 function buildScanSortDD() {
   const opts = [
-    { v: 'name', label: t('sortName') },
-    { v: 'date', label: t('sortDate') },
-    { v: 'size', label: t('sortSize') },
+    { v: 'name', label: t('sortName'), icon: SORT_IC.name },
+    { v: 'date', label: t('sortDate'), icon: SORT_IC.date },
+    { v: 'size', label: t('sortSize'), icon: SORT_IC.size },
   ];
   buildDropdown($('#scan-sort'), opts, scanSort, v => { scanSort = v; renderScanResults(); });
 }
@@ -6730,15 +6742,18 @@ function wikiIsBook(sum, title) {
   const desc = (sum.description || '').toLowerCase();     // краткое пояснение статьи
   const extract = (sum.extract || '').toLowerCase();
   const pageTitle = (sum.title || '').toLowerCase();
-  if (/писател|поэт|переводчик|author|novelist|\bwriter\b|born|род(ился|\.)/.test(desc)) return false;  // это человек
-  const bookish = /(роман|новелл|ранобэ|ранобе|повест|книг|манга|манхв|манхва|рассказ|сказани|поэма|novel|book|manga|webtoon|series|серия|цикл|фильм|аниме|игра|манга)/;
+  const bookish = /(роман|новелл|ранобэ|ранобе|повест|книг|манга|манхв|манхва|рассказ|сказани|поэма|пьеса|сборник|произведени|мемуар|нон-?фикшн|novel|book|memoir|manga|webtoon|series|серия|цикл|фильм|аниме|игра)/;
+  const isBookDesc = bookish.test(desc);
+  // человек (а не книга): описание про личность И книжных слов в нём НЕТ. Иначе
+  // «вторая КНИГА, выпущенная писателем…» ошибочно отсекалась как статья об авторе.
+  if (!isBookDesc && /писател|поэт|переводчик|author|novelist|\bwriter\b|born|род(ился|\.)/.test(desc)) return false;
   const tw = title.toLowerCase().split(/\s+/).filter(w => w.length > 2);
   const matched = tw.filter(w => pageTitle.includes(w)).length;
   const titleOk = tw.length && matched >= Math.ceil(tw.length * 0.6);   // заголовок реально про эту книгу
   if (!titleOk) return false;
-  // многословное название совпало — этого достаточно; односложное — требуем «книжности»,
-  // чтобы не подсунуть статью-понятие (например, «Дюна» как гряда песка)
-  return tw.length > 1 || bookish.test(desc + ' ' + extract.slice(0, 220));
+  // книжное описание, либо многословное название совпало, либо «книжность» в тексте
+  // (односложное название без книжности отсекаем — чтобы не подсунуть статью-понятие)
+  return isBookDesc || tw.length > 1 || bookish.test(extract.slice(0, 220));
 }
 
 async function findWikipedia(title) {
@@ -6762,11 +6777,18 @@ async function findWikipedia(title) {
   return out;
 }
 
-async function findFantlab(title) {
+async function findFantlab(title, author) {
   const j = await fetchJson('https://api.fantlab.ru/search-works?page=1&q='
     + encodeURIComponent(title));
+  let matches = (j.matches || []).slice();
+  if (author) {   // совпадения по автору — вперёд, чтобы не брать чужую книгу с похожим названием
+    const last = author.toLowerCase().split(/\s+/).filter(Boolean).pop() || '';
+    const hasA = m => last && ((m.autor1_rusname || '') + ' ' + (m.all_autor_rusname || '')
+      + ' ' + (m.autors || '')).toLowerCase().includes(last);
+    matches.sort((x, y) => (hasA(y) ? 1 : 0) - (hasA(x) ? 1 : 0));
+  }
   const out = [];
-  for (const m of (j.matches || []).slice(0, 3)) {
+  for (const m of matches.slice(0, 3)) {
     try {
       const w = await fetchJson('https://api.fantlab.ru/work/' + m.work_id, 6000);
       const text = stripMarkup(w.work_description || '');
@@ -6783,19 +6805,35 @@ async function findFantlab(title) {
 }
 
 async function findGoogleBooks(title, author) {
-  // операторы intitle/inauthor нацеливают поиск на саму книгу, а не на всё подряд
-  const q = 'intitle:' + JSON.stringify(title) + (author ? ' inauthor:' + JSON.stringify(author) : '');
-  const j = await fetchJson('https://www.googleapis.com/books/v1/volumes?maxResults=5&q='
-    + encodeURIComponent(q));
-  return (j.items || []).map(it => {
-    const v = it.volumeInfo || {};
-    const text = stripMarkup(v.description || '');
-    return text.length > 60 ? {
-      src: 'Google Книги',
-      title: (v.title || '') + (v.authors ? ' — ' + v.authors.join(', ') : ''),
-      text,
-    } : null;
-  }).filter(Boolean);
+  // intitle/inauthor БЕЗ кавычек — нацеливают на книгу, но не требуют точной фразы
+  // (жёсткая фраза мазала мимо у книг с длинным/грязным названием). Порядок попыток:
+  // русские издания строгим запросом → русские свободным → любые свободным.
+  const qStrict = 'intitle:' + title + (author ? ' inauthor:' + author : '');
+  const qFree = title + (author ? ' ' + author : '');
+  const tries = [
+    { q: qStrict, lang: '&langRestrict=ru' },
+    { q: qFree, lang: '&langRestrict=ru' },
+    { q: qFree, lang: '' },
+  ];
+  for (const tr of tries) {
+    let j;
+    try {
+      j = await fetchJson('https://www.googleapis.com/books/v1/volumes?maxResults=5'
+        + tr.lang + '&q=' + encodeURIComponent(tr.q));
+    } catch { continue; }   // лимит(429)/сеть — не валимся, идём к следующей попытке
+    const out = (j.items || []).map(it => {
+      const v = it.volumeInfo || {};
+      // нет полного описания — берём хотя бы сниппет из поиска
+      const text = stripMarkup(v.description || (it.searchInfo && it.searchInfo.textSnippet) || '');
+      return text.length > 60 ? {
+        src: 'Google Книги',
+        title: (v.title || '') + (v.authors ? ' — ' + v.authors.join(', ') : ''),
+        text,
+      } : null;
+    }).filter(Boolean);
+    if (out.length) return out;
+  }
+  return [];
 }
 
 async function findOpenLibrary(title, author) {
@@ -6821,10 +6859,28 @@ async function findOpenLibrary(title, author) {
   return out;
 }
 
+// чистим название/автора от мусора имени файла: расширение, [скобки], (сборник),
+// метки форматов и сайтов, ведущий номер тома/части, тире-разделители.
+// Иначе запрос «Автор - Название (сборник) [fb2]» не находит НИЧЕГО.
+function cleanTitleQuery(s) {
+  return String(s || '')
+    .replace(/\.[a-z0-9]{2,5}$/i, ' ')
+    .replace(/[\[(][^)\]]*[)\]]/g, ' ')
+    .replace(/\b(fb2|epub|pdf|djvu|mobi|azw3?|txt|rtf|litres|readli|flibusta|royallib|coollib|litmir|loveread)\b/gi, ' ')
+    .replace(/^\s*(?:том|часть|глава|book|vol|cd)\s*\d+[.)\-\s]*/i, ' ')
+    .replace(/[_#№]+/g, ' ')
+    .replace(/\s*[-–—]\s*/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 async function findAnnotations() {
-  // название и автор — раздельно: так источники ищут ИМЕННО книгу, а не автора/слово
-  const title = $('#annot-title').value.trim();
-  const author = $('#annot-author').value.trim();
+  // название и автор — раздельно и ОЧИЩЕННЫЕ от мусора имени файла: так источники
+  // ищут ИМЕННО книгу, а не автора/слово и не спотыкаются о «(сборник) [fb2]»
+  const rawTitle = $('#annot-title').value.trim();
+  const rawAuthor = $('#annot-author').value.trim();
+  const title = cleanTitleQuery(rawTitle) || rawTitle;
+  const author = cleanTitleQuery(rawAuthor) || rawAuthor;
   if (title.length < 2) return;
   const box = $('#annot-results');
   box.hidden = false;
@@ -6837,14 +6893,26 @@ async function findAnnotations() {
     findOpenLibrary(title, author), findWikipedia(title, author),
   ]);
   if (seq !== findSeq || $('#annot-sheet').hidden) return;
-  const found = settled.flatMap(s => (s.status === 'fulfilled' ? s.value : []));
+  let found = settled.flatMap(s => (s.status === 'fulfilled' ? s.value : []));
   const seen = new Set();   // дедуп почти одинаковых текстов
-  findResults = found.filter(f => {
+  found = found.filter(f => {
     const k = f.text.slice(0, 80).toLowerCase();
     if (seen.has(k)) return false;
     seen.add(k);
     return true;
   }).slice(0, 8);
+  // англоязычные описания (OpenLibrary/Google) переводим на русский — иначе «что-то не то»
+  if (uiLang() === 'ru') {
+    await Promise.all(found.map(async f => {
+      if (detectLang(f.text) !== 'en') return;
+      try {
+        const tr = await translateText(f.text.slice(0, 1500), 'ru');
+        if (tr && tr.text && detectLang(tr.text) === 'ru') { f.text = tr.text; f.src += ' · пер.'; }
+      } catch { /* перевод не вышел — оставляем как есть */ }
+    }));
+    if (seq !== findSeq || $('#annot-sheet').hidden) return;
+  }
+  findResults = found;
   box.innerHTML = findResults.length
     ? findResults.map((f, i) => `<button class="annot-res" data-res="${i}">
         <span class="annot-src">${esc(f.src)} · ${esc(f.title.slice(0, 70))}</span>

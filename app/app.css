@@ -204,6 +204,42 @@ img, svg { -webkit-user-drag: none; }
     radial-gradient(720px 340px at 50% -140px, color-mix(in srgb, var(--accent) 7%, transparent), transparent 70%);
   background-repeat: no-repeat;
 }
+
+/* ══════════ Живой фон полки: Патина ══════════
+   Тактильная состаренная поверхность в цвете темы: зерно + золотая крупка по
+   краям + тёплые углы; при наклоне телефона мягко скользит золотой блик.
+   #shelf-bg fixed → полноэкранный, но живёт внутри #shelf-view, поэтому на
+   других экранах ([hidden]) исчезает сам. По умолчанию скрыт; включается
+   классом body.bg-live (настройка «Фон полки»). Основной цвет темы доминирует. */
+#shelf-bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; display: none; }
+body.bg-live #shelf-bg { display: block; }
+#shelf-bg > div { position: absolute; inset: 0; }
+#shelf-bg .sbg-base { background: var(--bg); }
+#shelf-bg .sbg-warm {
+  background:
+    radial-gradient(62% 42% at 18% 6%, color-mix(in srgb, var(--gild) 13%, transparent), transparent 60%),
+    radial-gradient(72% 46% at 82% 98%, color-mix(in srgb, var(--gild) 13%, transparent), transparent 62%);
+}
+#shelf-bg .sbg-grain { filter: url(#bgGrain); opacity: .6; mix-blend-mode: overlay; }
+#shelf-bg .sbg-fleck {
+  opacity: .85; translate: var(--px, 0) var(--py, 0); will-change: translate;
+  -webkit-mask: linear-gradient(180deg, #000, transparent 40%, transparent 62%, #000);
+  mask: linear-gradient(180deg, #000, transparent 40%, transparent 62%, #000);
+}
+#shelf-bg .sbg-fleck svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+#shelf-bg .sbg-gloss {
+  background: radial-gradient(42% 32% at 60% 42%, color-mix(in srgb, var(--gild) 15%, transparent), transparent 72%);
+  mix-blend-mode: screen; opacity: .5; translate: var(--px, 0) var(--py, 0); will-change: translate;
+}
+/* слой блеска: зажигает искры РОВНО в точках крупки (позиции считаны с неё) и
+   только при наклоне; в покое пуст, поэтому патина под ним видна как есть */
+#shelf-bg .sbg-glint {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  mix-blend-mode: screen; translate: var(--px, 0) var(--py, 0); will-change: translate;
+}
+/* контент полки поднимаем над fixed-фоном (иначе позиционированный #shelf-bg перекрыл бы его) */
+#shelf-view > .lib-header, #shelf-view > .shelf-tabs,
+#shelf-view > #tab-books, #shelf-view > #tab-audio { position: relative; z-index: 1; }
 .lib-header { padding: 10px 0 14px; border-bottom: 1px solid var(--border); }
 .lib-title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; }
 .lib-header h1 {

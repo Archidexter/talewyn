@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.84';
+const APP_VERSION = '1.0.85';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -167,6 +167,7 @@ function safeParse(key, fallback, isValid) {
 const DEFAULT_SETTINGS = {
   theme: 'dark', font: 'serif', size: 18, lh: 1.65, width: 'medium',
   align: 'justify',
+  bg: 'on',           // живой фон полки (Патина): 'on' | 'off'
   wake: 'off',
   pronun: [],         // словарь произношений для озвучки: [{from, to, lang}]
   trChoice: 'auto',   // язык перевода по умолчанию (когда книга не открыта)
@@ -266,6 +267,7 @@ const I18N = {
     back: 'Назад', next: 'Дальше',
     theme: 'Тема', textSec: 'Текст', auto: 'Авто', light: 'Светлая', sepia: 'Сепия', dark: 'Тёмная',
     autoS: 'Авто', lightS: 'Свет', darkS: 'Тёмн',
+    bgSec: 'Фон полки', bgOn: 'Живой', bgOff: 'Выключен',
     font: 'Шрифт', serif: 'С засечками', sans: 'Гротеск',
     size: 'Размер', lh: 'Интервал',
     sizePrev: 'Тихий вечер опустился на город, и в тёплых окнах один за другим загорались огни.',
@@ -440,6 +442,7 @@ const I18N = {
     back: 'Back', next: 'Next',
     theme: 'Theme', textSec: 'Text', auto: 'Auto', light: 'Light', sepia: 'Sepia', dark: 'Dark',
     autoS: 'Auto', lightS: 'Light', darkS: 'Dark',
+    bgSec: 'Shelf background', bgOn: 'Living', bgOff: 'Off',
     font: 'Font', serif: 'Serif', sans: 'Sans',
     size: 'Size', lh: 'Spacing',
     sizePrev: 'A quiet evening settled over the town, and warm lights came on in the windows one by one.',
@@ -578,6 +581,7 @@ function loadSettings() {
   // разовый перевод старого мобильного умолчания «по левому» → «по ширине» (по умолчанию)
   if (!raw.alignMigrated) { if (s.align === 'left') s.align = 'justify'; s.alignMigrated = true; }
   if (!['off', 'on'].includes(s.wake)) s.wake = 'off';
+  if (!['on', 'off'].includes(s.bg)) s.bg = DEFAULT_SETTINGS.bg;
   s.size = Math.min(26, Math.max(14, Number(s.size) || DEFAULT_SETTINGS.size));
   s.lh = Math.min(2.0, Math.max(1.4, Number(s.lh) || DEFAULT_SETTINGS.lh));
   if (!['ru', 'en'].includes(s.lang)) s.lang = DEFAULT_SETTINGS.lang;
@@ -622,6 +626,11 @@ function applySettings() {
   // нативу: запомнить фон темы, чтобы окно старта красилось в него (не зелёный дефолт).
   // Мост есть только в APK ≥1.0.61; guard — на старых сборках просто no-op.
   try { if (window.AndroidTheme && AndroidTheme.setColor) AndroidTheme.setColor(bg); } catch {}
+  // живой фон полки (Патина): вкл/выкл + золотую крупку красим в золото текущей темы
+  document.body.classList.toggle('bg-live', settings.bg === 'on');
+  const gildBg = getComputedStyle(document.documentElement).getPropertyValue('--gild').trim();
+  const ff = document.querySelector('#bgFleck feFlood');
+  if (ff && gildBg) ff.setAttribute('flood-color', gildBg);
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   updateWakeLock();
   if (applyLang.last !== settings.lang) {
@@ -651,6 +660,132 @@ document.addEventListener('visibilitychange', () => {
 });
 mqDark.addEventListener('change', () => { if (settings.theme === 'auto') applySettings(); });
 
+// Живой фон полки (Патина). База не трогается — та же SVG-крупка. Сверху слой
+// блеска: позиции искр СЧИТАНЫ с самой крупки (рендерим её фильтр в offscreen-
+// канву и берём точки золотых пикселей), поэтому искры падают ровно на крупинки,
+// а не куда попало. В покое слой пуст → патина видна как есть; при наклоне у
+// каждой крупинки своя грань (случайный угол), и она вспыхивает, когда её грань
+// поймала свет. Плюс мягкий gloss плавно скользит. Гироскоп — в защищённом
+// контексте (само приложение и localhost). Уважает prefers-reduced-motion.
+(function shelfBgTilt() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  let tx = 0, ty = 0, gx = 0, gy = 0, gT = -9, T = 0, gloss = null, fleck = null;
+  let gc = null, gctx = null, GW = 0, GH = 0, parts = null, sampling = false, haloSprite = null, spriteGild = '';
+  addEventListener('deviceorientation', e => {
+    if (e.gamma == null && e.beta == null) return;
+    gT = T;
+    gx = Math.max(-1, Math.min(1, (e.gamma || 0) / 24));
+    gy = Math.max(-1, Math.min(1, ((e.beta || 45) - 45) / 24));
+  }, true);
+
+  // вес маски крупки (та же, что у .sbg-fleck): золото сверху и снизу, середина пустая
+  function maskW(y) { if (y < 0.40) return 1 - y / 0.40; if (y > 0.62) return (y - 0.62) / 0.38; return 0; }
+  function hexA(hex, a) { hex = (hex || '#d8a54f').trim().replace('#', ''); if (hex.length === 3) hex = hex.split('').map(c => c + c).join(''); const n = parseInt(hex, 16); return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')'; }
+  // мелкая неправильная чешуйка (3–5 вершин, дрожащий радиус) — чтобы искра не была кругом
+  function flakeShape() { const n = 3 + (Math.random() * 3 | 0), r0 = 0.7 + Math.random() * 1.3, pts = []; for (let k = 0; k < n; k++) { const ang = (k / n) * Math.PI * 2 + Math.random() * 0.7, rr = r0 * (0.55 + Math.random() * 0.8); pts.push([Math.cos(ang) * rr, Math.sin(ang) * rr]); } return pts; }
+  // спрайт ореола: радиальный градиент с плавным затуханием (не круг с резкой кромкой); красится в золото темы
+  function buildHalo(gild) { const s = document.createElement('canvas'); s.width = s.height = 24; const c = s.getContext('2d'); const g = c.createRadialGradient(12, 12, 0, 12, 12, 12); g.addColorStop(0, hexA(gild, 0.85)); g.addColorStop(0.45, hexA(gild, 0.3)); g.addColorStop(1, hexA(gild, 0)); c.fillStyle = g; c.fillRect(0, 0, 24, 24); haloSprite = s; spriteGild = gild; }
+
+  // запасной расклад искр (если позиции не удалось считать с крупки): та же
+  // плотность сверху/снизу, чтобы блеск был в любом случае
+  function procedural() {
+    const arr = [];
+    for (let i = 0; i < 900; i++) {
+      const top = Math.random() < 0.5, e = Math.pow(Math.random(), 1.5);
+      const y = top ? e * 0.40 : 1 - e * 0.38, w = maskW(y);
+      if (w < 0.06) continue;
+      const a = Math.random() * Math.PI * 2;
+      arr.push({ x: Math.random(), y, fx: Math.cos(a), fy: Math.sin(a), w, sharp: 1.3 + Math.random() * 1.7, gain: 0.9 + Math.random() * 0.8, shape: flakeShape() });
+    }
+    return arr;
+  }
+
+  // считать позиции крупинок: рендерим тот же фильтр в offscreen и собираем золотые пиксели
+  function sample(w, h) {
+    sampling = true;
+    const sw = Math.round(w), sh = Math.round(h);
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + sw + '" height="' + sh + '" viewBox="0 0 300 600" preserveAspectRatio="xMidYMid slice">'
+      + '<filter id="f"><feTurbulence type="turbulence" baseFrequency="0.62" numOctaves="2" seed="8" result="n"/>'
+      + '<feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1.4 0 0 0 -0.2" result="a"/>'
+      + '<feComponentTransfer in="a" result="s"><feFuncA type="discrete" tableValues="0 0 0 0 0 0 1 1"/></feComponentTransfer>'
+      + '<feFlood flood-color="#fff" result="c"/><feComposite in="c" in2="s" operator="in"/></filter>'
+      + '<rect width="300" height="600" filter="url(#f)"/></svg>';
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const off = document.createElement('canvas'); off.width = sw; off.height = sh;
+        const octx = off.getContext('2d'); octx.drawImage(img, 0, 0, sw, sh);
+        const d = octx.getImageData(0, 0, sw, sh).data, arr = [], step = 5;
+        for (let py = 0; py < sh && arr.length < 2400; py += step) {
+          const ny = py / sh, w = maskW(ny); if (w < 0.06) continue;
+          for (let px = 0; px < sw && arr.length < 3000; px += step) {
+            if (d[(py * sw + px) * 4 + 3] > 120) {
+              const a = Math.random() * Math.PI * 2;
+              arr.push({ x: px / sw, y: ny, fx: Math.cos(a), fy: Math.sin(a), w, sharp: 1.3 + Math.random() * 1.7, gain: 0.9 + Math.random() * 0.8, shape: flakeShape() });
+            }
+          }
+        }
+        parts = arr.length ? arr : procedural();
+      } catch (e) { parts = procedural(); }   // не вышло считать пиксели — запасной расклад
+    };
+    img.onerror = () => { parts = procedural(); };
+    img.src = 'data:image/svg+xml,' + encodeURIComponent(svg);
+  }
+
+  function renderGlint(gild) {
+    gctx.clearRect(0, 0, GW, GH);
+    if (!parts || !parts.length) return;
+    const lx = tx, ly = ty;
+    if (Math.hypot(lx, ly) < 0.015) return;   // почти не наклонён — искр нет, чистая патина
+    if (spriteGild !== gild) buildHalo(gild);
+    for (const p of parts) {
+      const dot = p.fx * lx + p.fy * ly; if (dot <= 0) continue;
+      let a = Math.pow(dot, p.sharp) * p.gain * p.w;
+      if (a < 0.02) continue; if (a > 1) a = 1;
+      const cx = p.x * GW, cy = p.y * GH, R = 2.6 + a * 3.4;
+      gctx.globalAlpha = Math.min(1, a * 0.7);            // мягкий ореол-градиент, без резкой кромки
+      gctx.drawImage(haloSprite, cx - R, cy - R, R * 2, R * 2);
+      gctx.globalAlpha = Math.min(1, a * 1.05);           // ядро — мелкая неправильная чешуйка, как крупка
+      gctx.fillStyle = gild;
+      const s = p.shape;
+      gctx.beginPath(); gctx.moveTo(cx + s[0][0], cy + s[0][1]);
+      for (let k = 1; k < s.length; k++) gctx.lineTo(cx + s[k][0], cy + s[k][1]);
+      gctx.closePath(); gctx.fill();
+    }
+    gctx.globalAlpha = 1;
+  }
+
+  function frame() {
+    T += 0.016;
+    const bg = document.getElementById('shelf-bg');
+    const sv = document.getElementById('shelf-view');
+    const live = bg && document.body.classList.contains('bg-live') && sv && !sv.hidden;
+    if (live) {
+      if (!gloss) { gloss = bg.querySelector('.sbg-gloss'); fleck = bg.querySelector('.sbg-fleck'); gc = bg.querySelector('.sbg-glint'); if (gc) gctx = gc.getContext('2d'); }
+      if (gc && gctx) {
+        const r = gc.getBoundingClientRect();
+        if (Math.abs(r.width - GW) > 1 || Math.abs(r.height - GH) > 1) {   // размер сменился — пере-выборка
+          const dpr = Math.min(2, devicePixelRatio || 1); GW = r.width; GH = r.height;
+          gc.width = Math.max(1, Math.round(GW * dpr)); gc.height = Math.max(1, Math.round(GH * dpr)); gctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          parts = null; sampling = false;
+        }
+        if (GW > 0 && !sampling && parts == null) sample(GW, GH);
+      }
+      let sx, sy;
+      if (T - gT < 0.6) { sx = gx; sy = gy; }
+      else { sx = Math.sin(T * 0.28) * 0.5; sy = Math.sin(T * 0.21) * 0.4; }
+      tx += (sx - tx) * 0.06; ty += (sy - ty) * 0.06;
+      const px = (tx * 7).toFixed(1) + 'px', py = (ty * 5).toFixed(1) + 'px';
+      if (gloss) { gloss.style.setProperty('--px', (tx * 44).toFixed(1) + 'px'); gloss.style.setProperty('--py', (ty * 30).toFixed(1) + 'px'); }
+      if (fleck) { fleck.style.setProperty('--px', px); fleck.style.setProperty('--py', py); }
+      if (gc) { gc.style.setProperty('--px', px); gc.style.setProperty('--py', py); }
+      if (gc && gctx) renderGlint(getComputedStyle(document.documentElement).getPropertyValue('--gild').trim() || '#d8a54f');
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+
 // заливка пройденной части кастомного ползунка (CSS-переменная --fill)
 function rangeFill(el) {
   if (!el) return;
@@ -661,7 +796,7 @@ function rangeFill(el) {
 function syncSettingsUI() {
   for (const [segId, key] of [['seg-theme', 'theme'], ['seg-font', 'font'],
     ['seg-width', 'width'], ['seg-align', 'align'],
-    ['seg-lang', 'lang']]) {
+    ['seg-bg', 'bg'], ['seg-lang', 'lang']]) {
     document.querySelectorAll(`#${segId} button`).forEach(b =>
       b.classList.toggle('active', b.dataset.v === String(settings[key])));
   }
@@ -8096,6 +8231,7 @@ function bindUI() {
   bindSeg('seg-font', 'font');
   bindSeg('seg-align', 'align');
   bindSeg('seg-width', 'width');
+  bindSeg('seg-bg', 'bg');
   bindSeg('seg-lang', 'lang');
   bindStep('size-minus', 'size-plus', 'size', 14, 26, 1, 0);
   bindStep('lh-minus', 'lh-plus', 'lh', 1.4, 2.0, 0.05, 2);

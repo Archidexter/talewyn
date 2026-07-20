@@ -132,7 +132,7 @@ html.theme-shift body,
 html.theme-shift #shelf-bg .sbg-base {
   transition: background-color .28s ease, color .28s ease;
 }
-::view-transition-old(root), ::view-transition-new(root) { animation-duration: .3s; }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: .22s; }
 button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; padding: 0; }
 /* ссылки тоже: у <a> подсветка тапа своя, и без сброса кнопки-ссылки (Boosty/Telegram/
    YouTube) вспыхивали синим прямоугольником, хотя рядом такие же кнопки — нет */

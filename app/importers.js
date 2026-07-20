@@ -110,6 +110,74 @@ async function inflateRaw(u8) {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
+// Тот же ZIP, но поверх File/Blob: в память читаются только оглавление архива и
+// конкретный запрошенный файл. Раньше архив разворачивался в память целиком ещё до
+// того, как из него что-то понадобилось, — комикс или сборник на гигабайт этого не переживал.
+async function unzipFile(file) {
+  const size = file.size;
+  if (size < 22) throw new Error('не похоже на ZIP-архив');
+  const slice = async (off, len) => new Uint8Array(await file.slice(off, off + len).arrayBuffer());
+  // конец центрального каталога ищем в хвосте (22 байта + возможный комментарий)
+  const tailLen = Math.min(size, 22 + 65535);
+  const tail = await slice(size - tailLen, tailLen);
+  const tdv = new DataView(tail.buffer, tail.byteOffset, tail.byteLength);
+  let eocd = -1;
+  for (let i = tail.length - 22; i >= 0; i--) {
+    if (tdv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('не похоже на ZIP-архив');
+  const count = tdv.getUint16(eocd + 10, true);
+  const cdSize = tdv.getUint32(eocd + 12, true);
+  const cdOff = tdv.getUint32(eocd + 16, true);
+  if (cdOff === 0xffffffff || cdSize === 0xffffffff) throw new Error('ZIP64 не поддерживается');
+  const cd = await slice(cdOff, cdSize);
+  const cdv = new DataView(cd.buffer, cd.byteOffset, cd.byteLength);
+  const entries = new Map();
+  let off = 0;
+  for (let i = 0; i < count && off + 46 <= cd.length; i++) {
+    if (cdv.getUint32(off, true) !== 0x02014b50) break;
+    const method = cdv.getUint16(off + 10, true);
+    const csize = cdv.getUint32(off + 20, true);
+    const nlen = cdv.getUint16(off + 28, true);
+    const elen = cdv.getUint16(off + 30, true);
+    const clen = cdv.getUint16(off + 32, true);
+    const lof = cdv.getUint32(off + 42, true);
+    const name = td.decode(cd.subarray(off + 46, off + 46 + nlen)).replace(/\\/g, '/');
+    entries.set(name, { method, csize, lof });
+    off += 46 + nlen + elen + clen;
+  }
+  // где лежат данные записи внутри архива (размеры имени/доп.поля берём из ЛОКАЛЬНОГО
+  // заголовка — они бывают другими, чем в каталоге)
+  async function locate(e) {
+    const head = await slice(e.lof, 30);
+    const hdv = new DataView(head.buffer, head.byteOffset, head.byteLength);
+    return e.lof + 30 + hdv.getUint16(26, true) + hdv.getUint16(28, true);
+  }
+  async function read(name) {
+    const e = entries.get(name);
+    if (!e) return null;
+    const at = await locate(e);
+    const data = await slice(at, e.csize);
+    if (e.method === 0) return data;
+    if (e.method === 8) return inflateRaw(data);
+    throw new Error('неподдерживаемое сжатие в ZIP: ' + e.method);
+  }
+  // Blob записи БЕЗ прохода через память: картинки и аудио внутри архивов почти всегда
+  // лежат без сжатия (они и так сжаты), поэтому страницу комикса можно отдать простым
+  // срезом файла — данные остаются на диске, а не копируются в кучу.
+  async function readBlob(name, type) {
+    const e = entries.get(name);
+    if (!e) return null;
+    if (e.method === 0) {
+      const at = await locate(e);
+      return file.slice(at, at + e.csize, type || '');
+    }
+    const data = await read(name);
+    return data ? new Blob([data], { type: type || '' }) : null;
+  }
+  return { names: [...entries.keys()], has: n => entries.has(n), read, readBlob };
+}
+
 async function unzip(buf) {
   const dv = new DataView(buf);
   const u8 = new Uint8Array(buf);
@@ -146,7 +214,11 @@ async function unzip(buf) {
     if (e.method === 8) return inflateRaw(data);
     throw new Error('неподдерживаемое сжатие в ZIP: ' + e.method);
   }
-  return { names: [...entries.keys()], has: n => entries.has(n), read };
+  const readBlob = async (name, type) => {
+    const data = await read(name);
+    return data ? new Blob([data], { type: type || '' }) : null;
+  };
+  return { names: [...entries.keys()], has: n => entries.has(n), read, readBlob };
 }
 
 // путь внутри архива относительно файла, из которого идёт ссылка
@@ -226,8 +298,7 @@ function parseChapter(raw) {
 }
 
 // ══════════════════════ EPUB ══════════════════════
-async function importEpub(buf) {
-  const zip = await unzip(buf);
+async function importEpub(zip) {
   // пути в EPUB бывают с несовпадающим регистром или иным префиксом папки —
   // ищем сначала точно, потом без регистра, потом по окончанию пути (если однозначно)
   const lowMap = new Map(zip.names.map(n => [n.toLowerCase(), n]));
@@ -721,8 +792,8 @@ async function importCbz(zip, fname, onProgress) {
   const images = new Map();
   let done = 0;
   for (const n of names) {
-    const data = await zip.read(n);
-    if (data && data.length) images.set(n, new Blob([data], { type: extMime(n) }));
+    const blob = await zip.readBlob(n, extMime(n));
+    if (blob && blob.size) images.set(n, blob);
     if (onProgress) onProgress(++done / names.length);
   }
   const title = String(fname || 'Комикс').replace(/\.[^.]+$/, '').replace(/_+/g, ' ').trim() || 'Комикс';
@@ -1026,18 +1097,17 @@ async function importFile(file, onProgress) {
       /\.(cbr|cb7|cbt)$/i.test(file.name))                                                       // tar по расширению
     return importArchiveComic(file, file.name);   // libarchive читает сам File — буфер не нужен
   if (magic[0] === 0x50 && magic[1] === 0x4b) {           // 'PK' — ZIP
-    const buf = await full();
-    const zip = await unzip(buf);
-    if (zip.has('word/document.xml')) return importDocx(buf, file.name);   // DOCX
-    if (zip.has('META-INF/container.xml')) return importEpub(buf);
+    // архив открываем «вживую»: читаются только оглавление и нужные файлы
+    const zip = canSlice ? await unzipFile(file) : await unzip(await full());
+    if (zip.has('word/document.xml')) return importDocx(await full(), file.name);   // DOCX: mammoth просит буфер целиком
+    if (zip.has('META-INF/container.xml')) return importEpub(zip);
     // архив книг (в т.ч. .fb2.zip): извлекаем КАЖДЫЙ поддерживаемый файл, не только fb2
     const innerNames = zip.names.filter(n => BOOK_INNER.test(n) && !isJunkPath(n));
     if (innerNames.length) {
       const files = [];
       for (const n of innerNames) {
-        const u8 = await zip.read(n);
-        const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
-        files.push(new File([ab], n.split('/').pop()));
+        const blob = await zip.readBlob(n);
+        if (blob) files.push(new File([blob], n.split('/').pop()));
       }
       const books = await importInnerBooks(files, prog);
       if (books.length === 1) return books[0];
@@ -1048,9 +1118,8 @@ async function importFile(file, onProgress) {
     if (audioNames.length) {
       const files = [];
       for (const n of audioNames) {
-        const u8 = await zip.read(n);
-        const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
-        files.push(new File([ab], n.split('/').pop(), { type: audioMime(n) }));
+        const blob = await zip.readBlob(n, audioMime(n));
+        if (blob) files.push(new File([blob], n.split('/').pop(), { type: audioMime(n) }));
       }
       return { kind: 'audio-archive', files, name: file.name };
     }

@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.96';
+const APP_VERSION = '1.0.97';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -2074,8 +2074,18 @@ function beginCardDrag(x, y) {
     const r = el.getBoundingClientRect();
     return { x: r.left + scrollX, y: r.top + scrollY, w: r.width, h: r.height };
   });
-  cardDrag = { card, grid, items, rects, from, to: from,
-               x0: x + scrollX, y0: y + scrollY, cx: x, cy: y, raf: 0 };
+  // границы — по самим карточкам, а не по контейнеру: ниже последней книги пусто, и таскать
+  // туда нечего. За эту рамку карточка не выходит, и полка не крутится дальше неё.
+  const bounds = {
+    x0: Math.min(...rects.map(r => r.x)),
+    y0: Math.min(...rects.map(r => r.y)),
+    x1: Math.max(...rects.map(r => r.x + r.w)),
+    y1: Math.max(...rects.map(r => r.y + r.h)),
+  };
+  cardDrag = { card, grid, items, rects, bounds, from, to: from,
+               x0: x + scrollX, y0: y + scrollY, cx: x, cy: y, raf: 0,
+               scrollMin: Math.max(0, bounds.y0 - 96),
+               scrollMax: Math.max(0, bounds.y1 + 24 - innerHeight) };
   grid.classList.add('grid-dragging');
   card.classList.add('card-drag');
   grid.style.touchAction = 'none';
@@ -2098,11 +2108,13 @@ function layoutCardSlots(d) {
 
 function cardDragMove() {
   const d = cardDrag; if (!d) return;
-  const dx = d.cx + scrollX - d.x0, dy = d.cy + scrollY - d.y0;
+  const r0 = d.rects[d.from], b = d.bounds;
+  // держим карточку внутри рамки книг: за последней книгой пустое место — уводить её туда незачем
+  const dx = Math.max(b.x0 - r0.x, Math.min(b.x1 - r0.w - r0.x, d.cx + scrollX - d.x0));
+  const dy = Math.max(b.y0 - r0.y, Math.min(b.y1 - r0.h - r0.y, d.cy + scrollY - d.y0));
   d.card.style.transform = `translate(${dx}px, ${dy}px) scale(1.06)`;
   // куда встанет — ближайший слот к центру перетаскиваемой карточки (сетка двумерная,
   // поэтому не «номер строки», а честное расстояние до центров)
-  const r0 = d.rects[d.from];
   const cx = r0.x + r0.w / 2 + dx, cy = r0.y + r0.h / 2 + dy;
   let to = d.from, best = Infinity;
   d.rects.forEach((r, i) => {
@@ -2122,9 +2134,10 @@ function cardDragTick() {
   if (d.cy < EDGE) v = -MAX * (1 - d.cy / EDGE);
   else if (d.cy > innerHeight - EDGE) v = MAX * (1 - (innerHeight - d.cy) / EDGE);
   if (v) {
+    // дальше последней книги не крутим: ниже неё пусто, и уезжать туда незачем
     const before = scrollY;
-    scrollBy(0, v);
-    if (scrollY !== before) cardDragMove();
+    const want = Math.max(d.scrollMin, Math.min(d.scrollMax, before + v));
+    if (want !== before) { scrollTo(0, want); cardDragMove(); }
   }
   d.raf = requestAnimationFrame(cardDragTick);
 }
@@ -2317,13 +2330,15 @@ function renderColDrawer() {
 function openColCreate() {
   const box = $('#col-create'); if (!box) return;
   box.hidden = false;
-  requestAnimationFrame(() => box.classList.add('open'));
+  // два кадра, как у «Вставить по ссылке»: с одним браузер схлопывает стартовое
+  // положение (за левым краем) с конечным и выезда не видно вовсе
+  requestAnimationFrame(() => requestAnimationFrame(() => box.classList.add('open')));
   const inp = $('#col-name'); if (inp) { inp.value = ''; setTimeout(() => inp.focus(), 80); }
 }
 function closeColCreate() {
   const box = $('#col-create'); if (!box) return;
   box.classList.remove('open');
-  setTimeout(() => { box.hidden = true; }, 240);
+  setTimeout(() => { box.hidden = true; }, 360);   // дожидаемся, пока окно уедет за край
 }
 async function saveNewCol() {
   const name = (($('#col-name') || {}).value || '').trim();
@@ -2369,13 +2384,17 @@ function openColPick() {
   ).join('');
   const box = $('#col-pick'); if (!box) return;
   box.hidden = false;
-  requestAnimationFrame(() => box.classList.add('open'));
+  requestAnimationFrame(() => requestAnimationFrame(() => box.classList.add('open')));
 }
 function closeColPick() {
   const box = $('#col-pick'); if (!box) return;
   box.classList.remove('open');
-  setTimeout(() => { box.hidden = true; }, 240);
+  setTimeout(() => { box.hidden = true; }, 360);
 }
+// тап мимо окна закрывает — как у «Автопоиска» и «Вставить по ссылке»
+$('#col-create')?.addEventListener('click', e => { if (!e.target.closest('.col-modal-box')) closeColCreate(); });
+$('#col-pick')?.addEventListener('click', e => { if (!e.target.closest('.col-modal-box')) closeColPick(); });
+
 async function applyColPick() {
   if (!colPickSel || !colPickSel.size || !selIds.length) { closeColPick(); return; }
   const kind = selKind === 'audio' ? 'audio' : 'book';
@@ -2755,9 +2774,13 @@ function applyFabDock() {
     const c = rm.top + rm.height / 2;
     const lead = c - ru.top, trail = rs.bottom - c;
     const extra = selMode ? Math.max(0, rFull.height - (rs.bottom - ru.top)) : 0;
+    // Потолок — вкладки книга/аудио, но привязанный к ЭКРАНУ, а не к прокрученной шапке:
+    // вкладки уезжают вверх вместе с полкой, и по их текущему rect запрет переставал работать —
+    // кнопки поднимались под самый верх, а после возврата полки оказывались поверх логотипа.
+    // + scrollY даёт положение вкладок при неприкрученной полке, то есть постоянную границу.
     const tabs = $('#shelf-tabs');
-    const ceil = (tabs && !tabs.hidden) ? tabs.getBoundingClientRect().top : (m + 80);
-    const topMin = Math.max(m + cssInset('--sat'), ceil);   // потолок — вкладки книга/аудио
+    const ceil = (tabs && !tabs.hidden) ? tabs.getBoundingClientRect().top + scrollY : (m + 80);
+    const topMin = Math.max(m + cssInset('--sat'), ceil);
     const botMax = H - m - cssInset('--sab');
     const mainT = Math.max(topMin + lead, Math.min(botMax - trail, fabDock.frac * H));
     if (selMode) {

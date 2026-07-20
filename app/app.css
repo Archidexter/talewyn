@@ -610,6 +610,17 @@ body.sel-exiting #add-fab.fab-dock-bottom .fab-collect { animation-name: fab-del
   .book-card.book-out { transition: none; }
 }
 
+/* ── ручной порядок: карточка едет за пальцем, соседи плавно уступают место ── */
+.grid-dragging { user-select: none; -webkit-user-select: none; }
+.grid-dragging .book-card,
+.grid-dragging .ab-card { transition: transform .2s cubic-bezier(.4, 0, .2, 1); will-change: transform; }
+.book-card.card-drag,
+.ab-card.card-drag {
+  transition: none; z-index: 6; opacity: .97;
+  filter: drop-shadow(0 16px 30px rgb(0 0 0 / .55));
+  pointer-events: none;   /* под пальцем не должно ничего «нажиматься» */
+}
+
 /* обложка как физический томик */
 .cover {
   position: relative; display: block; width: 100%; aspect-ratio: 2 / 3;

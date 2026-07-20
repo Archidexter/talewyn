@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.1.27';
+const APP_VERSION = '1.1.29';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -664,11 +664,14 @@ function applyTheme(theme, smooth) {
   // Перекраску окна и пересборку заготовок блеска откладываем на после перехода:
   // и то и другое — тяжёлые разовые операции, а посреди анимации они дают рывок.
   // Особенно заметно на переходе светлая↔тёмная, где меняется вообще всё.
+  // фон полки перекрашиваем сразу — иначе он отстаёт от остального интерфейса
+  // на пол-секунды и это видно; перерисовка плиты дешёвая, тяжёлые заготовки
+  // блеска пересобираются потом, по одной за кадр
+  if (window.__shelfBgTheme) window.__shelfBgTheme();
+  // а вот перекраску окна нативу отдаём после перехода: это разовая тяжёлая операция
   clearTimeout(applyTheme.after);
   applyTheme.after = setTimeout(() => {
     try { if (window.AndroidTheme && AndroidTheme.setColor) AndroidTheme.setColor(bg); } catch {}
-    if (window.__shelfBgTheme) window.__shelfBgTheme();   // золото сменилось — перерисовать заготовки
-    if (window.shelfBgKick) window.shelfBgKick();
   }, 360);
   // живой фон полки (Патина)
   document.body.classList.toggle('bg-live', settings.bg === 'on');
@@ -709,38 +712,98 @@ document.addEventListener('visibilitychange', () => {
 });
 mqDark.addEventListener('change', () => { if (settings.theme === 'auto') applySettings(); });
 
-// Живой фон полки (Патина). База не трогается — та же SVG-крупка. Сверху слой
-// блеска: позиции искр СЧИТАНЫ с самой крупки (рендерим её фильтр в offscreen-
-// канву и берём точки золотых пикселей), поэтому искры падают ровно на крупинки,
-// а не куда попало. В покое слой пуст → патина видна как есть; при наклоне у
-// каждой крупинки своя грань (случайный угол), и она вспыхивает, когда её грань
-// поймала свет. Гироскоп — в защищённом контексте (само приложение и
-// localhost). Уважает prefers-reduced-motion.
+// Живой фон полки (Патина) — два холста вместо пяти слоёв, без режимов смешивания.
+//
+// «Плита» (.sbg-plate) неподвижна и содержит всё, что не шевелится: цвет темы,
+// зерно, виньетку. Рисуется один раз — при запуске, смене темы и повороте экрана.
+// «Живой» холст (.sbg-live) содержит крупку и блеск и ездит параллаксом.
+//
+// Почему так. Раньше фон был пятью полноэкранными слоями, два из которых
+// накладывались режимами «перекрытие» и «экран». Режим смешивания обязывает
+// видеокарту перечитать всё, что лежит под слоем, и так на КАЖДОМ кадре — это
+// дороже всей остальной отрисовки вместе взятой. Плюс каждая смена темы
+// перерисовывала все пять слоёв разом. Теперь слоёв два, смешивания нет ни одного,
+// а кадр движения — это три готовых картинки, положенные друг на друга.
 (function shelfBgTilt() {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  let tx = 0, ty = 0, gx = 0, gy = 0, gT = -9, T = 0, fleck = null;
-  let gc = null, gctx = null, GW = 0, GH = 0, parts = null, sampling = false, haloSprite = null, spriteGild = '';
+  let tx = 0, ty = 0, gx = 0, gy = 0, gT = -9, T = 0;
+  let plate = null, pctx = null, live = null, lctx = null, W = 0, H = 0, DPR = 1;
+  let parts = null, sampling = false, haloSprite = null, spriteGild = '';
+  let fleckSprite = null, grainImg = null, fleckImg = null, imgsReady = false;
+  let running = false, paused = false, gild = '', bgCol = '', lastDraw = -9, lastMove = -9;
+
   addEventListener('deviceorientation', e => {
     if (e.gamma == null && e.beta == null) return;
     const nx = Math.max(-1, Math.min(1, (e.gamma || 0) / 24));
     const ny = Math.max(-1, Math.min(1, ((e.beta || 45) - 45) / 24));
-    // телефон дрожит в руке всё время: реагируем только на ЗАМЕТНЫЙ поворот,
-    // иначе цикл блеска не засыпает никогда и жжёт процессор впустую
-    if (Math.abs(nx - gx) < 0.07 && Math.abs(ny - gy) < 0.07 && T - gT < 2) return;
+    if (Math.abs(nx - gx) < 0.02 && Math.abs(ny - gy) < 0.02 && T - gT < 2) return;
     gT = T; gx = nx; gy = ny;
-    if (window.shelfBgKick) window.shelfBgKick();   // наклонили — просыпаемся
+    if (window.shelfBgKick) window.shelfBgKick();
   }, true);
 
-  // вес маски крупки (та же, что у .sbg-fleck): золото сверху и снизу, середина пустая
+  const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const urlOf = v => { const m = /url\((['"]?)(.*?)\1\)/.exec(v || ''); return m ? m[2] : ''; };
+  // вес маски крупки: золото сверху и снизу, середина пустая (та же кривая, что была в CSS)
   function maskW(y) { if (y < 0.40) return 1 - y / 0.40; if (y > 0.62) return (y - 0.62) / 0.38; return 0; }
   function hexA(hex, a) { hex = (hex || '#d8a54f').trim().replace('#', ''); if (hex.length === 3) hex = hex.split('').map(c => c + c).join(''); const n = parseInt(hex, 16); return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')'; }
-  // мелкая неправильная чешуйка (3–5 вершин, дрожащий радиус) — чтобы искра не была кругом
   function flakeShape() { const n = 3 + (Math.random() * 3 | 0), r0 = 0.7 + Math.random() * 1.3, pts = []; for (let k = 0; k < n; k++) { const ang = (k / n) * Math.PI * 2 + Math.random() * 0.7, rr = r0 * (0.55 + Math.random() * 0.8); pts.push([Math.cos(ang) * rr, Math.sin(ang) * rr]); } return pts; }
-  // спрайт ореола: радиальный градиент с плавным затуханием (не круг с резкой кромкой); красится в золото темы
-  function buildHalo(gild) { const s = document.createElement('canvas'); s.width = s.height = 24; const c = s.getContext('2d'); const g = c.createRadialGradient(12, 12, 0, 12, 12, 12); g.addColorStop(0, hexA(gild, 0.85)); g.addColorStop(0.45, hexA(gild, 0.3)); g.addColorStop(1, hexA(gild, 0)); c.fillStyle = g; c.fillRect(0, 0, 24, 24); haloSprite = s; spriteGild = gild; }
+  function buildHalo(g) { const s = document.createElement('canvas'); s.width = s.height = 24; const c = s.getContext('2d'); const gr = c.createRadialGradient(12, 12, 0, 12, 12, 12); gr.addColorStop(0, hexA(g, 0.85)); gr.addColorStop(0.45, hexA(g, 0.3)); gr.addColorStop(1, hexA(g, 0)); c.fillStyle = gr; c.fillRect(0, 0, 24, 24); haloSprite = s; spriteGild = g; }
 
-  // запасной расклад искр (если позиции не удалось считать с крупки): та же
-  // плотность сверху/снизу, чтобы блеск был в любом случае
+  // картинки зерна и крупки берём из тех же CSS-переменных, что и раньше: рисунок не меняется
+  function loadImages(done) {
+    if (imgsReady) return done();
+    let left = 2;
+    const fin = () => { if (--left === 0) { imgsReady = true; done(); } };
+    grainImg = new Image(); grainImg.onload = fin; grainImg.onerror = fin; grainImg.src = urlOf(cssVar('--grain'));
+    fleckImg = new Image(); fleckImg.onload = fin; fleckImg.onerror = fin; fleckImg.src = urlOf(cssVar('--fleck'));
+  }
+
+  // ── неподвижная плита: цвет темы + зерно + виньетка ──
+  function drawPlate() {
+    if (!pctx || !W || !H) return;
+    pctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    pctx.clearRect(0, 0, W, H);
+    pctx.fillStyle = bgCol || '#151719';
+    pctx.fillRect(0, 0, W, H);
+    if (grainImg && grainImg.width) {              // зерно: та же плитка 180×180
+      pctx.globalAlpha = 0.35;
+      const p = pctx.createPattern(grainImg, 'repeat');
+      if (p) { pctx.fillStyle = p; pctx.fillRect(0, 0, W, H); }
+      pctx.globalAlpha = 1;
+    }
+    const vg = pctx.createRadialGradient(W * 0.5, H * 0.48, Math.min(W, H) * 0.2,
+      W * 0.5, H * 0.48, Math.max(W, H) * 0.72);   // виньетка тем же рисунком, что была в CSS
+    vg.addColorStop(0.52, 'rgba(0,0,0,0)');
+    vg.addColorStop(0.80, 'rgba(0,0,0,.22)');
+    vg.addColorStop(1, 'rgba(0,0,0,.46)');
+    pctx.fillStyle = vg; pctx.fillRect(0, 0, W, H);
+  }
+
+  // ── спрайт крупки: рисунок из маски, окрашенный в золото темы, с той же
+  //    вертикальной растушёвкой (сверху и снизу густо, в середине пусто) ──
+  function buildFleck() {
+    if (!fleckImg || !fleckImg.width || !W || !H) return;
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(W * DPR)); cv.height = Math.max(1, Math.round(H * DPR));
+    const c = cv.getContext('2d');
+    c.setTransform(DPR, 0, 0, DPR, 0, 0);
+    const sc = Math.max(W / fleckImg.width, H / fleckImg.height);   // «cover», как делал CSS
+    const dw = fleckImg.width * sc, dh = fleckImg.height * sc;
+    c.drawImage(fleckImg, (W - dw) / 2, (H - dh) / 2, dw, dh);
+    c.globalCompositeOperation = 'source-in';       // белую крупку красим в золото
+    c.fillStyle = gild || '#d8a54f';
+    c.fillRect(0, 0, W, H);
+    c.globalCompositeOperation = 'destination-in';  // и растушёвываем по вертикали
+    const mg = c.createLinearGradient(0, 0, 0, H);
+    mg.addColorStop(0, 'rgba(0,0,0,1)');
+    mg.addColorStop(0.40, 'rgba(0,0,0,0)');
+    mg.addColorStop(0.62, 'rgba(0,0,0,0)');
+    mg.addColorStop(1, 'rgba(0,0,0,1)');
+    c.fillStyle = mg; c.fillRect(0, 0, W, H);
+    fleckSprite = cv;
+  }
+
+  // ── позиции искр: считаны с самой крупки, чтобы блеск падал ровно на крупинки ──
   function procedural() {
     const arr = [];
     for (let i = 0; i < 900; i++) {
@@ -752,51 +815,48 @@ mqDark.addEventListener('change', () => { if (settings.theme === 'auto') applySe
     }
     return arr;
   }
-
-  // считать позиции крупинок: рендерим тот же фильтр в offscreen и собираем золотые пиксели
-  function sample(w, h) {
+  // Точки крупки собираем ПОРЦИЯМИ — по куску за кадр. Разом это полсекунды работы,
+  // и телефон встаёт колом ровно в тот момент, когда открывается полка.
+  let scan = null;
+  function sample() {
+    if (!fleckImg || !fleckImg.width) { parts = procedural(); return; }
     sampling = true;
-    const sw = Math.round(w), sh = Math.round(h);
-    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + sw + '" height="' + sh + '" viewBox="0 0 300 600" preserveAspectRatio="xMidYMid slice">'
-      + '<filter id="f"><feTurbulence type="turbulence" baseFrequency="0.62" numOctaves="2" seed="8" result="n"/>'
-      + '<feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1.4 0 0 0 -0.2" result="a"/>'
-      + '<feComponentTransfer in="a" result="s"><feFuncA type="discrete" tableValues="0 0 0 0 0 0 1 1"/></feComponentTransfer>'
-      + '<feFlood flood-color="#fff" result="c"/><feComposite in="c" in2="s" operator="in"/></filter>'
-      + '<rect width="300" height="600" filter="url(#f)"/></svg>';
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const off = document.createElement('canvas'); off.width = sw; off.height = sh;
-        const octx = off.getContext('2d'); octx.drawImage(img, 0, 0, sw, sh);
-        const d = octx.getImageData(0, 0, sw, sh).data, arr = [], step = 5;
-        for (let py = 0; py < sh && arr.length < 2400; py += step) {
-          const ny = py / sh, w = maskW(ny); if (w < 0.06) continue;
-          for (let px = 0; px < sw && arr.length < 3000; px += step) {
-            if (d[(py * sw + px) * 4 + 3] > 120) {
-              const a = Math.random() * Math.PI * 2;
-              arr.push({ x: px / sw, y: ny, fx: Math.cos(a), fy: Math.sin(a), w, sharp: 1.3 + Math.random() * 1.7, gain: 0.9 + Math.random() * 0.8, shape: flakeShape() });
-            }
-          }
+    try {
+      const sw = Math.max(1, Math.round(W)), sh = Math.max(1, Math.round(H));
+      const off = document.createElement('canvas'); off.width = sw; off.height = sh;
+      const oc = off.getContext('2d');
+      const sc = Math.max(sw / fleckImg.width, sh / fleckImg.height);
+      const dw = fleckImg.width * sc, dh = fleckImg.height * sc;
+      oc.drawImage(fleckImg, (sw - dw) / 2, (sh - dh) / 2, dw, dh);
+      scan = { d: oc.getImageData(0, 0, sw, sh).data, sw, sh, y: 0, arr: [] };
+    } catch (e) { parts = procedural(); sampling = false; }
+  }
+  function sampleStep() {
+    if (!scan) return;
+    const { d, sw, sh, arr } = scan, step = 5;
+    const until = Math.min(sh, scan.y + 260);          // ~260 строк за кадр
+    for (; scan.y < until && arr.length < 3000; scan.y += step) {
+      const ny = scan.y / sh, w = maskW(ny); if (w < 0.06) continue;
+      for (let px = 0; px < sw && arr.length < 3000; px += step) {
+        if (d[(scan.y * sw + px) * 4 + 3] > 120) {
+          const a = Math.random() * Math.PI * 2;
+          arr.push({ x: px / sw, y: ny, fx: Math.cos(a), fy: Math.sin(a), w, sharp: 1.3 + Math.random() * 1.7, gain: 0.9 + Math.random() * 0.8, shape: flakeShape() });
         }
-        parts = arr.length ? arr : procedural();
-      } catch (e) { parts = procedural(); }   // не вышло считать пиксели — запасной расклад
-    };
-    img.onerror = () => { parts = procedural(); };
-    img.src = 'data:image/svg+xml,' + encodeURIComponent(svg);
+      }
+    }
+    if (scan.y >= sh || arr.length >= 3000) {
+      parts = arr.length ? arr : procedural();
+      scan = null; sampling = false;
+    }
   }
 
-  // ── блеск: заранее отрисованные направления света ──
-  // Раньше каждая из ~3000 искр рисовалась заново В КАЖДОМ кадре — 34 мс при бюджете
-  // 16.7 мс, то есть фон гарантированно не успевал и тормозил всё приложение.
-  // Теперь картина блеска для 12 направлений света рисуется ОДИН раз (по кадру за раз,
-  // чтобы не подвесить экран), а в кадре просто накладываются две соседние картинки
-  // с нужной прозрачностью — два drawImage вместо шести тысяч операций.
+  // ── блеск: 12 заранее отрисованных направлений света, в кадре берутся два соседних ──
   const PHASES = 12;
-  let phases = null, phaseNext = 0, phaseGild = '';
-  function resetPhases() { phases = null; phaseNext = 0; }
-  function buildPhase(i, gild) {
+  let phases = null, phaseGild = "";
+  function resetPhases() { phases = null; }
+  function buildPhase(i) {
     const cv = document.createElement('canvas');
-    cv.width = Math.max(1, Math.round(GW)); cv.height = Math.max(1, Math.round(GH));
+    cv.width = Math.max(1, Math.round(W)); cv.height = Math.max(1, Math.round(H));
     const c = cv.getContext('2d');
     const ang = (i / PHASES) * Math.PI * 2, lx = Math.cos(ang), ly = Math.sin(ang);
     for (const p of parts) {
@@ -804,9 +864,9 @@ mqDark.addEventListener('change', () => { if (settings.theme === 'auto') applySe
       let a = Math.pow(dot, p.sharp) * p.gain * p.w;
       if (a < 0.02) continue; if (a > 1) a = 1;
       const cx = p.x * cv.width, cy = p.y * cv.height, R = 2.6 + a * 3.4;
-      c.globalAlpha = Math.min(1, a * 0.7);            // мягкий ореол-градиент, без резкой кромки
+      c.globalAlpha = Math.min(1, a * 0.7);
       c.drawImage(haloSprite, cx - R, cy - R, R * 2, R * 2);
-      c.globalAlpha = Math.min(1, a * 1.05);           // ядро — мелкая неправильная чешуйка, как крупка
+      c.globalAlpha = Math.min(1, a * 1.05);
       c.fillStyle = gild;
       const s = p.shape;
       c.beginPath(); c.moveTo(cx + s[0][0], cy + s[0][1]);
@@ -815,89 +875,109 @@ mqDark.addEventListener('change', () => { if (settings.theme === 'auto') applySe
     }
     return cv;
   }
-  function renderGlint(gild) {
+
+  // ── кадр живого слоя: крупка + два направления блеска, три готовых картинки ──
+  function drawLive(mayBuild) {
+    if (!lctx) return;
+    lctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    lctx.clearRect(0, 0, W, H);
+    if (fleckSprite) {
+      lctx.globalAlpha = 0.85;                    // та же прозрачность, что была у слоя крупки
+      lctx.drawImage(fleckSprite, 0, 0, W, H);
+      lctx.globalAlpha = 1;
+    }
     if (!parts || !parts.length) return;
     if (spriteGild !== gild) buildHalo(gild);
     if (phaseGild !== gild) { resetPhases(); phaseGild = gild; }
-    if (!phases) { phases = new Array(PHASES).fill(null); phaseNext = 0; }
-    if (phaseNext < PHASES) {                 // готовим по одному направлению за кадр
-      phases[phaseNext] = buildPhase(phaseNext, gild);
-      phaseNext++;
-    }
-    gctx.clearRect(0, 0, GW, GH);
-    const lx = tx, ly = ty, str = Math.min(1, Math.hypot(lx, ly));
-    if (str < 0.015) return;                  // почти не наклонён — искр нет, чистая патина
-    const pos = (Math.atan2(ly, lx) / (Math.PI * 2) + 1) % 1 * PHASES;
+    if (!phases) phases = new Array(PHASES).fill(null);
+    const str = Math.min(1, Math.hypot(tx, ty));
+    if (str < 0.015) return;                      // почти не наклонён — чистая патина
+    const pos = (Math.atan2(ty, tx) / (Math.PI * 2) + 1) % 1 * PHASES;
     const i0 = Math.floor(pos) % PHASES, i1 = (i0 + 1) % PHASES, w = pos - Math.floor(pos);
-    const a = phases[i0], b = phases[i1];
-    if (a) { gctx.globalAlpha = (1 - w) * str; gctx.drawImage(a, 0, 0, GW, GH); }
-    if (b) { gctx.globalAlpha = w * str; gctx.drawImage(b, 0, 0, GW, GH); }
-    gctx.globalAlpha = 1;
+    // готовим только те направления, которые нужны прямо сейчас, и не больше одного
+    // за кадр: строить все двенадцать разом — это заметный провал в самый нужный момент
+    if (mayBuild) {
+      if (!phases[i0]) phases[i0] = buildPhase(i0);
+      else if (!phases[i1]) phases[i1] = buildPhase(i1);
+    }
+    lctx.globalCompositeOperation = 'lighter';    // искры складываются светом, как раньше делал режим «экран»
+    if (phases[i0]) { lctx.globalAlpha = (1 - w) * str; lctx.drawImage(phases[i0], 0, 0, W, H); }
+    if (phases[i1]) { lctx.globalAlpha = w * str; lctx.drawImage(phases[i1], 0, 0, W, H); }
+    lctx.globalCompositeOperation = 'source-over';
+    lctx.globalAlpha = 1;
   }
 
-  let running = false, gild = '', lastDraw = -9, lastMove = -9;
-  // Размер канвы меряем ТОЛЬКО когда он реально может измениться (поворот экрана,
-  // раскладушка, возврат на полку). Раньше getBoundingClientRect вызывался в каждом
-  // кадре — сразу после записи стилей, а это заставляло браузер пересчитывать
-  // раскладку всей полки 60 раз в секунду. Именно это и жгло процессор, а не картинка.
-  function measure() {
-    if (!gc || !gctx) return;
-    const r = gc.getBoundingClientRect();
+  // Размеры меряем только когда они могут измениться (поворот, возврат на полку),
+  // а не в каждом кадре: измерение посреди кадра заставляет браузер пересчитывать
+  // раскладку всей полки заново.
+  function measure(force) {
+    if (!plate || !live) return;
+    const r = plate.getBoundingClientRect();
     if (!r.width || !r.height) return;
-    if (Math.abs(r.width - GW) < 1 && Math.abs(r.height - GH) < 1) return;
-    GW = r.width; GH = r.height;                 // один пиксель канвы на точку экрана:
-    gc.width = Math.max(1, Math.round(GW));      // искры мягкие, разницы не видно,
-    gc.height = Math.max(1, Math.round(GH));     // а работы вчетверо меньше
-    gctx.setTransform(1, 0, 0, 1, 0, 0);
-    parts = null; sampling = false; resetPhases();
+    if (!force && Math.abs(r.width - W) < 1 && Math.abs(r.height - H) < 1) return;
+    W = r.width; H = r.height; DPR = Math.min(2, devicePixelRatio || 1);
+    for (const cv of [plate, live]) {
+      cv.width = Math.max(1, Math.round(W * DPR));
+      cv.height = Math.max(1, Math.round(H * DPR));
+    }
+    parts = null; resetPhases(); fleckSprite = null;
+    drawPlate();
   }
   function watchSize() {
     if (watchSize.on) return; watchSize.on = true;
-    addEventListener('resize', measure);
-    if (window.ResizeObserver) { try { new ResizeObserver(measure).observe(gc); } catch {} }
+    addEventListener('resize', () => measure());
+    if (window.ResizeObserver) { try { new ResizeObserver(() => measure()).observe(plate); } catch {} }
   }
-  // цвет золота берём из стилей ОДИН раз на тему: getComputedStyle в каждом кадре
-  // заставляет браузер пересчитывать стили 60 раз в секунду
-  window.__shelfBgTheme = () => { gild = ''; resetPhases(); };
-  // Блеск живёт ТОЛЬКО пока телефон реально поворачивают. Раньше в покое фон
-  // «дышал» по синусоиде — а значит искры перерисовывались вечно, и полка жгла
-  // процессор круглосуточно (это и тормозило всё приложение). Теперь: наклонили —
-  // цикл проснулся, довёл блик и уснул. Лежит на столе — ноль работы.
+
+  // смена темы: перерисовать плиту и перекрасить крупку с блеском
+  window.__shelfBgTheme = () => {
+    bgCol = cssVar('--bg') || bgCol;
+    gild = cssVar('--gild') || '#d8a54f';
+    fleckSprite = null; resetPhases();
+    drawPlate();
+    if (window.shelfBgKick) window.shelfBgKick();
+  };
+
   function frame() {
     T += 0.016;
     const bg = document.getElementById('shelf-bg');
     const sv = document.getElementById('shelf-view');
-    const live = bg && document.body.classList.contains('bg-live') && sv && !sv.hidden;
-    if (!live) { running = false; return; }   // полка скрыта (читалка, плеер) — кадры не тратим
-    if (!fleck) {
-      fleck = bg.querySelector('.sbg-fleck'); gc = bg.querySelector('.sbg-glint');
-      if (gc) { gctx = gc.getContext('2d'); measure(); watchSize(); }
+    const on = bg && document.body.classList.contains('bg-live') && sv && !sv.hidden;
+    if (!on || paused) { running = false; return; }
+    if (!plate) {
+      plate = bg.querySelector('.sbg-plate'); live = bg.querySelector('.sbg-live');
+      if (!plate || !live) { running = false; return; }
+      pctx = plate.getContext('2d'); lctx = live.getContext('2d');
+      bgCol = cssVar('--bg'); gild = cssVar('--gild') || '#d8a54f';
+      measure(true); watchSize();
+      loadImages(() => { drawPlate(); if (window.shelfBgKick) window.shelfBgKick(); });
     }
-    if (gc && gctx && GW > 0 && !sampling && parts == null) sample(GW, GH);
-    // в покое фон продолжает мягко дышать — это и есть живая патина; работа при этом
-    // копеечная: слои едут на видеокарте, искры перерисовываются 30 раз в секунду
+    if (!imgsReady) { requestAnimationFrame(frame); return; }
+    // за кадр выполняем НЕ БОЛЬШЕ одной тяжёлой задачи: сбор точек, спрайт крупки
+    // и заготовка блеска в одном кадре давали заметный провал в момент открытия полки
+    let heavy = false;
+    if (!fleckSprite) { buildFleck(); heavy = true; }
+    else if (!parts && !sampling) { sample(); heavy = true; }
+    else if (scan) { sampleStep(); heavy = true; }
+
     let sx, sy;
     if (T - gT < 1.2) { sx = gx; sy = gy; }
     else { sx = Math.sin(T * 0.28) * 0.5; sy = Math.sin(T * 0.21) * 0.4; }
     tx += (sx - tx) * 0.06; ty += (sy - ty) * 0.06;
-    // параллакс двигаем 30 раз в секунду: движение медленное, на глаз то же самое,
-    // а слои перекладываются вдвое реже
-    if (T - lastMove >= 0.033) {
+    if (T - lastMove >= 0.033) {                 // параллакс — 30 раз в секунду
       lastMove = T;
       const px = (tx * 7).toFixed(1) + 'px', py = (ty * 5).toFixed(1) + 'px';
-      if (fleck) { fleck.style.setProperty('--px', px); fleck.style.setProperty('--py', py); }
-      if (gc) { gc.style.setProperty('--px', px); gc.style.setProperty('--py', py); }
+      live.style.setProperty('--px', px); live.style.setProperty('--py', py);
     }
-    if (!gild) gild = getComputedStyle(document.documentElement).getPropertyValue('--gild').trim() || '#d8a54f';
-    // канва блеска перерисовывается 30 раз в секунду — на глаз то же самое, а работы вдвое меньше
-    if (gc && gctx && T - lastDraw >= 0.033) {
-      lastDraw = T;
-      renderGlint(gild);
-    }
+    if (T - lastDraw >= 0.033) { lastDraw = T; drawLive(!heavy); }
     requestAnimationFrame(frame);
   }
-  // цикл запускается заново, когда полка снова на экране (showShelf) или включили живой фон
-  window.shelfBgKick = () => { measure(); if (!running) { running = true; requestAnimationFrame(frame); } };
+
+  window.shelfBgPause = on => {
+    paused = !!on;
+    if (!paused && !running) { running = true; requestAnimationFrame(frame); }
+  };
+  window.shelfBgKick = () => { if (paused) return; if (!running) { running = true; requestAnimationFrame(frame); } };
   window.shelfBgKick();
 })();
 

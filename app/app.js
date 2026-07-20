@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.1.17';
+const APP_VERSION = '1.1.18';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -4486,6 +4486,7 @@ async function hydrateImages(bookId) {
   } else {
     get = async name => { const rec = await dbGet('images', [bookId, name]); return rec && rec.blob; };
   }
+  let removed = false;
   for (const img of imgs) {
     const blob = await get(img.dataset.i);
     if (blob) {
@@ -4494,8 +4495,10 @@ async function hydrateImages(bookId) {
       img.src = u;
     } else {
       img.remove();
+      removed = true;
     }
   }
+  if (removed) invalidateTextIndex();
 }
 
 // плавное появление ОДНОГО элемента шапки через CSS-анимацию (не inline transition —
@@ -4601,6 +4604,8 @@ async function openChapter(bookId, idx) {
   const bodyEl = $('#chapter-body');
   bodyEl.style.transition = ''; bodyEl.style.transform = ''; bodyEl.style.opacity = '';   // убрать следы свайпа
   bodyEl.innerHTML = ch.html;
+  invalidateTextIndex();   // новая глава — прежняя карта смещений недействительна
+  watchChapterText();
   document.body.classList.toggle('reader-comic', isPageImageChapter(bodyEl));   // PDF/комикс: страница во всю ширину, без заголовка
   if (wasInReader) { bodyEl.classList.remove('body-fade'); void bodyEl.offsetWidth; bodyEl.classList.add('body-fade'); }
   for (const img of document.querySelectorAll('#chapter-body img')) {
@@ -5432,22 +5437,52 @@ function absFromPoint(body, node, off) {
   return n;
 }
 
-function rangeFromOffsets(el, start, end) {
+// Карта текстовых узлов главы: узлы и их накопленные концы. Раньше каждый перевод
+// смещения в диапазон обходил главу с самого начала — а на главе, изрезанной курсивом
+// (двадцать тысяч текстовых узлов), сотня выделений складывалась в полсекунды работы.
+// Теперь обход один на главу, а поиск узла — двоичный.
+let textIndexGen = 0;
+const invalidateTextIndex = () => { textIndexGen++; };
+const _textIndexCache = new WeakMap();
+function textIndex(el) {
+  const cached = _textIndexCache.get(el);
+  if (cached && cached.gen === textIndexGen) return cached;
   const walker = textWalker(el);
-  let acc = 0, sNode = null, sOff = 0, node;
-  while ((node = walker.nextNode())) {
-    const len = node.data.length;
-    if (!sNode && acc + len > start) { sNode = node; sOff = start - acc; }
-    if (acc + len >= end) {
-      if (!sNode) return null;
-      const r = new Range();
-      r.setStart(sNode, sOff);
-      r.setEnd(node, end - acc);
-      return r;
+  const nodes = [], ends = [];
+  let acc = 0, node;
+  while ((node = walker.nextNode())) { acc += node.data.length; nodes.push(node); ends.push(acc); }
+  const rec = { nodes, ends, total: acc, gen: textIndexGen };
+  _textIndexCache.set(el, rec);
+  return rec;
+}
+// страховка на случай, если текст главы поменяли мимо явных вызовов invalidateTextIndex
+function watchChapterText() {
+  const body = document.getElementById('chapter-body');
+  if (!body || body._txWatched || !window.MutationObserver) return;
+  body._txWatched = true;
+  new MutationObserver(invalidateTextIndex).observe(body, { childList: true, subtree: true, characterData: true });
+}
+
+function rangeFromOffsets(el, start, end) {
+  const { nodes, ends, total } = textIndex(el);
+  if (!nodes.length || end > total || start < 0) return null;
+  // первый узел, который заканчивается ПОСЛЕ start (в нём начинается диапазон)
+  const findFirst = (pos, strict) => {
+    let lo = 0, hi = nodes.length - 1, res = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (strict ? ends[mid] > pos : ends[mid] >= pos) { res = mid; hi = mid - 1; }
+      else lo = mid + 1;
     }
-    acc += len;
-  }
-  return null;
+    return res;
+  };
+  const si = findFirst(start, true);
+  const ei = findFirst(end, false);
+  if (si < 0 || ei < 0 || ei < si) return null;
+  const r = new Range();
+  r.setStart(nodes[si], start - (ends[si] - nodes[si].data.length));
+  r.setEnd(nodes[ei], end - (ends[ei] - nodes[ei].data.length));
+  return r;
 }
 
 function hlSet(which, el, start, end) {
@@ -8159,6 +8194,7 @@ function closeTrSheet() {
 let trChapterOn = false;
 function removeTrBlocks() {
   for (const b of document.querySelectorAll('#chapter-body .tr-block')) b.remove();
+  invalidateTextIndex();
 }
 async function toggleChapterTr() {
   const btn = $('#tr-btn');
@@ -8199,6 +8235,7 @@ async function toggleChapterTr() {
     d.className = 'tr-block';
     d.textContent = res.text;
     el.after(d);
+    invalidateTextIndex();   // вставка перевода сдвигает узлы главы
     await new Promise(r => setTimeout(r, 120));   // бережный темп запросов
   }
   if (trChapterOn && navToken === token) showToast(t('trDone'));

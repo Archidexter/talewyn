@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.1.12';
+const APP_VERSION = '1.1.13';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -620,8 +620,6 @@ const WIDTHS = { narrow: '30em', medium: '34em', wide: '40em' };
 const mqDark = matchMedia('(prefers-color-scheme: dark)');
 const urlTheme = urlParams.get('theme');
 
-// какая тема уже стоит на иконке приложения — чтобы не дёргать лаунчер лишний раз
-let iconTheme = (() => { try { return localStorage.getItem('talewyn-icon-theme') || ''; } catch { return ''; } })();
 function applySettings() {
   const pref = ['light', 'sepia', 'dark', 'auto'].includes(urlTheme)
     ? urlTheme : settings.theme;
@@ -638,16 +636,6 @@ function applySettings() {
   // нативу: запомнить фон темы, чтобы окно старта красилось в него (не зелёный дефолт).
   // Мост есть только в APK ≥1.0.61; guard — на старых сборках просто no-op.
   try { if (window.AndroidTheme && AndroidTheme.setColor) AndroidTheme.setColor(bg); } catch {}
-  // иконка приложения под тему: мост только ЗАПОМИНАЕТ выбор, а меняет иконку при сворачивании
-  // приложения — на смене лаунчер пересоздаёт ярлык и система может закрыть приложение,
-  // а посреди чтения это выглядит как вылет. Мост есть не во всех сборках — guard.
-  try {
-    if (window.AndroidIcon && AndroidIcon.setTheme && iconTheme !== theme) {
-      iconTheme = theme;
-      try { localStorage.setItem('talewyn-icon-theme', theme); } catch {}
-      AndroidIcon.setTheme(theme);
-    }
-  } catch {}
   // живой фон полки (Патина): вкл/выкл + золотую крупку красим в золото текущей темы
   document.body.classList.toggle('bg-live', settings.bg === 'on');
   const gildBg = getComputedStyle(document.documentElement).getPropertyValue('--gild').trim();

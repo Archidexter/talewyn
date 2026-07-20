@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.1.7';
+const APP_VERSION = '1.1.8';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -4883,6 +4883,26 @@ function buildVoicePicker() {
     menu.style.overflowY = 'auto';
   };
   menu._place = place;   // чтобы двигать меню при появлении/уходе панели выделения
+  // Панели под меню живут своей жизнью: у панели выделения меняется высота (появляются и
+  // уходят кнопки), обе едут вверх-вниз с анимацией. Одного пересчёта по таймеру мало —
+  // меню зависало выше, и между ним и панелью зиял просвет с текстом книги. Поэтому следим
+  // и за размером, и за концом каждой анимации, и подтягиваем меню вплотную.
+  const follow = [$('#tts-bar'), $('#sel-toolbar')].filter(Boolean);
+  // считаем в следующем кадре: наблюдатель срабатывает ДО того, как новая раскладка применена,
+  // и позиция получалась по старым размерам — меню недоезжало
+  const replace = () => {
+    if (!menu.classList.contains('open')) return;
+    requestAnimationFrame(() => requestAnimationFrame(() => { if (menu.classList.contains('open')) place(); }));
+  };
+  if (window.ResizeObserver) {
+    const ro = new ResizeObserver(replace);
+    // именно border-box: панель меняет высоту вместе с отступами, а внутренний размер при этом
+    // остаётся прежним — наблюдатель по умолчанию такого изменения просто не заметил бы
+    for (const el of follow) { try { ro.observe(el, { box: 'border-box' }); } catch { ro.observe(el); } }
+  }
+  for (const el of follow) el.addEventListener('transitionend', e => {
+    if (e.target === el && (e.propertyName === 'bottom' || e.propertyName === 'transform' || e.propertyName === 'height')) replace();
+  });
   const close = () => { menu.classList.remove('open'); trigger.setAttribute('aria-expanded', 'false'); };
   let toggledAt = 0;
   trigger.addEventListener('click', e => {

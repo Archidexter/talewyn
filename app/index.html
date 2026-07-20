@@ -788,8 +788,9 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
   </div>
 </div>
 
-<script src="importers.js?v=24"></script>
-<script src="jsmediatags.min.js?v=1"></script><!-- теги/обложки аудиокниг (ID3/MP4) -->
+<script src="genres.js?v=1"></script><!-- список жанров: нужен полке сразу -->
+<!-- importers.js (разбор книг) и jsmediatags (теги аудио) грузятся при первом импорте:
+     при обычном запуске они только задерживали появление полки -->
 <!-- прямой edge-tts (нейроголоса Microsoft) без сервера — модуль ставит глобал.
      В WebView первый импорт иногда упирается в ещё не готовый кэш SW — повторяем. -->
 <script type="module">
@@ -807,6 +808,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=255"></script>
+<script src="app.js?v=256"></script>
 </body>
 </html>

@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.1.21';
+const APP_VERSION = '1.1.22';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -1541,60 +1541,94 @@ function buildScanGroups() {
 }
 const scanShownGroups = () => scanGroups.filter(g => !scanFmt || g.ex === scanFmt);
 
-// ── универсальная кастомная выпадашка: тот же вид/механика, что выбор голоса/языка ──
-// (buildLangPicker привязан к языкам перевода, поэтому здесь отдельная, но 1-в-1 по стилю)
+// ── ОДНА механика для всех выпадающих списков приложения ──
+// Раньше их было три почти одинаковых копии (фильтры полки, автопоиск, язык перевода):
+// позиционирование, открытие и закрытие в каждой писались заново и постепенно разъезжались.
+// Теперь общая часть здесь, а различия — только в содержимом и в том, что делать по выбору.
+const MENU_CHEV = '<svg class="lang-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+const menuTriggerHtml = extra =>
+  '<button class="lang-trigger' + (extra ? ' ' + extra : '') + '" type="button" aria-haspopup="listbox" aria-expanded="false">'
+  + '<span class="lang-cur"></span>' + MENU_CHEV + '</button>';
+const menuOptionsHtml = (options, cur) => options.map(o =>
+  `<button class="lang-opt${String(o.v) === String(cur) ? ' sel' : ''}" type="button" role="option" data-v="${esc(String(o.v))}">${esc(o.label)}</button>`).join('');
+
+const appMenus = [];   // все меню-порталы, живущие в body
+function closeAppMenus() { for (const m of appMenus) m.classList.remove('open'); }
+function makeMenu(trigger, { extraClass = '', minWidth = 0, cap = 280, align = 'left', onPick } = {}) {
+  // подчищаем меню, чей триггер уже выброшен из документа (панели пересобираются)
+  for (let i = appMenus.length - 1; i >= 0; i--) {
+    const m = appMenus[i];
+    if (m._trigger && !document.body.contains(m._trigger)) { m.remove(); appMenus.splice(i, 1); }
+  }
+  const menu = document.createElement('div');
+  menu.className = 'lang-menu' + (extraClass ? ' ' + extraClass : '');
+  menu.setAttribute('role', 'listbox');
+  menu._trigger = trigger;
+  document.body.appendChild(menu);
+  appMenus.push(menu);
+  // раскрываем ВНИЗ, если влезает; вверх — только когда снизу места нет
+  const place = () => {
+    const r = trigger.getBoundingClientRect();
+    const w = Math.max(r.width, minWidth);
+    menu.style.width = w + 'px';
+    menu.style.maxHeight = 'none';
+    const full = menu.scrollHeight;
+    const capH = Math.min(cap, innerHeight - 24);
+    const h = Math.min(full, capH);
+    const want = align === 'right' ? r.right - w : r.left;
+    menu.style.left = Math.min(Math.max(8, want), Math.max(8, innerWidth - w - 8)) + 'px';
+    const roomBelow = innerHeight - r.bottom >= h + 10;
+    menu.style.top = (roomBelow || r.top < h + 12 ? r.bottom + 6 : r.top - h - 6) + 'px';
+    menu.style.maxHeight = h + 'px';
+    menu.style.overflowY = full > capH + 1 ? 'auto' : 'hidden';
+  };
+  const close = () => { menu.classList.remove('open'); trigger.setAttribute('aria-expanded', 'false'); };
+  let toggledAt = 0;
+  trigger.addEventListener('click', e => {
+    e.stopPropagation();
+    const isOpen = menu.classList.contains('open');
+    if (isOpen && performance.now() - toggledAt < 320) return;   // гасим «дребезг» быстрого тапа
+    closeAppMenus();
+    if (typeof voicePicker !== 'undefined' && voicePicker) voicePicker.close();
+    if (!isOpen) { place(); menu.classList.add('open'); trigger.setAttribute('aria-expanded', 'true'); }
+    toggledAt = performance.now();
+  });
+  menu.addEventListener('click', e => {
+    const b = e.target.closest('.lang-opt');
+    if (!b) return;
+    close();
+    if (onPick) onPick(b.dataset.v, b);
+  });
+  return { menu, place, close };
+}
+
+// тап мимо списка закрывает его — в фазе перехвата, до обработчиков кнопок под ним
+addEventListener('pointerdown', e => {
+  if (!e.target.closest('.lang-trigger, .lang-menu')) closeAppMenus();
+}, true);
+
+// выпадашка с подписью/иконкой текущего значения (автопоиск: формат и сортировка)
 function buildDropdown(container, options, value, onChange) {
   if (!container) return;
   if (container._ddMenu) container._ddMenu.remove();   // пересборка — убираем прежнее меню-портал
-  container.innerHTML =
-    '<button class="lang-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">'
-    + '<span class="lang-cur"></span>'
-    + '<svg class="lang-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>';
+  container.innerHTML = menuTriggerHtml();
   const trigger = container.querySelector('.lang-trigger');
   const cur = container.querySelector('.lang-cur');
-  const menu = document.createElement('div');
-  menu.className = 'lang-menu dd-menu'; menu.setAttribute('role', 'listbox');
-  menu.innerHTML = options.map(o =>
-    `<button class="lang-opt" type="button" role="option" data-v="${esc(String(o.v))}">${esc(o.label)}</button>`).join('');
-  document.body.appendChild(menu);
-  container._ddMenu = menu;
   let val = String(value);
-  const lbl = v => { const o = options.find(x => String(x.v) === String(v)); return o ? o.label : (options[0] ? options[0].label : ''); };
   const sync = () => {
-    const o = options.find(x => String(x.v) === String(val));
+    const o = options.find(x => String(x.v) === val);
     if (o && o.icon) cur.innerHTML = o.icon;   // иконка активного режима (напр. сортировка)
-    else cur.textContent = lbl(val);
+    else cur.textContent = o ? o.label : (options[0] ? options[0].label : '');
     menu.querySelectorAll('.lang-opt').forEach(op => op.classList.toggle('sel', op.dataset.v === val));
   };
-  const place = () => {
-    const r = trigger.getBoundingClientRect(); const w = Math.max(r.width, 150);
-    menu.style.width = w + 'px'; menu.style.maxHeight = 'none';
-    const full = menu.scrollHeight, cap = Math.min(280, innerHeight - 24), h = Math.min(full, cap);
-    const left = Math.min(Math.max(8, r.left), innerWidth - w - 8);   // левый край списка = левый край триггера
-    menu.style.left = left + 'px';
-    const roomBelow = innerHeight - r.bottom >= h + 10;               // раскрываем ВНИЗ, если влезает; вверх — только если снизу места нет
-    menu.style.top = (roomBelow || r.top < h + 12 ? r.bottom + 6 : r.top - h - 6) + 'px';
-    menu.style.maxHeight = h + 'px'; menu.style.overflowY = full > cap + 1 ? 'auto' : 'hidden';
-  };
-  trigger.addEventListener('click', e => {
-    e.stopPropagation();
-    const open = menu.classList.contains('open');
-    document.querySelectorAll('.dd-menu.open').forEach(m => m.classList.remove('open'));
-    if (!open) { place(); menu.classList.add('open'); trigger.setAttribute('aria-expanded', 'true'); }
-    else trigger.setAttribute('aria-expanded', 'false');
+  const { menu } = makeMenu(trigger, {
+    extraClass: 'dd-menu', minWidth: 150,
+    onPick: v => { val = v; sync(); onChange(val); },
   });
-  menu.addEventListener('click', e => {
-    const b = e.target.closest('.lang-opt'); if (!b) return;
-    val = b.dataset.v; sync(); menu.classList.remove('open'); trigger.setAttribute('aria-expanded', 'false');
-    onChange(val);
-  });
+  menu.innerHTML = menuOptionsHtml(options, val);
+  container._ddMenu = menu;
   sync();
 }
-// клик вне выпадашки — закрыть (только свои dd-menu, чужие меню не трогаем)
-addEventListener('pointerdown', e => {
-  if (!e.target.closest('.lang-trigger, .dd-menu'))
-    document.querySelectorAll('.dd-menu.open').forEach(m => m.classList.remove('open'));
-}, true);
 
 function scanState(s) {     // 'choose' | 'busy' | 'results'
   $('#scan-choose').hidden = s !== 'choose';
@@ -1615,7 +1649,7 @@ function openScan() {
 function scanOpen() { return !$('#scan-modal').hidden; }
 function closeScan() {
   scanBusyFlag = false;
-  document.querySelectorAll('.dd-menu.open').forEach(m => m.classList.remove('open'));   // закрыть выпадашку формата
+  closeAppMenus();   // закрыть выпадашки формата и сортировки
   const modal = $('#scan-modal'), scrim = $('#scan-scrim');
   modal.classList.remove('open'); scrim.classList.remove('open');
   setTimeout(() => { modal.hidden = true; scrim.hidden = true; }, 400);
@@ -1964,7 +1998,7 @@ function filtersActive() {
 // сохранённый жанр не перетираем — только повышаем «Другое»/пусто до конкретного.
 function bookGenre(b) {
   if (b.genre && b.genre !== 'Другое') return b.genre;
-  const m = Importers.mapGenre && Importers.mapGenre((b.title || '') + ' ' + (b.annotation || ''));
+  const m = Genres.mapGenre((b.title || '') + ' ' + (b.annotation || ''));
   return (m && m !== 'Другое') ? m : (b.genre || m || '');
 }
 // ── ручной порядок полки ──
@@ -2747,41 +2781,22 @@ function toggleFilters() {
 let fltMenuEl = null;
 function closeFltMenu() { if (fltMenuEl) fltMenuEl.classList.remove('open'); }
 function filterSelect(mount, options, current, onChange) {
-  mount.innerHTML = '<button class="lang-trigger flt-trigger" type="button" aria-haspopup="listbox">'
-    + '<span class="lang-cur"></span>'
-    + '<svg class="lang-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>';
+  mount.innerHTML = menuTriggerHtml('flt-trigger');
   const trigger = mount.querySelector('.lang-trigger');
+  const curEl = trigger.querySelector('.lang-cur');
   const lbl = () => (options.find(o => o.v === current) || options[0]).label;
-  trigger.querySelector('.lang-cur').textContent = lbl();
-  if (fltMenuEl) { fltMenuEl.remove(); fltMenuEl = null; }
-  const menu = fltMenuEl = document.createElement('div');
-  menu.className = 'lang-menu';
-  menu.innerHTML = options.map(o =>
-    `<button class="lang-opt${o.v === current ? ' sel' : ''}" data-v="${esc(o.v)}">${esc(o.label)}</button>`).join('');
-  document.body.appendChild(menu);
-  const place = () => {
-    const r = trigger.getBoundingClientRect(), w = r.width;
-    menu.style.width = w + 'px'; menu.style.maxHeight = 'none';
-    const full = menu.scrollHeight, cap = Math.min(300, innerHeight - 24), h = Math.min(full, cap);
-    menu.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px';
-    menu.style.top = (r.top > h + 12 ? r.top - h - 6 : r.bottom + 6) + 'px';
-    menu.style.maxHeight = h + 'px';
-    menu.style.overflowY = full > cap + 1 ? 'auto' : 'hidden';
-  };
-  trigger.addEventListener('click', e => {
-    e.stopPropagation();
-    const open = menu.classList.contains('open');
-    closeLangMenus(); closeFltMenu();
-    if (!open) { place(); menu.classList.add('open'); }
+  curEl.textContent = lbl();
+  const { menu } = makeMenu(trigger, {
+    cap: 300,
+    onPick: v => {
+      current = v;
+      curEl.textContent = lbl();
+      menu.querySelectorAll('.lang-opt').forEach(o => o.classList.toggle('sel', o.dataset.v === current));
+      onChange(current);
+    },
   });
-  menu.addEventListener('click', e => {
-    const b = e.target.closest('.lang-opt'); if (!b) return;
-    current = b.dataset.v;
-    trigger.querySelector('.lang-cur').textContent = lbl();
-    menu.querySelectorAll('.lang-opt').forEach(o => o.classList.toggle('sel', o.dataset.v === current));
-    menu.classList.remove('open');
-    onChange(current);
-  });
+  menu.innerHTML = menuOptionsHtml(options, current);
+  fltMenuEl = menu;
 }
 
 function buildFiltersPanel() {
@@ -2789,7 +2804,7 @@ function buildFiltersPanel() {
   const f = shelfFilters;
   const authors = [...new Set(state.books.map(b => b.author).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const present = new Set(state.books.map(bookGenre).filter(Boolean));
-  const genres = (Importers.GENRES || []).filter(g => present.has(g));
+  const genres = Genres.GENRES.filter(g => present.has(g));
   panel.innerHTML = `<div class="flt-inner">
     <input id="flt-q" class="field" type="search" placeholder="${t('filterSearch')}" value="${esc(f.q)}" autocomplete="off">
     <div class="flt-row"><span class="flt-lbl">${t('fltStatus')}</span>
@@ -3080,6 +3095,29 @@ function showShelf() {
 }
 
 // ══════════════════ импорт файлов ══════════════════
+// Тяжёлые модули (разбор книг, чтение тегов аудио) грузятся ПРИ ПЕРВОМ импорте, а не при
+// запуске: на слабом телефоне их разбор откладывал появление полки на несколько сотен
+// миллисекунд, хотя большинство запусков — это просто «открыть и читать».
+const _lazyScripts = {};
+function loadLazyScript(src) {
+  if (_lazyScripts[src]) return _lazyScripts[src];
+  _lazyScripts[src] = new Promise((res, rej) => {
+    const el = document.createElement('script');
+    el.src = src;
+    el.onload = res;
+    el.onerror = () => rej(new Error('не загрузился ' + src));
+    document.head.appendChild(el);
+  });
+  return _lazyScripts[src];
+}
+async function importers() {
+  if (!window.Importers) await loadLazyScript('importers.js?v=25');
+  return window.Importers;
+}
+async function mediaTags() {
+  if (!window.jsmediatags) { try { await loadLazyScript('jsmediatags.min.js?v=1'); } catch {} }
+  return window.jsmediatags || null;
+}
 // ключ книги для защиты от повторного добавления одного и того же (название + автор)
 const bookKey = b => (b.title || '').trim().toLowerCase() + '|' + (b.author || '').trim().toLowerCase();
 // ══════════════════ импорт книги по ссылке ══════════════════
@@ -3314,7 +3352,7 @@ async function doImport(files) {
         added += (await mergeImport(file)).added; dlRemove(job);
         continue;
       }
-      const res = await Importers.importFile(file,
+      const res = await (await importers()).importFile(file,
         frac => { job.frac = frac; renderDlList(); showProgress(T('importing', { n: file.name }), frac); });
       // архив с аудио — задача превращается в аудиокнигу (обработаем ниже, вместе с аудио)
       if (res && res.kind === 'audio-archive') {
@@ -3993,14 +4031,21 @@ async function streamRecords(file, onHead, onBook, onAudio, onProgress, gz) {
   try { await rd.cancel(); } catch {}
 }
 
-// потоковое восстановление: та же логика слияния, но записи приходят по одной
-async function mergeImportStream(file, gz) {
+// ЕДИНСТВЕННЫЙ путь восстановления: файл читается потоком, записи приходят по одной.
+// Раньше путей было два — потоковый для больших файлов и «прочитать целиком» для мелких, —
+// с почти одинаковой логикой слияния. Правку в одном месте регулярно забывали продублировать
+// во втором (так и случилось с аудиокнигами при восстановлении), поэтому путь оставлен один.
+async function mergeImport(file) {
+  // объект без потока (так копию подаёт самопроверка) заворачиваем в Blob — дальше всё одинаково
+  const src = typeof file.stream === 'function' ? file
+    : new Blob([await file.text()], { type: 'application/json' });
+  const gz = typeof src.slice === 'function' && await isGzipFile(src);
   const byKey = new Map((await dbAll('books')).map(b => [syncKey(b), b.id]));
   const aByKey = new Map((await dbAll('audiobooks')).map(a => [audioKey(a), a.id]));
   const wasEmpty = !state.books.length;
   let added = 0, merged = 0, missing = 0, head = null, pct = -1;
   const bad = () => { const e = new Error(t('notBackup')); e.fatal = true; return e; };
-  await streamRecords(file,
+  await streamRecords(src,
     async txt => {
       try { head = JSON.parse(txt); } catch { throw bad(); }
       if (!head || !/^talewyn-(sync|full|library)$/.test(head.fmt || '')) throw bad();
@@ -4009,10 +4054,10 @@ async function mergeImportStream(file, gz) {
       const key = b.key || syncKey({ title: b.title, author: b.author, count: (b.chapters ? b.chapters.length : b.count) || 0 });
       const id = byKey.get(key);
       if (id) { await mergeBookState(id, b); merged++; }
-      else if (b.chapters) {
+      else if (b.chapters) {   // есть содержимое → заводим книгу и накладываем состояние
         const nid = newId('b');
         try { await restoreBook(b, nid); await mergeBookState(nid, b); byKey.set(key, nid); added++; } catch {}
-      } else missing++;
+      } else missing++;        // лёгкая синхра — книги нет локально, класть некуда
     },
     async a => {
       const key = a.key || audioKey(a);
@@ -4030,6 +4075,7 @@ async function mergeImportStream(file, gz) {
   await mergeCollectionsFromSync(head && head.collections);
   await mergeStats(head && head.stats);
   mergePronun(head && (Array.isArray(head.pronun) ? head.pronun : (head.settings && head.settings.pronun)));
+  // настройки принимаем только на пустую библиотеку и только из нового формата
   if (wasEmpty && added && head && head.fmt !== 'talewyn-library' && head.settings
       && typeof head.settings === 'object' && !Array.isArray(head.settings)) {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(head.settings));
@@ -4039,53 +4085,7 @@ async function mergeImportStream(file, gz) {
   return await finishImport(added, merged, missing);
 }
 
-async function mergeImport(file) {
-  const gz = typeof file.slice === 'function' && await isGzipFile(file);
-  // сжатую копию всегда читаем потоком (распаковывать её целиком в память незачем),
-  // большие обычные — тоже; маленькие файлы синхронизации читаем как раньше
-  if ((gz || file.size > 48 * 1024 * 1024) && typeof file.stream === 'function') {
-    try { return await mergeImportStream(file, gz); } catch (e) { if (e && e.fatal) throw e; }
-  }
-  let j = null;
-  try { j = JSON.parse(await file.text()); } catch { throw new Error(t('notBackup')); }
-  if (!j || !/^talewyn-(sync|full|library)$/.test(j.fmt || '') || !Array.isArray(j.books)) throw new Error(t('notBackup'));
-  const legacy = j.fmt === 'talewyn-library';
-  const wasEmpty = !state.books.length;
-  const byKey = new Map((await dbAll('books')).map(b => [syncKey(b), b.id]));
-  const aByKey = new Map((await dbAll('audiobooks')).map(a => [audioKey(a), a.id]));
-  let added = 0, merged = 0, missing = 0;
-  for (const b of j.books) {
-    if (!b) continue;
-    const key = b.key || syncKey({ title: b.title, author: b.author, count: (b.chapters ? b.chapters.length : b.count) || 0 });
-    const id = byKey.get(key);
-    if (id) { await mergeBookState(id, b); merged++; }
-    else if (b.chapters) {   // есть содержимое → заводим книгу и накладываем состояние
-      showToast(T('restoreBusy', { n: b.title || '…' }));
-      await new Promise(r => setTimeout(r, 0));
-      const nid = newId('b');
-      try { await restoreBook(b, nid); await mergeBookState(nid, b); byKey.set(key, nid); added++; } catch {}
-    } else missing++;   // лёгкая синхра — книги нет локально, класть некуда
-  }
-  for (const a of (j.audio || [])) {
-    if (!a) continue;
-    const key = a.key || audioKey(a);
-    const id = aByKey.get(key);
-    if (id) { await mergeAudioState(id, a); merged++; }
-    else if ((Array.isArray(a.trackBlobs) && a.trackBlobs.length) || a.meta) { const nid = await restoreAudiobook(a); if (nid) { await mergeAudioState(nid, a); aByKey.set(key, nid); added++; } else missing++; }
-    else missing++;
-  }
-  await mergeCollectionsFromSync(j.collections);
-  await mergeStats(j.stats);
-  mergePronun(Array.isArray(j.pronun) ? j.pronun : (j.settings && j.settings.pronun));
-  if (wasEmpty && added && !legacy && j.settings && typeof j.settings === 'object' && !Array.isArray(j.settings)) {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(j.settings));
-    Object.assign(settings, loadSettings()); applySettings();
-    if (typeof j.ttsBase === 'string' && j.ttsBase) localStorage.setItem('talewyn-tts-base', j.ttsBase);
-  }
-  return await finishImport(added, merged, missing);
-}
-
-// общий финал восстановления (для обоих путей — обычного и потокового):
+// финал восстановления:
 // перечитать библиотеку, перерисовать что открыто и сказать человеку итог
 async function finishImport(added, merged, missing) {
   invalidateShelfData();
@@ -6183,10 +6183,11 @@ const fmtTime = s => {
 const abNatSort = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
 
 // теги/обложка через jsmediatags (ID3/MP4)
-function readTags(file) {
+async function readTags(file) {
+  const lib = await mediaTags();
   return new Promise(res => {
-    if (!window.jsmediatags) return res(null);
-    try { window.jsmediatags.read(file, { onSuccess: t => res(t && t.tags), onError: () => res(null) }); }
+    if (!lib) return res(null);
+    try { lib.read(file, { onSuccess: t => res(t && t.tags), onError: () => res(null) }); }
     catch { res(null); }
   });
 }
@@ -7907,60 +7908,25 @@ function curTrLang() {
   return autoTrTarget(state.book);   // авто: русская книга → en, иначе → ru
 }
 function closeLangMenus() {
-  for (const c of langPickers) c._close();
+  closeAppMenus();   // все выпадающие списки приложения
   if (typeof voicePicker !== 'undefined' && voicePicker) voicePicker.close();
 }
 function buildLangPicker(container) {
   if (!container) return;
-  container.innerHTML =
-    '<button class="lang-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">'
-    + '<span class="lang-cur"></span>'
-    + '<svg class="lang-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>';
+  container.innerHTML = menuTriggerHtml();
   const trigger = container.querySelector('.lang-trigger');
-  const menu = document.createElement('div');
-  menu.className = 'lang-menu';
-  menu.setAttribute('role', 'listbox');
-  menu.innerHTML =
-    `<button class="lang-opt" type="button" role="option" data-v="auto" data-i18n="trAuto">${t('trAuto')}</button>`
-    + TR_LANGS.map(([v, n]) =>
-      `<button class="lang-opt" type="button" role="option" data-v="${v}">${n}</button>`).join('');
-  document.body.appendChild(menu);   // портал: вне трансформируемой шторки
-  const place = () => {
-    const r = trigger.getBoundingClientRect();
-    const w = Math.max(r.width, 170);
-    menu.style.width = w + 'px';
-    menu.style.maxHeight = 'none';                 // измеряем истинную высоту при нужной ширине
-    const full = menu.scrollHeight;
-    const cap = Math.min(280, innerHeight - 24);
-    const h = Math.min(full, cap);
-    // прижимаем правым краем к триггеру, держим в пределах экрана
-    const left = Math.min(Math.max(8, r.right - w), innerWidth - w - 8);
-    menu.style.left = Math.max(8, left) + 'px';
-    menu.style.top = (r.top > h + 12 ? r.top - h - 8 : r.bottom + 8) + 'px';
-    menu.style.maxHeight = h + 'px';
-    menu.style.overflowY = full > cap + 1 ? 'auto' : 'hidden';   // скролл только когда реально не влезает
-  };
-  const close = () => { menu.classList.remove('open'); trigger.setAttribute('aria-expanded', 'false'); };
-  let toggledAt = 0;
-  trigger.addEventListener('click', e => {
-    e.stopPropagation();
-    const isOpen = menu.classList.contains('open');
-    if (isOpen && performance.now() - toggledAt < 320) return;   // гасим «дребезг» быстрого тапа
-    closeLangMenus();
-    if (!isOpen) { place(); menu.classList.add('open'); trigger.setAttribute('aria-expanded', 'true'); }
-    toggledAt = performance.now();
+  const options = [{ v: 'auto', label: t('trAuto') }, ...TR_LANGS.map(([v, n]) => ({ v, label: n }))];
+  const { menu, close } = makeMenu(trigger, {
+    minWidth: 170, align: 'right',   // список прижат правым краем к триггеру
+    onPick: v => setTrLang(v),
   });
-  menu.addEventListener('click', e => {
-    const b = e.target.closest('.lang-opt');
-    if (!b) return;
-    setTrLang(b.dataset.v);
-    close();
-  });
+  menu.innerHTML = menuOptionsHtml(options, curTrChoice());
   container._close = close;
   container._menu = menu;
   langPickers.push(container);
   syncTrLangUI();
 }
+
 function syncTrLangUI() {
   const choice = curTrChoice();
   // при «Авто» подсказываем, на какой язык это разворачивается для этой книги
@@ -9549,7 +9515,7 @@ async function selftest() {
       const r = await fetch(fixtures + name);
       if (!r.ok) { step(name + ': нет файла'); continue; }
       const buf = await r.arrayBuffer();
-      const data = await Importers.importFile({ name, arrayBuffer: () => Promise.resolve(buf) });
+      const data = await (await importers()).importFile({ name, arrayBuffer: () => Promise.resolve(buf) });
       await anchor();
       const id = await storeBook(data);
       firstId = firstId || id;

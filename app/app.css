@@ -1616,8 +1616,9 @@ body.col-open #col-tab svg { transform: rotate(180deg); }
 /* Заголовки разделов настроек — те же, что в «Словаре произношений»: подпись по центру
    с золотыми лучами по краям. Отдельных разделительных линий между строками больше нет —
    разделение держат сами заголовки. */
-#settings-sheet .confirm-orn.sheet-head { margin: 20px 0 12px; }
-#settings-sheet .sheet-grip + .confirm-orn.sheet-head { margin-top: 6px; }
+.sheet .confirm-orn.sheet-head { margin: 20px 0 12px; }
+/* первый заголовок сразу под «ручкой» шторки не должен висеть в пустоте */
+.sheet .sheet-grip + .confirm-orn.sheet-head { margin-top: 6px; }
 
 /* каждая настройка: подпись сверху, контрол во всю ширину снизу — ровно и предсказуемо */
 .set-group { margin-bottom: 14px; }

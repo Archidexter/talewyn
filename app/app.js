@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.1.23';
+const APP_VERSION = '1.1.24';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -624,7 +624,11 @@ function applySettings() {
   const pref = ['light', 'sepia', 'dark', 'auto'].includes(urlTheme)
     ? urlTheme : settings.theme;
   const theme = pref === 'auto' ? (mqDark.matches ? 'dark' : 'light') : pref;
-  document.documentElement.className = 't-' + theme;
+  // смена темы — с плавным перетеканием цветов (класс висит только на время перехода)
+  const shift = themeShift.last && themeShift.last !== theme;
+  themeShift.last = theme;
+  document.documentElement.className = 't-' + theme + (shift ? ' theme-shift' : '');
+  if (shift) themeShift();
   const st = document.documentElement.style;
   st.setProperty('--reader-fs', settings.size + 'px');
   st.setProperty('--reader-lh', settings.lh);
@@ -633,6 +637,7 @@ function applySettings() {
   st.setProperty('--reader-align', settings.align);
   const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
   $('meta[name=theme-color]').setAttribute('content', bg);
+  // цвет крупки на фоне полки — обычная CSS-переменная, перетекает сам
   // нативу: запомнить фон темы, чтобы окно старта красилось в него (не зелёный дефолт).
   // Мост есть только в APK ≥1.0.61; guard — на старых сборках просто no-op.
   try { if (window.AndroidTheme && AndroidTheme.setColor) AndroidTheme.setColor(bg); } catch {}
@@ -640,9 +645,6 @@ function applySettings() {
   document.body.classList.toggle('bg-live', settings.bg === 'on');
   if (window.__shelfBgTheme) window.__shelfBgTheme();     // тема сменилась — перечитать золото
   if (window.shelfBgKick) window.shelfBgKick();
-  const gildBg = getComputedStyle(document.documentElement).getPropertyValue('--gild').trim();
-  const ff = document.querySelector('#bgFleck feFlood');
-  if (ff && gildBg) ff.setAttribute('flood-color', gildBg);
   persistSettings();   // ползунок шрифта шлёт события пачками — пишем настройки один раз в конце
   updateWakeLock();
   if (applyLang.last !== settings.lang) {
@@ -651,6 +653,14 @@ function applySettings() {
   }
   syncSettingsUI();
 }
+
+// переходы цвета включаются только на время смены темы и сразу снимаются
+let themeShiftT = 0;
+function themeShift() {
+  clearTimeout(themeShiftT);
+  themeShiftT = setTimeout(() => document.documentElement.classList.remove('theme-shift'), 340);
+}
+themeShift.last = '';
 
 // запись настроек с задержкой: applySettings зовётся на каждый шаг ползунка размера/интервала
 let settingsSaveT = 0;
@@ -2758,22 +2768,37 @@ function toggleFilters() {
   if (!btn.classList.contains('active')) {
     if (audio) buildAudioFiltersPanel(); else buildFiltersPanel();
     panel.hidden = false;
+    panel.style.height = '0px';
     btn.classList.add('active');
-    // два кадра, чтобы стартовое состояние (grid-rows 0fr) применилось до анимации
-    requestAnimationFrame(() => requestAnimationFrame(() => panel.classList.add('open')));
+    // два кадра: стартовая нулевая высота должна примениться до начала анимации
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      panel.classList.add('open');
+      panel.style.height = panel.scrollHeight + 'px';
+      // по окончании отдаём высоту содержимому — оно меняется, пока фильтры крутят
+      const grew = ev => {
+        if (ev.target !== panel || ev.propertyName !== 'height') return;
+        panel.removeEventListener('transitionend', grew);
+        if (panel.classList.contains('open')) panel.style.height = 'auto';
+      };
+      panel.addEventListener('transitionend', grew);
+    }));
   } else {
     closeFltMenu();
     btn.classList.remove('active');
-    panel.classList.remove('open');
+    panel.style.height = panel.scrollHeight + 'px';   // от 'auto' анимации нет — фиксируем текущую
+    requestAnimationFrame(() => {
+      panel.classList.remove('open');
+      panel.style.height = '0px';
+    });
     let done = false;
     const finish = () => {
       if (done) return; done = true;
-      if (!panel.classList.contains('open')) panel.hidden = true;
+      if (!panel.classList.contains('open')) { panel.hidden = true; panel.style.height = ''; }
       panel.removeEventListener('transitionend', te);
     };
-    const te = ev => { if (ev.target === panel && ev.propertyName === 'opacity') finish(); };
+    const te = ev => { if (ev.target === panel && ev.propertyName === 'height') finish(); };
     panel.addEventListener('transitionend', te);
-    setTimeout(finish, 320);   // страховка, если transitionend не придёт
+    setTimeout(finish, 420);   // страховка, если transitionend не придёт
   }
 }
 

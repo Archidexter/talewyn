@@ -10,7 +10,7 @@
 if(th==='auto')th=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <link rel="stylesheet" href="fonts.css?v=9">
-<link rel="stylesheet" href="app.css?v=202">
+<link rel="stylesheet" href="app.css?v=203">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -60,7 +60,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <!-- SVG-фильтры для живого фона полки (Патина): зерно + золотая крупка -->
 <svg width="0" height="0" aria-hidden="true" style="position:absolute" id="bg-defs">
   <filter id="bgGrain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="9" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope="0.06"/></feComponentTransfer></filter>
-  <filter id="bgFleck"><feTurbulence type="turbulence" baseFrequency="0.62" numOctaves="2" seed="8" result="n"/><feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1.4 0 0 0 -0.2" result="a"/><feComponentTransfer in="a" result="s"><feFuncA type="discrete" tableValues="0 0 0 0 0 0 1 1"/></feComponentTransfer><feFlood flood-color="#d8a54f" result="f"/><feComposite in="f" in2="s" operator="in"/></filter>
 </svg>
 
 <!-- живой фон полки (Патина) — СНАРУЖИ #shelf-view: анимация входа полки (transform)
@@ -69,7 +68,9 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
   <div class="sbg-base"></div>
   <div class="sbg-vignette"></div>
   <div class="sbg-grain"></div>
-  <div class="sbg-fleck"><svg viewBox="0 0 300 600" preserveAspectRatio="xMidYMid slice"><rect width="300" height="600" filter="url(#bgFleck)"/></svg></div>
+  <!-- крупка: рисунок задан маской (растрируется один раз), цвет — обычный background,
+       поэтому смена темы её перекрашивает плавно и без пересчёта фильтра -->
+  <div class="sbg-fleck"><div class="sbg-fleck-ink"></div></div>
   <canvas class="sbg-glint"></canvas>
 </div>
 
@@ -808,6 +809,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=257"></script>
+<script src="app.js?v=258"></script>
 </body>
 </html>

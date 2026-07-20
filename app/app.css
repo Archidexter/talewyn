@@ -21,6 +21,8 @@
   --nt-y: #d9b23c; --nt-g: #7fa35c; --nt-v: #a678cf; --nt-t: #c96f4a;
   /* радиусы: 10 — малые элементы, 12 — кнопки/поля, 16 — карточки, 20 — листы */
   --r-sm: 10px; --r-md: 12px; --r-lg: 16px; --r-xl: 20px;
+  /* рисунок золотой крупки на фоне полки — маска, одна на все темы (цвет задаётся отдельно) */
+  --fleck: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='600' viewBox='0 0 300 600' preserveAspectRatio='xMidYMid slice'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.62' numOctaves='2' seed='8' result='n'/%3E%3CfeColorMatrix in='n' type='matrix' values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1.4 0 0 0 -0.2' result='a'/%3E%3CfeComponentTransfer in='a' result='s'%3E%3CfeFuncA type='discrete' tableValues='0 0 0 0 0 0 1 1'/%3E%3C/feComponentTransfer%3E%3CfeFlood flood-color='%23fff' result='c'/%3E%3CfeComposite in='c' in2='s' operator='in'/%3E%3C/filter%3E%3Crect width='300' height='600' filter='url(%23f)'/%3E%3C/svg%3E");
 }
 
 /* ── темы ──────────────────────────────────────────────────────────
@@ -120,6 +122,17 @@ body {
   font-family: var(--font-ui); font-size: 15.5px; line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   transition: background .25s, color .25s;
+}
+/* Смена темы: цвета перетекают на ВСЕЙ странице, а не щёлкают вразнобой (раньше плавно
+   менялся только фон body, а панели, карточки и шапки переключались мгновенно — из-за
+   этого переход выглядел рывком). Класс живёт только те 0.3 с, пока идёт переход, —
+   держать переходы цвета на всём дереве постоянно нельзя, это дорого. */
+html.theme-shift, html.theme-shift * {
+  transition: background-color .3s ease, color .3s ease, border-color .3s ease,
+              fill .3s ease, stroke .3s ease, box-shadow .3s ease !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  html.theme-shift, html.theme-shift * { transition: none !important; }
 }
 button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; padding: 0; }
 /* ссылки тоже: у <a> подсветка тапа своя, и без сброса кнопки-ссылки (Boosty/Telegram/
@@ -229,7 +242,17 @@ body.bg-live:has(#shelf-view:not([hidden])) #shelf-bg { display: block; }
   -webkit-mask: linear-gradient(180deg, #000, transparent 40%, transparent 62%, #000);
   mask: linear-gradient(180deg, #000, transparent 40%, transparent 62%, #000);
 }
-#shelf-bg .sbg-fleck svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* Сама крупка. Рисунок (тот же feTurbulence, что и был) вынесен в МАСКУ: маска не
+   зависит от темы, поэтому браузер растрирует её один раз. Цвет — обычный
+   background-color, его смена стоит копейки и плавно перетекает. Раньше цвет жил
+   внутри фильтра (feFlood), и каждая смена темы пересчитывала турбулентность на
+   весь экран — на телефоне это давало заметное мигание фона. */
+#shelf-bg .sbg-fleck-ink {
+  position: absolute; inset: 0; background-color: var(--gild);
+  -webkit-mask: var(--fleck) center / cover no-repeat;
+  mask: var(--fleck) center / cover no-repeat;
+  transition: background-color .3s ease;
+}
 /* слой блеска: зажигает искры РОВНО в точках крупки (позиции считаны с неё) и
    только при наклоне; в покое пуст, поэтому патина под ним видна как есть */
 #shelf-bg .sbg-glint {
@@ -311,17 +334,20 @@ html.t-light .brand-logo, html.t-sepia .brand-logo {
 #continue-card, #shelf-continue { margin-top: 20px; }
 #shelf-continue:empty, #continue-card:empty { margin: 0; }
 
-/* ═══ Панель фильтров полки — плавное появление через opacity+transform (без анимации
-   высоты, чтобы не гонять рефлоу всей полки покадрово → нет рывков даже на слабых) ═══ */
+/* ═══ Панель фильтров полки — раскрывается сверху вниз: высота едет от 0 к своей
+   (её проставляет JS по факту содержимого), содержимое обрезается по пути ═══ */
 #shelf-filters, #audio-filters {
   margin: 0 0 18px; border-radius: var(--r-lg);
   background: var(--elev); border: 1px solid var(--border);
-  opacity: 0; transform: translateY(-6px);
-  transition: opacity .2s ease, transform .24s cubic-bezier(.4, 0, .2, 1);
-  will-change: opacity, transform;
+  overflow: hidden; opacity: 0;
+  transition: height .3s cubic-bezier(.4, 0, .2, 1), opacity .22s ease;
+  will-change: height, opacity;
 }
 #shelf-filters { margin-top: 16px; }
-#shelf-filters.open, #audio-filters.open { opacity: 1; transform: none; }
+#shelf-filters.open, #audio-filters.open { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  #shelf-filters, #audio-filters { transition: opacity .15s ease; }
+}
 .flt-inner { padding: 14px; display: flex; flex-direction: column; gap: 13px; }
 #shelf-filters .field, #audio-filters .field { width: 100%; }
 /* фильтр по статусу — три чипа-переключателя */

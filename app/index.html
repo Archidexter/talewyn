@@ -10,7 +10,7 @@
 if(th==='auto')th=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <link rel="stylesheet" href="fonts.css?v=9">
-<link rel="stylesheet" href="app.css?v=195">
+<link rel="stylesheet" href="app.css?v=196">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -163,6 +163,21 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     <div class="col-modal-actions">
       <button id="col-create-cancel" class="ghost-btn" data-i18n="colCancel">Отменить</button>
       <button id="col-create-save" class="primary-btn" data-i18n="colSave">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- что класть в файл синхронизации: книги и/или аудиокниги (можно оба) -->
+<div id="sync-pick" hidden>
+  <div class="col-modal-box">
+    <div class="col-modal-title" id="sync-pick-title" data-i18n="syncPickTitle">Что синхронизировать</div>
+    <div class="col-pick-list">
+      <button class="col-pick-item on" id="sync-pick-books"><span class="col-pick-check"></span><span class="col-pick-name" data-i18n="syncKindBooks">Книги</span></button>
+      <button class="col-pick-item on" id="sync-pick-audio"><span class="col-pick-check"></span><span class="col-pick-name" data-i18n="syncKindAudio">Аудиокниги</span></button>
+    </div>
+    <div class="col-modal-actions">
+      <button id="sync-pick-cancel" class="ghost-btn" data-i18n="colCancel">Отменить</button>
+      <button id="sync-pick-ok" class="primary-btn" data-i18n="colSave">Сохранить</button>
     </div>
   </div>
 </div>
@@ -801,6 +816,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=237"></script>
+<script src="app.js?v=238"></script>
 </body>
 </html>

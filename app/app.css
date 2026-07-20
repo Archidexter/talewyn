@@ -1412,8 +1412,8 @@ body.col-open #col-tab svg { transform: rotate(180deg); }
 #shelf-view[hidden] ~ #col-tab { display: none; }   /* язычок виден только на главной полке */
 
 /* центральные окна: создание имени / выбор коллекций */
-#col-create, #col-pick { position: fixed; inset: 0; z-index: 82; display: grid; place-items: center; padding: 20px; background: rgb(9 11 6 / .5); opacity: 0; transition: opacity .2s ease; }
-#col-create.open, #col-pick.open { opacity: 1; }
+#col-create, #col-pick, #sync-pick { position: fixed; inset: 0; z-index: 82; display: grid; place-items: center; padding: 20px; background: rgb(9 11 6 / .5); opacity: 0; transition: opacity .2s ease; }
+#col-create.open, #col-pick.open, #sync-pick.open { opacity: 1; }
 .col-modal-box {
   width: min(360px, 92vw); background: var(--elev); border: 1px solid var(--border-strong);
   border-radius: var(--r-lg); padding: 18px; box-shadow: 0 20px 60px rgb(0 0 0 / .5);
@@ -1425,7 +1425,8 @@ body.col-open #col-tab svg { transform: rotate(180deg); }
   transition: transform .34s cubic-bezier(.22, .9, .28, 1);
 }
 #col-create.open .col-modal-box,
-#col-pick.open .col-modal-box { transform: translate(0, calc(-1 * var(--lift))); }
+#col-pick.open .col-modal-box,
+#sync-pick.open .col-modal-box { transform: translate(0, calc(-1 * var(--lift))); }
 .col-modal-title { font-weight: 700; font-size: 15px; color: var(--text); text-align: center; }
 .col-modal-actions { display: flex; gap: 10px; }
 .col-modal-actions > * { flex: 1; }

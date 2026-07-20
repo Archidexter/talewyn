@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.1.24';
+const APP_VERSION = '1.1.25';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -624,11 +624,35 @@ function applySettings() {
   const pref = ['light', 'sepia', 'dark', 'auto'].includes(urlTheme)
     ? urlTheme : settings.theme;
   const theme = pref === 'auto' ? (mqDark.matches ? 'dark' : 'light') : pref;
-  // смена темы — с плавным перетеканием цветов (класс висит только на время перехода)
-  const shift = themeShift.last && themeShift.last !== theme;
-  themeShift.last = theme;
-  document.documentElement.className = 't-' + theme + (shift ? ' theme-shift' : '');
-  if (shift) themeShift();
+  // Смена темы: цвет перетекает только у крупных поверхностей (фон, шторка, шапка,
+  // поля и кнопки) — их на экране десятки. Переходы на ВС�ём дереве или системный
+  // кроссфейд со снимком страницы телефон не тянет: подвисает на четверть секунды.
+  const shift = themeSwitch.last && themeSwitch.last !== theme;
+  themeSwitch.last = theme;
+  const smooth = shift && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Тяжёлый пересчёт всей страницы при смене темы прячем за системный кроссфейд:
+  // браузер снимает кадр «до», делает пересчёт под снимком и переливает старый кадр
+  // в новый. Размытие за панелями при этом не трогаем — иначе панели «щёлкают».
+  if (smooth && !themeSwitch.busy && document.startViewTransition) {
+    themeSwitch.busy = true;
+    try {
+      const vt = document.startViewTransition(() => applyTheme(theme, false));
+      vt.finished.catch(() => {}).finally(() => { themeSwitch.busy = false; });
+      return;
+    } catch { themeSwitch.busy = false; }
+  }
+  applyTheme(theme, smooth);
+}
+function themeSwitch() {}
+themeSwitch.last = '';
+let themeShiftT = 0;
+
+function applyTheme(theme, smooth) {
+  document.documentElement.className = 't-' + theme + (smooth ? ' theme-shift' : '');
+  if (smooth) {
+    clearTimeout(themeShiftT);
+    themeShiftT = setTimeout(() => document.documentElement.classList.remove('theme-shift'), 320);
+  }
   const st = document.documentElement.style;
   st.setProperty('--reader-fs', settings.size + 'px');
   st.setProperty('--reader-lh', settings.lh);
@@ -637,14 +661,17 @@ function applySettings() {
   st.setProperty('--reader-align', settings.align);
   const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
   $('meta[name=theme-color]').setAttribute('content', bg);
-  // цвет крупки на фоне полки — обычная CSS-переменная, перетекает сам
-  // нативу: запомнить фон темы, чтобы окно старта красилось в него (не зелёный дефолт).
-  // Мост есть только в APK ≥1.0.61; guard — на старых сборках просто no-op.
-  try { if (window.AndroidTheme && AndroidTheme.setColor) AndroidTheme.setColor(bg); } catch {}
-  // живой фон полки (Патина): вкл/выкл + золотую крупку красим в золото текущей темы
+  // Перекраску окна и пересборку заготовок блеска откладываем на после перехода:
+  // и то и другое — тяжёлые разовые операции, а посреди анимации они дают рывок.
+  // Особенно заметно на переходе светлая↔тёмная, где меняется вообще всё.
+  clearTimeout(applyTheme.after);
+  applyTheme.after = setTimeout(() => {
+    try { if (window.AndroidTheme && AndroidTheme.setColor) AndroidTheme.setColor(bg); } catch {}
+    if (window.__shelfBgTheme) window.__shelfBgTheme();   // золото сменилось — перерисовать заготовки
+    if (window.shelfBgKick) window.shelfBgKick();
+  }, 360);
+  // живой фон полки (Патина)
   document.body.classList.toggle('bg-live', settings.bg === 'on');
-  if (window.__shelfBgTheme) window.__shelfBgTheme();     // тема сменилась — перечитать золото
-  if (window.shelfBgKick) window.shelfBgKick();
   persistSettings();   // ползунок шрифта шлёт события пачками — пишем настройки один раз в конце
   updateWakeLock();
   if (applyLang.last !== settings.lang) {
@@ -653,14 +680,6 @@ function applySettings() {
   }
   syncSettingsUI();
 }
-
-// переходы цвета включаются только на время смены темы и сразу снимаются
-let themeShiftT = 0;
-function themeShift() {
-  clearTimeout(themeShiftT);
-  themeShiftT = setTimeout(() => document.documentElement.classList.remove('theme-shift'), 340);
-}
-themeShift.last = '';
 
 // запись настроек с задержкой: applySettings зовётся на каждый шаг ползунка размера/интервала
 let settingsSaveT = 0;
@@ -703,9 +722,13 @@ mqDark.addEventListener('change', () => { if (settings.theme === 'auto') applySe
   let gc = null, gctx = null, GW = 0, GH = 0, parts = null, sampling = false, haloSprite = null, spriteGild = '';
   addEventListener('deviceorientation', e => {
     if (e.gamma == null && e.beta == null) return;
-    gT = T;
-    gx = Math.max(-1, Math.min(1, (e.gamma || 0) / 24));
-    gy = Math.max(-1, Math.min(1, ((e.beta || 45) - 45) / 24));
+    const nx = Math.max(-1, Math.min(1, (e.gamma || 0) / 24));
+    const ny = Math.max(-1, Math.min(1, ((e.beta || 45) - 45) / 24));
+    // телефон дрожит в руке всё время: реагируем только на ЗАМЕТНЫЙ поворот,
+    // иначе цикл блеска не засыпает никогда и жжёт процессор впустую
+    if (Math.abs(nx - gx) < 0.07 && Math.abs(ny - gy) < 0.07 && T - gT < 2) return;
+    gT = T; gx = nx; gy = ny;
+    if (window.shelfBgKick) window.shelfBgKick();   // наклонили — просыпаемся
   }, true);
 
   // вес маски крупки (та же, что у .sbg-fleck): золото сверху и снизу, середина пустая
@@ -762,64 +785,119 @@ mqDark.addEventListener('change', () => { if (settings.theme === 'auto') applySe
     img.src = 'data:image/svg+xml,' + encodeURIComponent(svg);
   }
 
-  function renderGlint(gild) {
-    gctx.clearRect(0, 0, GW, GH);
-    if (!parts || !parts.length) return;
-    const lx = tx, ly = ty;
-    if (Math.hypot(lx, ly) < 0.015) return;   // почти не наклонён — искр нет, чистая патина
-    if (spriteGild !== gild) buildHalo(gild);
+  // ── блеск: заранее отрисованные направления света ──
+  // Раньше каждая из ~3000 искр рисовалась заново В КАЖДОМ кадре — 34 мс при бюджете
+  // 16.7 мс, то есть фон гарантированно не успевал и тормозил всё приложение.
+  // Теперь картина блеска для 12 направлений света рисуется ОДИН раз (по кадру за раз,
+  // чтобы не подвесить экран), а в кадре просто накладываются две соседние картинки
+  // с нужной прозрачностью — два drawImage вместо шести тысяч операций.
+  const PHASES = 12;
+  let phases = null, phaseNext = 0, phaseGild = '';
+  function resetPhases() { phases = null; phaseNext = 0; }
+  function buildPhase(i, gild) {
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(GW)); cv.height = Math.max(1, Math.round(GH));
+    const c = cv.getContext('2d');
+    const ang = (i / PHASES) * Math.PI * 2, lx = Math.cos(ang), ly = Math.sin(ang);
     for (const p of parts) {
       const dot = p.fx * lx + p.fy * ly; if (dot <= 0) continue;
       let a = Math.pow(dot, p.sharp) * p.gain * p.w;
       if (a < 0.02) continue; if (a > 1) a = 1;
-      const cx = p.x * GW, cy = p.y * GH, R = 2.6 + a * 3.4;
-      gctx.globalAlpha = Math.min(1, a * 0.7);            // мягкий ореол-градиент, без резкой кромки
-      gctx.drawImage(haloSprite, cx - R, cy - R, R * 2, R * 2);
-      gctx.globalAlpha = Math.min(1, a * 1.05);           // ядро — мелкая неправильная чешуйка, как крупка
-      gctx.fillStyle = gild;
+      const cx = p.x * cv.width, cy = p.y * cv.height, R = 2.6 + a * 3.4;
+      c.globalAlpha = Math.min(1, a * 0.7);            // мягкий ореол-градиент, без резкой кромки
+      c.drawImage(haloSprite, cx - R, cy - R, R * 2, R * 2);
+      c.globalAlpha = Math.min(1, a * 1.05);           // ядро — мелкая неправильная чешуйка, как крупка
+      c.fillStyle = gild;
       const s = p.shape;
-      gctx.beginPath(); gctx.moveTo(cx + s[0][0], cy + s[0][1]);
-      for (let k = 1; k < s.length; k++) gctx.lineTo(cx + s[k][0], cy + s[k][1]);
-      gctx.closePath(); gctx.fill();
+      c.beginPath(); c.moveTo(cx + s[0][0], cy + s[0][1]);
+      for (let k = 1; k < s.length; k++) c.lineTo(cx + s[k][0], cy + s[k][1]);
+      c.closePath(); c.fill();
     }
+    return cv;
+  }
+  function renderGlint(gild) {
+    if (!parts || !parts.length) return;
+    if (spriteGild !== gild) buildHalo(gild);
+    if (phaseGild !== gild) { resetPhases(); phaseGild = gild; }
+    if (!phases) { phases = new Array(PHASES).fill(null); phaseNext = 0; }
+    if (phaseNext < PHASES) {                 // готовим по одному направлению за кадр
+      phases[phaseNext] = buildPhase(phaseNext, gild);
+      phaseNext++;
+    }
+    gctx.clearRect(0, 0, GW, GH);
+    const lx = tx, ly = ty, str = Math.min(1, Math.hypot(lx, ly));
+    if (str < 0.015) return;                  // почти не наклонён — искр нет, чистая патина
+    const pos = (Math.atan2(ly, lx) / (Math.PI * 2) + 1) % 1 * PHASES;
+    const i0 = Math.floor(pos) % PHASES, i1 = (i0 + 1) % PHASES, w = pos - Math.floor(pos);
+    const a = phases[i0], b = phases[i1];
+    if (a) { gctx.globalAlpha = (1 - w) * str; gctx.drawImage(a, 0, 0, GW, GH); }
+    if (b) { gctx.globalAlpha = w * str; gctx.drawImage(b, 0, 0, GW, GH); }
     gctx.globalAlpha = 1;
   }
 
-  let running = false, gild = '';
+  let running = false, gild = '', lastDraw = -9, lastMove = -9;
+  // Размер канвы меряем ТОЛЬКО когда он реально может измениться (поворот экрана,
+  // раскладушка, возврат на полку). Раньше getBoundingClientRect вызывался в каждом
+  // кадре — сразу после записи стилей, а это заставляло браузер пересчитывать
+  // раскладку всей полки 60 раз в секунду. Именно это и жгло процессор, а не картинка.
+  function measure() {
+    if (!gc || !gctx) return;
+    const r = gc.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    if (Math.abs(r.width - GW) < 1 && Math.abs(r.height - GH) < 1) return;
+    GW = r.width; GH = r.height;                 // один пиксель канвы на точку экрана:
+    gc.width = Math.max(1, Math.round(GW));      // искры мягкие, разницы не видно,
+    gc.height = Math.max(1, Math.round(GH));     // а работы вчетверо меньше
+    gctx.setTransform(1, 0, 0, 1, 0, 0);
+    parts = null; sampling = false; resetPhases();
+  }
+  function watchSize() {
+    if (watchSize.on) return; watchSize.on = true;
+    addEventListener('resize', measure);
+    if (window.ResizeObserver) { try { new ResizeObserver(measure).observe(gc); } catch {} }
+  }
   // цвет золота берём из стилей ОДИН раз на тему: getComputedStyle в каждом кадре
   // заставляет браузер пересчитывать стили 60 раз в секунду
-  window.__shelfBgTheme = () => { gild = ''; };
+  window.__shelfBgTheme = () => { gild = ''; resetPhases(); };
+  // Блеск живёт ТОЛЬКО пока телефон реально поворачивают. Раньше в покое фон
+  // «дышал» по синусоиде — а значит искры перерисовывались вечно, и полка жгла
+  // процессор круглосуточно (это и тормозило всё приложение). Теперь: наклонили —
+  // цикл проснулся, довёл блик и уснул. Лежит на столе — ноль работы.
   function frame() {
     T += 0.016;
     const bg = document.getElementById('shelf-bg');
     const sv = document.getElementById('shelf-view');
     const live = bg && document.body.classList.contains('bg-live') && sv && !sv.hidden;
     if (!live) { running = false; return; }   // полка скрыта (читалка, плеер) — кадры не тратим
-    {
-      if (!fleck) { fleck = bg.querySelector('.sbg-fleck'); gc = bg.querySelector('.sbg-glint'); if (gc) gctx = gc.getContext('2d'); }
-      if (gc && gctx) {
-        const r = gc.getBoundingClientRect();
-        if (Math.abs(r.width - GW) > 1 || Math.abs(r.height - GH) > 1) {   // размер сменился — пере-выборка
-          const dpr = Math.min(2, devicePixelRatio || 1); GW = r.width; GH = r.height;
-          gc.width = Math.max(1, Math.round(GW * dpr)); gc.height = Math.max(1, Math.round(GH * dpr)); gctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-          parts = null; sampling = false;
-        }
-        if (GW > 0 && !sampling && parts == null) sample(GW, GH);
-      }
-      let sx, sy;
-      if (T - gT < 0.6) { sx = gx; sy = gy; }
-      else { sx = Math.sin(T * 0.28) * 0.5; sy = Math.sin(T * 0.21) * 0.4; }
-      tx += (sx - tx) * 0.06; ty += (sy - ty) * 0.06;
+    if (!fleck) {
+      fleck = bg.querySelector('.sbg-fleck'); gc = bg.querySelector('.sbg-glint');
+      if (gc) { gctx = gc.getContext('2d'); measure(); watchSize(); }
+    }
+    if (gc && gctx && GW > 0 && !sampling && parts == null) sample(GW, GH);
+    // в покое фон продолжает мягко дышать — это и есть живая патина; работа при этом
+    // копеечная: слои едут на видеокарте, искры перерисовываются 30 раз в секунду
+    let sx, sy;
+    if (T - gT < 1.2) { sx = gx; sy = gy; }
+    else { sx = Math.sin(T * 0.28) * 0.5; sy = Math.sin(T * 0.21) * 0.4; }
+    tx += (sx - tx) * 0.06; ty += (sy - ty) * 0.06;
+    // параллакс двигаем 30 раз в секунду: движение медленное, на глаз то же самое,
+    // а слои перекладываются вдвое реже
+    if (T - lastMove >= 0.033) {
+      lastMove = T;
       const px = (tx * 7).toFixed(1) + 'px', py = (ty * 5).toFixed(1) + 'px';
       if (fleck) { fleck.style.setProperty('--px', px); fleck.style.setProperty('--py', py); }
       if (gc) { gc.style.setProperty('--px', px); gc.style.setProperty('--py', py); }
-      if (!gild) gild = getComputedStyle(document.documentElement).getPropertyValue('--gild').trim() || '#d8a54f';
-      if (gc && gctx) renderGlint(gild);
+    }
+    if (!gild) gild = getComputedStyle(document.documentElement).getPropertyValue('--gild').trim() || '#d8a54f';
+    // канва блеска перерисовывается 30 раз в секунду — на глаз то же самое, а работы вдвое меньше
+    if (gc && gctx && T - lastDraw >= 0.033) {
+      lastDraw = T;
+      renderGlint(gild);
     }
     requestAnimationFrame(frame);
   }
   // цикл запускается заново, когда полка снова на экране (showShelf) или включили живой фон
-  window.shelfBgKick = () => { if (!running) { running = true; requestAnimationFrame(frame); } };
+  window.shelfBgKick = () => { measure(); if (!running) { running = true; requestAnimationFrame(frame); } };
   window.shelfBgKick();
 })();
 
@@ -1920,6 +1998,17 @@ function renderAnnotCover() {
 // карточку заводилась своя цепочка setTimeout: две сотни книг = две сотни живых таймеров,
 // которые дёргали раскладку даже когда полка просто лежит на экране.
 // Замер один на весь список, в одном кадре — без чересполосицы «прочитал-записал».
+// Бегущая строка едет только у карточек, которые видно. Сотня книг = сотня вечных
+// анимаций за экраном, а это постоянная перерисовка и разряд батареи впустую.
+let marqIO = null;
+function marqWatch(el, off) {
+  if (!window.IntersectionObserver) { if (!off) el.classList.add('marq-live'); return; }
+  if (!marqIO) marqIO = new IntersectionObserver(ents => {
+    for (const e of ents) e.target.classList.toggle('marq-live', e.isIntersecting);
+  }, { rootMargin: '15% 0px' });
+  if (off) { marqIO.unobserve(el); el.classList.remove('marq-live'); }
+  else marqIO.observe(el);
+}
 function cardMarquee(root) {
   if (!root) return;
   const els = [...root.querySelectorAll('.book-title, .ab-card-title')];
@@ -1937,7 +2026,8 @@ function cardMarquee(root) {
         inner.style.setProperty('--marq', over[i] + 'px');
         inner.style.setProperty('--marq-dur', Math.max(6, over[i] / 24).toFixed(1) + 's');
         el.classList.add('is-marquee');
-      } else el.classList.remove('is-marquee');
+        marqWatch(el);   // ехать будет только пока карточка на экране
+      } else { el.classList.remove('is-marquee'); marqWatch(el, true); }
     });
   });
 }
@@ -2765,40 +2855,40 @@ function toggleFilters() {
   const audio = shelfTab === 'audio';
   const panel = audio ? $('#audio-filters') : $('#shelf-filters'), btn = $('#filter-btn');
   // ориентируемся на класс .active кнопки — он отражает намерение сразу, без гонки с анимацией
+  // что уезжает вниз вместе с раскрытием — всё, что лежит под панелью
+  const movers = (audio ? ['#audio-content'] : ['#shelf-grid', '#shelf-footer'])
+    .map(s => $(s)).filter(Boolean);
   if (!btn.classList.contains('active')) {
     if (audio) buildAudioFiltersPanel(); else buildFiltersPanel();
-    panel.hidden = false;
-    panel.style.height = '0px';
     btn.classList.add('active');
-    // два кадра: стартовая нулевая высота должна примениться до начала анимации
+    // высота занимается сразу, а видимое раскрытие идёт обрезкой: панель проявляется
+    // сверху вниз, полка едет за ней сдвигом — ни одного пересчёта раскладки по пути.
+    // сдвиг меряем по факту (сколько реально уехала полка), а не складываем отступы
+    const ref = movers[0], was = ref ? ref.getBoundingClientRect().top : 0;
+    panel.hidden = false;
+    const h = ref ? Math.round(ref.getBoundingClientRect().top - was) : 0;
+    panel._fltH = h;
+    for (const m of movers) { m.classList.remove('flt-shift'); m.style.transform = `translateY(${-h}px)`; }
     requestAnimationFrame(() => requestAnimationFrame(() => {
       panel.classList.add('open');
-      panel.style.height = panel.scrollHeight + 'px';
-      // по окончании отдаём высоту содержимому — оно меняется, пока фильтры крутят
-      const grew = ev => {
-        if (ev.target !== panel || ev.propertyName !== 'height') return;
-        panel.removeEventListener('transitionend', grew);
-        if (panel.classList.contains('open')) panel.style.height = 'auto';
-      };
-      panel.addEventListener('transitionend', grew);
+      for (const m of movers) { m.classList.add('flt-shift'); m.style.transform = ''; }
     }));
   } else {
     closeFltMenu();
     btn.classList.remove('active');
-    panel.style.height = panel.scrollHeight + 'px';   // от 'auto' анимации нет — фиксируем текущую
-    requestAnimationFrame(() => {
-      panel.classList.remove('open');
-      panel.style.height = '0px';
-    });
+    const h = panel._fltH || Math.round(panel.getBoundingClientRect().height);
+    for (const m of movers) { m.classList.add('flt-shift'); m.style.transform = `translateY(${-h}px)`; }
+    panel.classList.remove('open');
     let done = false;
     const finish = () => {
       if (done) return; done = true;
-      if (!panel.classList.contains('open')) { panel.hidden = true; panel.style.height = ''; }
       panel.removeEventListener('transitionend', te);
+      if (!panel.classList.contains('open')) panel.hidden = true;
+      for (const m of movers) { m.classList.remove('flt-shift'); m.style.transform = ''; }
     };
-    const te = ev => { if (ev.target === panel && ev.propertyName === 'height') finish(); };
+    const te = ev => { if (ev.target === panel && ev.propertyName === 'clip-path') finish(); };
     panel.addEventListener('transitionend', te);
-    setTimeout(finish, 420);   // страховка, если transitionend не придёт
+    setTimeout(finish, 380);   // страховка, если transitionend не придёт
   }
 }
 

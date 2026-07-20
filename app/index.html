@@ -551,7 +551,7 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
       <span data-i18n="syncLoad">Загрузить и объединить</span>
       <small data-i18n="syncLoadSub">Принимает и файл синхронизации, и полную копию — объединит без повторов</small>
     </button>
-    <input id="restore-input" type="file" hidden accept=".json,.tlib,application/json,application/octet-stream">
+    <input id="restore-input" type="file" hidden accept=".json,.gz,.tlib,application/json,application/gzip,application/octet-stream">
     <button id="reset-progress-btn" class="danger-btn" data-i18n="reset" hidden>Сбросить прогресс этой книги</button>
   </div>
 </div>
@@ -816,6 +816,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=249"></script>
+<script src="app.js?v=250"></script>
 </body>
 </html>

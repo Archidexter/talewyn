@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.95';
+const APP_VERSION = '1.0.96';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -1218,7 +1218,7 @@ async function boot() {
   if ('serviceWorker' in navigator && location.protocol.startsWith('http'))
     navigator.serviceWorker.register('sw.js').catch(() => {});
   try {
-    state.books = (await dbAll('books')).sort((a, b) => a.addedAt - b.addedAt);
+    state.books = sortShelf(await dbAll('books'));
   } catch (e) {
     document.documentElement.dataset.err = 'idb: ' + e.message;
     state.books = [];
@@ -1814,6 +1814,12 @@ function bookGenre(b) {
   const m = Importers.mapGenre && Importers.mapGenre((b.title || '') + ' ' + (b.annotation || ''));
   return (m && m !== 'Другое') ? m : (b.genre || m || '');
 }
+// ── ручной порядок полки ──
+// ord — позиция, выставленная перетаскиванием (0,1,2…). У книг без ord берём addedAt: он
+// на порядки больше любого ord, поэтому новые книги всегда встают в конец, а не в середину.
+const shelfOrd = r => (typeof r.ord === 'number' ? r.ord : (r.addedAt || 0));
+const sortShelf = arr => arr.sort((a, b) => shelfOrd(a) - shelfOrd(b));
+
 function filteredBooks() {
   const f = shelfFilters;
   return state.books.filter(b => {
@@ -1882,7 +1888,11 @@ async function renderShelf() {
   // плавное появление — только у книг, впервые попавших в библиотеку (не при фильтрации/первом рендере)
   if (seenBookIds) {
     grid.querySelectorAll('.book-card').forEach(c => {
-      if (!seenBookIds.has(c.dataset.book)) c.classList.add('book-in');
+      if (seenBookIds.has(c.dataset.book)) return;
+      c.classList.add('book-in');
+      // класс снимаем сразу после проигрыша: анимация с fill: both держала бы transform: none,
+      // а он по правилам CSS сильнее inline-стиля — ломались бы перетаскивание и FLIP при удалении
+      c.addEventListener('animationend', () => c.classList.remove('book-in'), { once: true });
     });
   }
   seenBookIds = new Set(state.books.map(b => b.id));
@@ -2029,6 +2039,7 @@ function toggleSel(id) {
 function selClick(e) {
   if (e.target.closest('#add-fab')) return false;
   if (performance.now() - lpFiredAt < 700) return true;   // это отпускание долгого нажатия — игнор
+  if (performance.now() - cardDragEndedAt < 600) return true;   // отпустили после перетаскивания — не выбор
   const card = e.target.closest('.book-card, .ab-card');
   if (card) {
     const kind = card.classList.contains('ab-card') ? 'audio' : 'books';
@@ -2036,6 +2047,128 @@ function selClick(e) {
   }
   return true;
 }
+// ══════════ перетаскивание карточек: ручной порядок книг и аудиокниг ══════════
+// Жест — продолжение долгого нажатия: подержал (карточка выбралась) и, НЕ отпуская, повёл —
+// карточка отрывается и едет за пальцем, соседи плавно разъезжаются (FLIP), у краёв экрана
+// полка подкручивается сама. Отпустил — карточка встаёт в слот, порядок уходит в базу.
+let cardHold = null;         // палец на карточке после долгого нажатия — ждём движения
+let cardDrag = null;         // идёт перетаскивание
+let cardDragEndedAt = 0;     // отпускание после перетаскивания не должно считаться тапом
+const DRAG_START = 6;        // с какого сдвига считаем, что человек повёл, а не дрогнул
+
+const dragGridOf = card => card.closest('#shelf-grid, .ab-grid');
+
+function beginCardDrag(x, y) {
+  if (!cardHold) return;
+  const card = cardHold.card; cardHold = null;
+  const grid = dragGridOf(card);
+  if (!grid) return;
+  const items = [...grid.children].filter(el => el.matches('.book-card, .ab-card'));
+  const from = items.indexOf(card);
+  if (from < 0 || items.length < 2) return;
+  // анимация появления новой книги (fill: both) держит transform: none и по правилам CSS
+  // перебивает inline-стиль — карточка бы не сдвинулась с места. Снимаем её перед перетаскиванием.
+  for (const el of items) el.classList.remove('book-in');
+  // геометрию держим в координатах документа — тогда автоскролл её не сдвигает
+  const rects = items.map(el => {
+    const r = el.getBoundingClientRect();
+    return { x: r.left + scrollX, y: r.top + scrollY, w: r.width, h: r.height };
+  });
+  cardDrag = { card, grid, items, rects, from, to: from,
+               x0: x + scrollX, y0: y + scrollY, cx: x, cy: y, raf: 0 };
+  grid.classList.add('grid-dragging');
+  card.classList.add('card-drag');
+  grid.style.touchAction = 'none';
+  if (navigator.vibrate) { try { navigator.vibrate(12); } catch {} }
+  cardDragMove();
+  cardDrag.raf = requestAnimationFrame(cardDragTick);
+}
+
+// расставить соседей по слотам: те, через кого «перешагнули», сдвигаются на соседнее место
+function layoutCardSlots(d) {
+  d.items.forEach((el, i) => {
+    if (i === d.from) return;
+    let j = i;
+    if (d.from < d.to && i > d.from && i <= d.to) j = i - 1;
+    else if (d.from > d.to && i >= d.to && i < d.from) j = i + 1;
+    const sx = d.rects[j].x - d.rects[i].x, sy = d.rects[j].y - d.rects[i].y;
+    el.style.transform = (sx || sy) ? `translate(${sx}px, ${sy}px)` : '';
+  });
+}
+
+function cardDragMove() {
+  const d = cardDrag; if (!d) return;
+  const dx = d.cx + scrollX - d.x0, dy = d.cy + scrollY - d.y0;
+  d.card.style.transform = `translate(${dx}px, ${dy}px) scale(1.06)`;
+  // куда встанет — ближайший слот к центру перетаскиваемой карточки (сетка двумерная,
+  // поэтому не «номер строки», а честное расстояние до центров)
+  const r0 = d.rects[d.from];
+  const cx = r0.x + r0.w / 2 + dx, cy = r0.y + r0.h / 2 + dy;
+  let to = d.from, best = Infinity;
+  d.rects.forEach((r, i) => {
+    const q = Math.hypot(r.x + r.w / 2 - cx, r.y + r.h / 2 - cy);
+    if (q < best) { best = q; to = i; }
+  });
+  if (to === d.to) return;
+  d.to = to;
+  layoutCardSlots(d);
+}
+
+// у верхнего/нижнего края полка едет сама — иначе книгу с низа не поднять наверх
+function cardDragTick() {
+  const d = cardDrag; if (!d) return;
+  const EDGE = 100, MAX = 16;
+  let v = 0;
+  if (d.cy < EDGE) v = -MAX * (1 - d.cy / EDGE);
+  else if (d.cy > innerHeight - EDGE) v = MAX * (1 - (innerHeight - d.cy) / EDGE);
+  if (v) {
+    const before = scrollY;
+    scrollBy(0, v);
+    if (scrollY !== before) cardDragMove();
+  }
+  d.raf = requestAnimationFrame(cardDragTick);
+}
+
+async function endCardDrag() {
+  const d = cardDrag; if (!d) return;
+  cardDrag = null;
+  cancelAnimationFrame(d.raf);
+  cardDragEndedAt = performance.now();
+  const { card, grid, items, rects, from, to } = d;
+  // доводим карточку до слота (заодно сходит увеличение), и только потом трогаем DOM —
+  // к этому моменту она уже стоит там, где окажется, поэтому перестановка не мигает
+  card.style.transition = 'transform .2s cubic-bezier(.4, 0, .2, 1), filter .2s ease';
+  card.style.transform = `translate(${rects[to].x - rects[from].x}px, ${rects[to].y - rects[from].y}px)`;
+  await new Promise(r => setTimeout(r, 210));
+  if (to !== from) {
+    const arr = items.filter(el => el !== card);
+    arr.splice(to, 0, card);
+    arr.forEach(el => grid.appendChild(el));
+  }
+  card.classList.remove('card-drag');
+  for (const el of items) { el.style.transition = ''; el.style.transform = ''; }
+  grid.classList.remove('grid-dragging');
+  grid.style.touchAction = '';
+  if (to !== from) await saveShelfOrder(grid);
+}
+
+// порядок из DOM — в state и базу. При фильтре или в коллекции видна лишь часть полки:
+// переставляем книги только по их же слотам, остальные остаются на своих местах.
+async function saveShelfOrder(grid) {
+  const audio = grid.classList.contains('ab-grid');
+  const store = audio ? 'audiobooks' : 'books';
+  const arr = audio ? state.audiobooks : state.books;
+  const ids = [...grid.children].filter(el => el.matches('.book-card, .ab-card')).map(cardIdOf);
+  const shown = new Set(ids);
+  const byId = new Map(arr.map(r => [r.id, r]));
+  const slots = [];
+  arr.forEach((r, i) => { if (shown.has(r.id)) slots.push(i); });
+  slots.forEach((slot, k) => { const r = byId.get(ids[k]); if (r) arr[slot] = r; });
+  for (let i = 0; i < arr.length; i++) {
+    if (arr[i].ord !== i) { arr[i].ord = i; try { await dbPut(store, arr[i]); } catch {} }
+  }
+}
+
 // тихое удаление аудиокниги (deleteAudiobook — с подтверждением и перерисовкой, для пачки не годится)
 async function dropAudiobook(id) {
   if (ab && ab.rec && ab.rec.id === id) {
@@ -3040,7 +3173,7 @@ async function doImport(files) {
   }
   importBusy = false;
   if (added) {
-    state.books = (await dbAll('books')).sort((a, b) => a.addedAt - b.addedAt);
+    state.books = sortShelf(await dbAll('books'));
     if (!$('#shelf-view').hidden) renderShelf();
   }
   if (addedAudio) {
@@ -3169,7 +3302,7 @@ async function exportSync() {
 }
 
 async function buildBackup() {
-  const books = (await dbAll('books')).sort((a, b) => a.addedAt - b.addedAt);
+  const books = sortShelf(await dbAll('books'));
   const head = {
     fmt: 'talewyn-library', ver: 1, app: APP_VERSION, created: Date.now(),
     settings,
@@ -5547,7 +5680,7 @@ function abCoverUrl(rec) {
   return abCoverUrls.get(rec.id);
 }
 async function loadAudiobooks() {
-  state.audiobooks = (await dbAll('audiobooks')).sort((a, b) => a.addedAt - b.addedAt);
+  state.audiobooks = sortShelf(await dbAll('audiobooks'));
 }
 function abPlayedSeconds(rec, prog) {
   if (!prog) return 0;
@@ -7640,30 +7773,83 @@ function bindUI() {
     if (card) location.hash = '#/a/' + card.dataset.ab;
   });
 
-  // долгое нажатие по карточке полки → режим мультивыбора (touch); правый клик — на десктопе
+  // долгое нажатие по карточке полки → режим мультивыбора (touch); правый клик — на десктопе.
+  // Не отпустил и повёл — то же удержание переходит в перетаскивание карточки (ручной порядок).
   {
     let lpTimer = null, lpStart = null;
     const shelfShown = () => !$('#shelf-view').hidden;
     const cancelLp = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } };
+    // палец ещё на карточке — держим её «взведённой» под перетаскивание
+    const armHold = (card, x, y) => { cardHold = { card, x, y }; };
     addEventListener('touchstart', e => {
-      if (!shelfShown() || selMode || uiOverlayOpen() || e.touches.length !== 1) return;
+      if (!shelfShown() || uiOverlayOpen() || e.touches.length !== 1) return;
       const card = e.target.closest('.book-card, .ab-card');
       if (!card) return;
+      // в режиме выбора удержание не трогает выбор — сразу готовит перетаскивание
+      const already = selMode && (card.classList.contains('ab-card') ? 'audio' : 'books') === selKind;
       lpStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
       lpTimer = setTimeout(() => {
-        lpTimer = null; lpFiredAt = performance.now();
-        const kind = card.classList.contains('ab-card') ? 'audio' : 'books';
-        enterSelMode(kind, cardIdOf(card));
+        lpTimer = null;
+        if (!already) {
+          lpFiredAt = performance.now();
+          const kind = card.classList.contains('ab-card') ? 'audio' : 'books';
+          enterSelMode(kind, cardIdOf(card));
+        }
+        armHold(card, lpStart.x, lpStart.y);
         if (navigator.vibrate) { try { navigator.vibrate(15); } catch {} }
-      }, 500);
+      }, already ? 320 : 500);
     }, { passive: true });
+    // ведём перетаскивание сами и гасим прокрутку: без preventDefault полка уедет под пальцем
     addEventListener('touchmove', e => {
+      if (cardDrag) {
+        e.preventDefault();
+        const t = e.touches[0];
+        if (t) { cardDrag.cx = t.clientX; cardDrag.cy = t.clientY; cardDragMove(); }
+        return;
+      }
+      if (cardHold && e.touches.length === 1) {
+        const t = e.touches[0];
+        if (Math.hypot(t.clientX - cardHold.x, t.clientY - cardHold.y) > DRAG_START) {
+          e.preventDefault();
+          beginCardDrag(t.clientX, t.clientY);
+        }
+        return;
+      }
       if (!lpTimer) return;
       const p = e.touches[0];
       if (Math.hypot(p.clientX - lpStart.x, p.clientY - lpStart.y) > 10) cancelLp();
-    }, { passive: true });
-    addEventListener('touchend', cancelLp, { passive: true });
-    addEventListener('touchcancel', cancelLp, { passive: true });
+    }, { passive: false });
+    const dropHold = () => { cardHold = null; if (cardDrag) endCardDrag(); cancelLp(); };
+    addEventListener('touchend', dropHold, { passive: true });
+    addEventListener('touchcancel', dropHold, { passive: true });
+    // мышь (ПК): то же удержание левой кнопкой — выбор, а с движением превращается в перетаскивание
+    addEventListener('pointerdown', e => {
+      if (e.pointerType === 'touch' || e.button !== 0) return;
+      if (!shelfShown() || uiOverlayOpen()) return;
+      const card = e.target.closest('.book-card, .ab-card');
+      if (!card) return;
+      const already = selMode && (card.classList.contains('ab-card') ? 'audio' : 'books') === selKind;
+      lpStart = { x: e.clientX, y: e.clientY };
+      lpTimer = setTimeout(() => {
+        lpTimer = null;
+        if (!already) {
+          lpFiredAt = performance.now();
+          enterSelMode(card.classList.contains('ab-card') ? 'audio' : 'books', cardIdOf(card));
+        }
+        armHold(card, lpStart.x, lpStart.y);
+      }, already ? 320 : 500);
+    });
+    addEventListener('pointermove', e => {
+      if (e.pointerType === 'touch') return;   // тач ведём через touchmove (там же гасим прокрутку)
+      if (cardDrag) { cardDrag.cx = e.clientX; cardDrag.cy = e.clientY; cardDragMove(); return; }
+      if (cardHold) {
+        if (Math.hypot(e.clientX - cardHold.x, e.clientY - cardHold.y) > DRAG_START)
+          beginCardDrag(e.clientX, e.clientY);
+        return;
+      }
+      if (lpTimer && Math.hypot(e.clientX - lpStart.x, e.clientY - lpStart.y) > 10) cancelLp();
+    });
+    addEventListener('pointerup', e => { if (e.pointerType !== 'touch') dropHold(); });
     addEventListener('contextmenu', e => {
       if (!shelfShown() || selMode || uiOverlayOpen()) return;
       const card = e.target.closest('.book-card, .ab-card');
@@ -7696,10 +7882,11 @@ function bindUI() {
       // отменил клик по кнопке. Исключаем лишь то, где горизонталь значит своё: поля ввода
       // (курсор/выделение), ползунки и сама панель вкладок.
       // #add-fab — перетаскиваемый кластер: касания на нём вкладки НЕ листают
-      if (fabDragging || e.target.closest('input, textarea, select, .shelf-tabs, #col-tab, .col-grip, #add-fab')) return;
+      if (fabDragging || cardDrag || cardHold || e.target.closest('input, textarea, select, .shelf-tabs, #col-tab, .col-grip, #add-fab')) return;
       sx = e.touches[0].clientX; sy = e.touches[0].clientY; active = true;
     }, { passive: true });
     addEventListener('touchmove', e => {
+      if (cardDrag || cardHold) { active = false; return; }   // тащим карточку — вкладки не листаем
       if (!active || axis || e.touches.length !== 1) return;
       const dx = e.touches[0].clientX - sx, dy = e.touches[0].clientY - sy;
       if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
@@ -8688,7 +8875,7 @@ async function selftest() {
       step(`${name}: глав=${data.chapters.length} изобр=${data.images.size}`
         + ` опис=${(data.annotation || '').length} гл1="${(ch && ch.title || '').slice(0, 40)}"`);
     }
-    state.books = (await dbAll('books')).sort((a, b) => a.addedAt - b.addedAt);
+    state.books = sortShelf(await dbAll('books'));
     out.books = state.books.length;
     if (firstId) {   // полный путь читалки: открыть главу, отметить прочитанной
       await anchor();
@@ -8737,7 +8924,7 @@ async function selftest() {
         step('backup-cleared');
         const r = await mergeImport({ text: () => blob.text() });
         step('backup-restored');
-        state.books = (await dbAll('books')).sort((a, b) => a.addedAt - b.addedAt);
+        state.books = sortShelf(await dbAll('books'));
         const ch0 = await dbGet('chapters', [firstId, 0]);
         out.backup = {
           size: blob.size, restored: r.added, books: state.books.length,

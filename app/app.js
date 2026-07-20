@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.1.22';
+const APP_VERSION = '1.1.23';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -1273,9 +1273,9 @@ async function boot() {
 }
 
 // Заставка держит экран, пока приложение собирается: без неё было видно пустую полку,
-// а потом в неё рывком влетало содержимое. Минимум 600мс — чтобы она не мигала на быстрых
+// а потом в неё рывком влетало содержимое. Минимум 500мс — чтобы она не мигала на быстрых
 // устройствах; убираем только после кадра, в котором полка уже отрисована.
-const BOOT_SPLASH_MIN = 600;
+const BOOT_SPLASH_MIN = 500;
 const bootAt = performance.now();
 function hideBootSplash() {
   const el = document.getElementById('boot-splash');

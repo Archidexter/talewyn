@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.0.98';
+const APP_VERSION = '1.0.99';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -237,6 +237,7 @@ const I18N = {
     pronunEmpty: 'Пока пусто', wpPron: 'Произношение', wpSay: 'Озвучить',
     otaReady: 'Обновление {v} готово', otaApply: 'Обновить',
     updateT: 'Проверить обновления', otaNoUpd: 'Обновлять нечего',
+    otaNoNet: 'Не удалось проверить обновления',
     dlTitle: 'Загрузки', dlQueued: 'в очереди', dlWorking: 'обработка…', dlProgN: 'файл {i} из {n}', dlCancel: 'Отменить загрузку', dlEmpty: 'Нет активных загрузок',
     colTitle: 'Коллекции', colNew: 'Новая коллекция', colNamePh: 'Название коллекции',
     colCancel: 'Отменить', colSave: 'Сохранить', colDelete: 'Удалить коллекцию',
@@ -413,6 +414,7 @@ const I18N = {
     pronunEmpty: 'Empty', wpPron: 'Pronunciation', wpSay: 'Speak',
     otaReady: 'Update {v} ready', otaApply: 'Update',
     updateT: 'Check for updates', otaNoUpd: 'Nothing to update',
+    otaNoNet: "Couldn't check for updates",
     dlTitle: 'Downloads', dlQueued: 'queued', dlWorking: 'processing…', dlProgN: 'file {i} of {n}', dlCancel: 'Cancel download', dlEmpty: 'No active downloads',
     colTitle: 'Collections', colNew: 'New collection', colNamePh: 'Collection name',
     colCancel: 'Cancel', colSave: 'Save', colDelete: 'Delete collection',
@@ -1253,7 +1255,16 @@ function hideBootSplash() {
 // Всё под guard'ами: в PWA/вебе и при любой ошибке молча ничего не делаем.
 const capUpdater = (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorUpdater) || null;
 const isNativeApp = () => !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
-const OTA_MANIFEST = 'https://archidexter.github.io/talewyn/app/version.json';
+// Источники обновления — по порядку. GitHub основной, HuggingFace зеркало: у части читателей
+// GitHub блокируется провайдером, да и сам он временами отдаёт 502/503. Список живёт в вебе,
+// поэтому новые зеркала можно добавить по воздуху, без пересборки APK.
+const OTA_MANIFESTS = [
+  'https://archidexter.github.io/talewyn/app/version.json',
+  'https://huggingface.co/datasets/Archidexter/talewyn-assets/resolve/main/version.json',
+];
+const OTA_SRC_KEY = 'talewyn-ota-src';   // какой источник ответил в прошлый раз — его и пробуем первым
+// склеить список адресов: сначала массив из манифеста, следом одиночное поле (старая схема), без повторов
+const otaUrls = (list, one) => [...new Set([...(Array.isArray(list) ? list : []), ...(one ? [one] : [])].filter(Boolean))];
 function cmpVer(a, b) {   // 1.0.23 vs 1.0.22 → 1/0/-1
   const pa = String(a).split('.').map(n => parseInt(n, 10) || 0);
   const pb = String(b).split('.').map(n => parseInt(n, 10) || 0);
@@ -1275,12 +1286,31 @@ async function otaInit() {
   } catch {}
   setTimeout(otaCheck, 3000);                            // фоновая проверка, не мешаем старту
 }
+// Манифест берём с первого ответившего источника. Таймаут обязателен: без него мёртвый хост
+// висит до дефолта WebView, и проверка обновлений «молчит» минутами.
+// Возвращает { m } — манифест, либо { err:'net' } — не ответил НИ ОДИН источник (это не то же
+// самое, что «обновлений нет», и говорить о них надо по-разному).
 async function otaFetchManifest() {
+  let order = OTA_MANIFESTS;
   try {
-    const res = await fetch(OTA_MANIFEST + '?t=' + Math.floor(Date.now() / 3600000), { cache: 'no-store' });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch { return null; }
+    const last = localStorage.getItem(OTA_SRC_KEY);
+    if (last && OTA_MANIFESTS.includes(last)) order = [last, ...OTA_MANIFESTS.filter(u => u !== last)];
+  } catch {}
+  const bust = '?t=' + Math.floor(Date.now() / 3600000);
+  for (const url of order) {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 6000);
+    try {
+      const res = await fetch(url + bust, { cache: 'no-store', signal: ac.signal });
+      if (!res.ok) continue;
+      const m = await res.json();
+      if (!m || typeof m !== 'object') continue;
+      try { localStorage.setItem(OTA_SRC_KEY, url); } catch {}
+      return { m };
+    } catch { /* мёртвый или заблокированный хост — пробуем следующий */ }
+    finally { clearTimeout(timer); }
+  }
+  return { err: 'net' };
 }
 // из манифеста определяем доступное обновление (нативное важнее веба)
 async function otaEval(m) {
@@ -1291,11 +1321,33 @@ async function otaEval(m) {
     let nativeVer = null;
     try { const cur = await capUpdater.current(); if (cur && cur.native) nativeVer = cur.native; } catch {}
     if (nativeVer && cmpVer(m.native, nativeVer) > 0) return {
-      kind: 'native', version: m.native, apkUrl: m.apkUrl,
+      kind: 'native', version: m.native, apkUrl: m.apkUrl, apkUrls: otaUrls(m.apkUrls, m.apkUrl),
       apkSha256: m.apkSha256 || '', apkSize: +m.apkSize || 0,
     };
   }
-  if (m.web && m.bundleUrl && cmpVer(m.web, APP_VERSION) > 0) return { kind: 'web', version: m.web, bundleUrl: m.bundleUrl };
+  if (m.web && (m.bundleUrl || (m.bundleUrls || []).length) && cmpVer(m.web, APP_VERSION) > 0)
+    return { kind: 'web', version: m.web, bundleUrl: m.bundleUrl, bundleUrls: otaUrls(m.bundleUrls, m.bundleUrl) };
+  return null;
+}
+// Скачать бандл, пробуя зеркала по очереди. Capgo принимает ровно один url, поэтому перебор — наш.
+// Между попытками сносим недокачанный бандл этой версии: иначе повторная загрузка с тем же
+// version упирается в уже заведённую запись и падает даже с живого зеркала.
+async function otaDownloadBundle(info) {
+  const urls = (info.bundleUrls && info.bundleUrls.length) ? info.bundleUrls : [info.bundleUrl];
+  const version = String(info.version);
+  let last = null;
+  for (let i = 0; i < urls.length; i++) {
+    try {
+      const b = await capUpdater.download({ version, url: urls[i] });
+      if (b && b.id) return b;
+    } catch (e) { last = e; }
+    try {
+      const all = await capUpdater.list();
+      const dead = ((all && all.bundles) || []).filter(x => x.version === version);
+      for (const d of dead) { try { await capUpdater.delete({ id: d.id }); } catch {} }
+    } catch {}
+  }
+  if (last) throw last;
   return null;
 }
 // маркер на кнопке: есть обновление — стрелки крутятся (оборот-пауза); нет — стоят
@@ -1309,11 +1361,13 @@ function otaMarker() {
 // установщик), поэтому его только помечаем на кнопке и ждём ручного «Обновить».
 async function otaCheck() {
   if (!capUpdater) return;
-  otaInfo = await otaEval(await otaFetchManifest());
+  const r = await otaFetchManifest();
+  if (r.err) return;                                     // сеть молчит — тихо ждём следующего раза
+  otaInfo = await otaEval(r.m);
   otaMarker();
   if (otaInfo && otaInfo.kind === 'web' && otaWebQueued !== otaInfo.version) {
     try {
-      const b = await capUpdater.download({ version: String(otaInfo.version), url: otaInfo.bundleUrl });
+      const b = await otaDownloadBundle(otaInfo);
       if (b && b.id) { await capUpdater.next({ id: b.id }); otaWebQueued = otaInfo.version; }
     } catch { /* не вышло тихо — останется ручной путь по кнопке */ }
   }
@@ -1326,14 +1380,17 @@ async function otaManualCheck() {
   const btn = document.getElementById('update-btn');
   const t0 = Date.now();
   if (btn) btn.classList.add('ota-checking');
-  otaInfo = await otaEval(await otaFetchManifest());
+  const r = await otaFetchManifest();
+  otaInfo = r.err ? null : await otaEval(r.m);
   // докручиваем до конца полного оборота (минимум один), даже если проверка мгновенная
   const spin = 800, elapsed = Date.now() - t0;
   const wait = Math.max(1, Math.ceil(elapsed / spin)) * spin - elapsed;
-  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  if (wait > 0) await new Promise(r2 => setTimeout(r2, wait));
   if (btn) btn.classList.remove('ota-checking');
   otaMarker();
   otaBusy = false;
+  // «не достучались» и «обновлять нечего» — разные вещи: раньше и то и другое молчало одинаково
+  if (r.err) { showToast(t('otaNoNet')); return; }
   if (!otaInfo) { showToast(t('otaNoUpd')); return; }
   if (otaInfo.kind === 'web') showToast(T('otaAvail', { v: otaInfo.version }), t('otaApply'), otaDoWeb);
   else showToast(T('otaAvailApp', { v: otaInfo.version }), t('otaInstall'), otaDoNative);
@@ -1343,7 +1400,7 @@ async function otaDoWeb() {
   if (!capUpdater || !otaInfo || otaInfo.kind !== 'web') return;
   showToast(t('otaDownloading'));
   try {
-    const b = await capUpdater.download({ version: String(otaInfo.version), url: otaInfo.bundleUrl });
+    const b = await otaDownloadBundle(otaInfo);          // GitHub, при неудаче — зеркало
     if (b && b.id) await capUpdater.set({ id: b.id });   // применяет и перезагружает
     else showToast(t('otaFail'));
   } catch { showToast(t('otaFail')); }
@@ -1368,8 +1425,15 @@ function otaDoNative() {
   otaNativeBusy = true;
   showProgress(t('otaDownloading'), 0);   // держим тост открытым с полосой загрузки
   try {
-    U.download(otaInfo.apkUrl, String(otaInfo.version),
-      String(otaInfo.apkSize || 0), otaInfo.apkSha256 || '');
+    const urls = (otaInfo.apkUrls && otaInfo.apkUrls.length) ? otaInfo.apkUrls : [otaInfo.apkUrl];
+    // downloadMulti умеет перебирать зеркала, но живёт только в новых APK: веб-слой прилетает
+    // по воздуху раньше нативного, поэтому проверяем наличие метода и откатываемся на старый
+    if (urls.length > 1 && typeof U.downloadMulti === 'function')
+      U.downloadMulti(JSON.stringify(urls), String(otaInfo.version),
+        String(otaInfo.apkSize || 0), otaInfo.apkSha256 || '');
+    else
+      U.download(urls[0], String(otaInfo.version),
+        String(otaInfo.apkSize || 0), otaInfo.apkSha256 || '');
   } catch { otaNativeBusy = false; showToast(t('otaFail')); }
 }
 // колбэки из натива (вызываются через evaluateJavascript)

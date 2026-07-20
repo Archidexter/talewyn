@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.1.26';
+const APP_VERSION = '1.1.27';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -635,21 +635,11 @@ function applySettings() {
   // в новый. Размытие за панелями при этом не трогаем — иначе панели «щёлкают».
   if (smooth && !themeSwitch.busy && document.startViewTransition) {
     themeSwitch.busy = true;
-    // Живой фон на время перехода замирает: он всё равно закрыт кадром перехода,
-    // а его кадры (канва блеска + два движущихся полноэкранных слоя) — ровно то,
-    // из-за чего кроссфейду не хватало времени и он шёл рывками.
-    if (window.shelfBgPause) window.shelfBgPause(true);
     try {
       const vt = document.startViewTransition(() => applyTheme(theme, false));
-      vt.finished.catch(() => {}).finally(() => {
-        themeSwitch.busy = false;
-        if (window.shelfBgPause) window.shelfBgPause(false);
-      });
+      vt.finished.catch(() => {}).finally(() => { themeSwitch.busy = false; });
       return;
-    } catch {
-      themeSwitch.busy = false;
-      if (window.shelfBgPause) window.shelfBgPause(false);
-    }
+    } catch { themeSwitch.busy = false; }
   }
   applyTheme(theme, smooth);
 }
@@ -878,7 +868,7 @@ mqDark.addEventListener('change', () => { if (settings.theme === 'auto') applySe
     const bg = document.getElementById('shelf-bg');
     const sv = document.getElementById('shelf-view');
     const live = bg && document.body.classList.contains('bg-live') && sv && !sv.hidden;
-    if (!live || paused) { running = false; return; }   // полка скрыта или идёт переход темы
+    if (!live) { running = false; return; }   // полка скрыта (читалка, плеер) — кадры не тратим
     if (!fleck) {
       fleck = bg.querySelector('.sbg-fleck'); gc = bg.querySelector('.sbg-glint');
       if (gc) { gctx = gc.getContext('2d'); measure(); watchSize(); }
@@ -907,12 +897,7 @@ mqDark.addEventListener('change', () => { if (settings.theme === 'auto') applySe
     requestAnimationFrame(frame);
   }
   // цикл запускается заново, когда полка снова на экране (showShelf) или включили живой фон
-  let paused = false;
-  window.shelfBgPause = on => {
-    paused = !!on;
-    if (!paused && !running) { running = true; requestAnimationFrame(frame); }
-  };
-  window.shelfBgKick = () => { if (paused) return; measure(); if (!running) { running = true; requestAnimationFrame(frame); } };
+  window.shelfBgKick = () => { measure(); if (!running) { running = true; requestAnimationFrame(frame); } };
   window.shelfBgKick();
 })();
 

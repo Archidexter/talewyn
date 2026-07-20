@@ -1259,8 +1259,9 @@ body.reader-comic .chapter-body img { margin: 0 auto; border-radius: 4px; }
 .reader-fabnav {
   position: fixed; z-index: 46;
   left: 0; right: 0;
-  /* ниже аудиопанели (её низ 92px), у самого нижнего края. По центру ширины (20%/80%). */
-  bottom: calc(17px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));
+  /* ниже аудиопанели (её низ 92px). Подняты на половину своей высоты (22px из 44) —
+     у самого края они были неудобны для большого пальца. */
+  bottom: calc(39px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));
   display: flex; justify-content: space-between; align-items: center;
   padding-left: calc(20% - 22px);
   padding-right: calc(20% - 22px);

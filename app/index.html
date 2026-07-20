@@ -10,7 +10,7 @@
 if(th==='auto')th=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <link rel="stylesheet" href="fonts.css?v=9">
-<link rel="stylesheet" href="app.css?v=206">
+<link rel="stylesheet" href="app.css?v=208">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -59,14 +59,13 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
 
 <!-- живой фон полки (Патина) — СНАРУЖИ #shelf-view: анимация входа полки (transform)
      иначе дёргала бы fixed-фон при возврате на главный. Видимость — через :has, только пока полка активна. -->
+<!-- Фон собран в ДВА слоя вместо пяти и без режимов смешивания: смешивание заставляет
+     видеокарту перечитывать всё, что лежит под слоем, на каждом кадре.
+     «Плита» — неподвижное: цвет темы, зерно, виньетка. «Живой» — крупка и блеск,
+     они ездят параллаксом и рисуются готовыми картинками. -->
 <div id="shelf-bg" aria-hidden="true">
-  <div class="sbg-base"></div>
-  <div class="sbg-vignette"></div>
-  <div class="sbg-grain"></div>
-  <!-- крупка: рисунок задан маской (растрируется один раз), цвет — обычный background,
-       поэтому смена темы её перекрашивает плавно и без пересчёта фильтра -->
-  <div class="sbg-fleck"><div class="sbg-fleck-ink"></div></div>
-  <canvas class="sbg-glint"></canvas>
+  <canvas class="sbg-plate"></canvas>
+  <canvas class="sbg-live"></canvas>
 </div>
 
 <!-- ══════════ Полка ══════════ -->
@@ -804,6 +803,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=261"></script>
+<script src="app.js?v=263"></script>
 </body>
 </html>

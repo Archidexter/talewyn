@@ -230,50 +230,14 @@ img, svg { -webkit-user-drag: none; }
 #shelf-bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; display: none; }
 /* показываем только пока активна полка (:has) и включён фон — фон вне #shelf-view, чтобы вход не дёргал */
 body.bg-live:has(#shelf-view:not([hidden])) #shelf-bg { display: block; }
-#shelf-bg > div { position: absolute; inset: 0; }
-#shelf-bg .sbg-base { background: var(--bg); }
-#shelf-bg .sbg-vignette {
-  background: radial-gradient(125% 92% at 50% 48%, transparent 52%, rgba(0, 0, 0, .22) 80%, rgba(0, 0, 0, .46) 100%);
-}
-/* зерно — готовая картинка (тот же fractalNoise, но растрируется один раз), а не живой
-   SVG-фильтр: фильтр пересчитывался при каждой перерисовке фона, в том числе на смене темы */
-#shelf-bg .sbg-grain {
-  opacity: .6; mix-blend-mode: overlay;
-  background: var(--grain) 0 0 / 180px 180px repeat;
-}
-/* Крупка ездит параллаксом, но слой вынесен на видеокарту: сдвиг делается
-   translate3d по готовому растру, а не перерисовкой маски на каждом кадре
-   (раньше от любого дрожания руки перерисовывался весь экран). */
-#shelf-bg .sbg-fleck {
-  opacity: .85;
-  transform: translate3d(var(--px, 0px), var(--py, 0px), 0);
-  will-change: transform; backface-visibility: hidden;
-  -webkit-mask: linear-gradient(180deg, #000, transparent 40%, transparent 62%, #000);
-  mask: linear-gradient(180deg, #000, transparent 40%, transparent 62%, #000);
-}
-/* Сама крупка. Рисунок (тот же feTurbulence, что и был) вынесен в МАСКУ: маска не
-   зависит от темы, поэтому браузер растрирует её один раз. Цвет — обычный
-   background-color, его смена стоит копейки и плавно перетекает. Раньше цвет жил
-   внутри фильтра (feFlood), и каждая смена темы пересчитывала турбулентность на
-   весь экран — на телефоне это давало заметное мигание фона. */
-#shelf-bg .sbg-fleck-ink {
-  position: absolute; inset: 0; background-color: var(--gild);
-  -webkit-mask: var(--fleck) center / cover no-repeat;
-  mask: var(--fleck) center / cover no-repeat;
-  /* цвет крупки меняется мгновенно: переливать полноэкранный слой с маской —
-     значит перерисовывать его на каждом кадре перехода, это и есть мигание */
-  transition: none;
-}
-/* слой блеска: зажигает искры РОВНО в точках крупки (позиции считаны с неё) и
-   только при наклоне; в покое пуст, поэтому патина под ним видна как есть */
-#shelf-bg .sbg-glint {
-  position: absolute; inset: 0; width: 100%; height: 100%;
-  mix-blend-mode: screen;
+/* Оба слоя — холсты во весь экран. Плита неподвижна и перерисовывается только при
+   смене темы или размера. Живой слой ездит параллаксом на видеокарте. Режимов
+   смешивания нет ни на одном: они дороже всего остального вместе взятого. */
+#shelf-bg canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+#shelf-bg .sbg-live {
   transform: translate3d(var(--px, 0px), var(--py, 0px), 0);
   will-change: transform; backface-visibility: hidden;
 }
-/* сама крупка растрируется один раз и дальше только ездит вместе со слоем */
-#shelf-bg .sbg-fleck-ink { contain: paint; }
 .lib-header { padding: 10px 0 14px; border-bottom: 1px solid var(--border); }
 /* у шапки полки вместо простой линии — орнамент-разделитель (золотые линии + ромб),
    как в автопоиске и окнах заметок/перевода */

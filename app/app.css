@@ -239,19 +239,18 @@ body.bg-live:has(#shelf-view:not([hidden])) #shelf-bg { display: block; }
 .lib-header { padding: 10px 0 14px; border-bottom: 1px solid var(--border); }
 /* у шапки полки вместо простой линии — орнамент-разделитель (золотые линии + ромб),
    как в автопоиске и окнах заметок/перевода */
-/* та же полоса и на экране книги — между названием с автором и описанием */
-.shelf-head, .lib-header { border-bottom: none; }   /* :has() не берём — старые WebView его не знают */
-.shelf-head .confirm-orn, .lib-header .confirm-orn { margin: 9px 0 0; }
+.shelf-head { border-bottom: none; }
+.shelf-head .confirm-orn { margin: 9px 0 0; }
 /* в самой толстой части (у ромба) — как золотой индикатор активной вкладки: 3px,
    сплошное золото у центра, к краям экрана плавно гаснет */
-.shelf-head .confirm-orn::before, .shelf-head .confirm-orn::after,
-.lib-header .confirm-orn::before, .lib-header .confirm-orn::after { height: 3px; border-radius: 3px; }
-.shelf-head .confirm-orn::before,
-.lib-header .confirm-orn::before { background: linear-gradient(90deg, transparent, var(--gild)); }
-.shelf-head .confirm-orn::after,
-.lib-header .confirm-orn::after { background: linear-gradient(90deg, var(--gild), transparent); }
-.shelf-head .confirm-orn span,
-.lib-header .confirm-orn span { font-size: 14px; color: var(--gild); }
+.shelf-head .confirm-orn::before, .shelf-head .confirm-orn::after { height: 3px; border-radius: 3px; }
+.shelf-head .confirm-orn::before { background: linear-gradient(90deg, transparent, var(--gild)); }
+.shelf-head .confirm-orn::after { background: linear-gradient(90deg, var(--gild), transparent); }
+.shelf-head .confirm-orn span { font-size: 14px; color: var(--gild); }
+/* экран книги: полоса ровно как в «Автопоиске» и «Вставить по ссылке» —
+   базовый .confirm-orn, без утолщения шапки полки */
+.lib-header { border-bottom: none; }
+.lib-header .confirm-orn { margin: 12px 0 0; }
 .lib-title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; }
 .lib-header h1 {
   font-size: 24px; line-height: 1.25; margin: 0; font-family: var(--display); font-weight: 600;

@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.1.16';
+const APP_VERSION = '1.1.17';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -638,16 +638,26 @@ function applySettings() {
   try { if (window.AndroidTheme && AndroidTheme.setColor) AndroidTheme.setColor(bg); } catch {}
   // живой фон полки (Патина): вкл/выкл + золотую крупку красим в золото текущей темы
   document.body.classList.toggle('bg-live', settings.bg === 'on');
+  if (window.__shelfBgTheme) window.__shelfBgTheme();     // тема сменилась — перечитать золото
+  if (window.shelfBgKick) window.shelfBgKick();
   const gildBg = getComputedStyle(document.documentElement).getPropertyValue('--gild').trim();
   const ff = document.querySelector('#bgFleck feFlood');
   if (ff && gildBg) ff.setAttribute('flood-color', gildBg);
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  persistSettings();   // ползунок шрифта шлёт события пачками — пишем настройки один раз в конце
   updateWakeLock();
   if (applyLang.last !== settings.lang) {
     applyLang.last = settings.lang;
     applyLang();
   }
   syncSettingsUI();
+}
+
+// запись настроек с задержкой: applySettings зовётся на каждый шаг ползунка размера/интервала
+let settingsSaveT = 0;
+function persistSettings(now) {
+  clearTimeout(settingsSaveT);
+  if (now) { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {} return; }
+  settingsSaveT = setTimeout(() => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {} }, 250);
 }
 
 let wakeLock = null;
@@ -666,7 +676,7 @@ async function updateWakeLock() {
   }
 }
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') updateWakeLock();
+  if (document.visibilityState === 'visible') { updateWakeLock(); if (window.shelfBgKick) window.shelfBgKick(); }
 });
 mqDark.addEventListener('change', () => { if (settings.theme === 'auto') applySettings(); });
 
@@ -765,12 +775,17 @@ mqDark.addEventListener('change', () => { if (settings.theme === 'auto') applySe
     gctx.globalAlpha = 1;
   }
 
+  let running = false, gild = '';
+  // цвет золота берём из стилей ОДИН раз на тему: getComputedStyle в каждом кадре
+  // заставляет браузер пересчитывать стили 60 раз в секунду
+  window.__shelfBgTheme = () => { gild = ''; };
   function frame() {
     T += 0.016;
     const bg = document.getElementById('shelf-bg');
     const sv = document.getElementById('shelf-view');
     const live = bg && document.body.classList.contains('bg-live') && sv && !sv.hidden;
-    if (live) {
+    if (!live) { running = false; return; }   // полка скрыта (читалка, плеер) — кадры не тратим
+    {
       if (!fleck) { fleck = bg.querySelector('.sbg-fleck'); gc = bg.querySelector('.sbg-glint'); if (gc) gctx = gc.getContext('2d'); }
       if (gc && gctx) {
         const r = gc.getBoundingClientRect();
@@ -788,11 +803,14 @@ mqDark.addEventListener('change', () => { if (settings.theme === 'auto') applySe
       const px = (tx * 7).toFixed(1) + 'px', py = (ty * 5).toFixed(1) + 'px';
       if (fleck) { fleck.style.setProperty('--px', px); fleck.style.setProperty('--py', py); }
       if (gc) { gc.style.setProperty('--px', px); gc.style.setProperty('--py', py); }
-      if (gc && gctx) renderGlint(getComputedStyle(document.documentElement).getPropertyValue('--gild').trim() || '#d8a54f');
+      if (!gild) gild = getComputedStyle(document.documentElement).getPropertyValue('--gild').trim() || '#d8a54f';
+      if (gc && gctx) renderGlint(gild);
     }
     requestAnimationFrame(frame);
   }
-  requestAnimationFrame(frame);
+  // цикл запускается заново, когда полка снова на экране (showShelf) или включили живой фон
+  window.shelfBgKick = () => { if (!running) { running = true; requestAnimationFrame(frame); } };
+  window.shelfBgKick();
 })();
 
 // заливка пройденной части кастомного ползунка (CSS-переменная --fill)
@@ -910,14 +928,23 @@ async function progressBump(id, idx, position, percent) {
     tx.onabort = () => rej(tx.error);
   });
 }
+let lastMarkKey = '';
 function postProgress(idx, position, percent) {
   state.progress.last = idx;
   const id = state.book.id;
+  // Позиция в главе меняется постоянно, а «последняя глава» и «последняя книга» — только
+  // при переходе. Раньше все четыре записи уходили в базу каждые 0.7 с прокрутки.
+  const markKey = id + ':' + idx;
+  const needMark = markKey !== lastMarkKey;
+  lastMarkKey = markKey;
+  invalidateShelfData();   // проценты на полке пересчитаем при следующем показе
   (async () => {
     await progressBump(id, idx, position, percent);
-    await kvSet('last:' + id, idx);
-    await kvSet('lastBook', id);
-    for (const c of (state.collections || [])) if (colHas(c.id, 'book', id)) kvSet('colLast:' + c.id, id);   // своя «последняя» на коллекцию
+    if (needMark) {
+      await kvSet('last:' + id, idx);
+      await kvSet('lastBook', id);
+      for (const c of (state.collections || [])) if (colHas(c.id, 'book', id)) kvSet('colLast:' + c.id, id);   // своя «последняя» на коллекцию
+    }
   })().catch(e => {
     // молча терять прогресс нельзя: человек читает часами, а на выходе — ничего
     if (isQuota(e)) quotaToast();
@@ -939,9 +966,9 @@ function flushDirty() {
   dirty = null;
   postProgress(p.idx, p.position, p.percent);
 }
-addEventListener('pagehide', () => { flushDirty(); statFlush(); });
+addEventListener('pagehide', () => { flushDirty(); statFlush(); persistSettings(true); });
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') { flushDirty(); statFlush(); }
+  if (document.visibilityState === 'hidden') { flushDirty(); statFlush(); persistSettings(true); }
 });
 
 // Отметка «прочитано» меняется в памяти до записи в базу. Если запись падает, галочка
@@ -970,6 +997,7 @@ async function markChapters(idxs, read) {
     if (isQuota(e)) quotaToast();
     else showToast(T('saveFail', { e: (e && e.message ? e.message : String(e)).slice(0, 60) }));
   }
+  invalidateShelfData();
   renderContinue();
   renderToc();
   renderFooter();
@@ -1180,6 +1208,7 @@ async function dropBookLeftovers(id) {
 }
 
 async function deleteBook(id) {
+  invalidateShelfData();
   await dbDel('chapters', bookRange(id));
   await dbDel('images', bookRange(id));
   await dbDel('progress', bookRange(id));
@@ -1844,6 +1873,32 @@ function renderAnnotCover() {
   const res = $('#annot-cover-restore'); if (res) res.hidden = !rec.origCover;
 }
 
+// Бегущие названия карточек — на CSS-анимации, а не на таймерах. Раньше на каждую
+// карточку заводилась своя цепочка setTimeout: две сотни книг = две сотни живых таймеров,
+// которые дёргали раскладку даже когда полка просто лежит на экране.
+// Замер один на весь список, в одном кадре — без чересполосицы «прочитал-записал».
+function cardMarquee(root) {
+  if (!root) return;
+  const els = [...root.querySelectorAll('.book-title, .ab-card-title')];
+  if (!els.length) return;
+  const slow = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  requestAnimationFrame(() => {
+    const over = els.map(el => {
+      const inner = el.querySelector('.marq');
+      return inner ? inner.scrollWidth - el.clientWidth : 0;   // сначала ВСЕ замеры…
+    });
+    els.forEach((el, i) => {                                   // …и только потом записи
+      const inner = el.querySelector('.marq');
+      if (!inner) return;
+      if (over[i] > 4 && !slow) {
+        inner.style.setProperty('--marq', over[i] + 'px');
+        inner.style.setProperty('--marq-dur', Math.max(6, over[i] / 24).toFixed(1) + 's');
+        el.classList.add('is-marquee');
+      } else el.classList.remove('is-marquee');
+    });
+  });
+}
+
 // книги без обложки получают «переплёт» с оттенком от названия
 function hueOf(s) {
   let h = 0;
@@ -1856,10 +1911,33 @@ async function bookPercent(book) {
   const read = rows.filter(r => r.percent >= 0.98).length;
   return book.count ? Math.round(read / book.count * 100) : 0;
 }
-// кэш процента прогресса всех книг — нужен фильтру по статусу (до фильтрации) и бейджу
+// Кэш процента прогресса всех книг — нужен фильтру по статусу (до фильтрации) и бейджу.
+// Считаем ОДНИМ запросом за весь прогресс, а не по запросу на книгу: при вводе в поиск
+// полка перерисовывается на каждую букву, и сотни отдельных транзакций съедали отклик.
+// Пересчитываем только когда прогресс реально мог измениться (shelfDataDirty).
 const bookPctCache = new Map();
-async function refreshBookPcts() {
-  await Promise.all(state.books.map(async b => { bookPctCache.set(b.id, await bookPercent(b)); }));
+const bookRevCache = new Map();   // отзывы (звёзды на карточке) — тем же приёмом
+let shelfDataFresh = false;
+function invalidateShelfData() { shelfDataFresh = false; }
+async function refreshBookPcts(force) {
+  if (shelfDataFresh && !force) return;
+  const readCount = new Map();
+  for (const r of await dbAll('progress')) {
+    if ((r.percent || 0) >= 0.98) readCount.set(r.book, (readCount.get(r.book) || 0) + 1);
+  }
+  bookPctCache.clear();
+  for (const b of state.books)
+    bookPctCache.set(b.id, b.count ? Math.round((readCount.get(b.id) || 0) / b.count * 100) : 0);
+  bookRevCache.clear();
+  for (const [id, v] of await kvRange('review:')) bookRevCache.set(id, v);
+  shelfDataFresh = true;
+}
+// все значения kv с общим началом ключа — одним запросом вместо запроса на каждую книгу
+async function kvRange(prefix) {
+  const m = new Map();
+  for (const row of await dbAll('kv', IDBKeyRange.bound(prefix, prefix + '￿')))
+    m.set(String(row.k).slice(prefix.length), row.v);
+  return m;
 }
 // статус чтения книги: new (не прочитано) / progress (в процессе) / read (прочитано)
 function bookStatus(id) {
@@ -1939,7 +2017,7 @@ async function renderShelf() {
     return;
   }
   const pcts = list.map(b => bookPctCache.get(b.id) || 0);
-  const revs = await Promise.all(list.map(b => kvGet('review:' + b.id)));
+  const revs = list.map(b => bookRevCache.get(b.id) || null);
   grid.innerHTML = list.map((b, i) => {
     const url = coverUrl(b);
     const pct = pcts[i];
@@ -1954,15 +2032,14 @@ async function renderShelf() {
         <span class="sel-check" aria-hidden="true"></span>
       </button>
       <div class="book-meta">
-        <div class="book-title">${esc(b.title)}</div>
+        <div class="book-title"><span class="marq">${esc(b.title)}</span></div>
         ${stars ? `<div class="book-stars">${stars}</div>` : ''}
         ${b.author ? `<div class="book-author">${esc(b.author)}</div>` : ''}
       </div>
       <button class="book-del" data-del="${b.id}" title="${t('deleteT')}" aria-label="${t('deleteT')}">✕</button>
     </div>`;
   }).join('');
-  // названия — одной бегущей строкой (проезжает, если не влезает)
-  grid.querySelectorAll('.book-title').forEach(el => setMarquee(el, el.textContent));
+  cardMarquee(grid);   // названия — одной бегущей строкой (проезжает, если не влезает)
   // плавное появление — только у книг, впервые попавших в библиотеку (не при фильтрации/первом рендере)
   if (seenBookIds) {
     grid.querySelectorAll('.book-card').forEach(c => {
@@ -1974,9 +2051,21 @@ async function renderShelf() {
     });
   }
   seenBookIds = new Set(state.books.map(b => b.id));
-  renderShelfContinue();
+  const contId = await renderShelfContinue();
   renderShelfStats();
   renderShelfFooter();
+  // обложки держим в памяти только для карточек, которые сейчас на полке
+  pruneCoverUrls(coverUrls, new Set([...list.map(b => b.id), contId || '']));
+}
+
+// objectURL обложки держит саму картинку в памяти. Раньше ссылки копились на всю
+// библиотеку и жили до перезапуска: три сотни книг — это десятки лишних мегабайт.
+function pruneCoverUrls(map, keep) {
+  for (const [id, u] of [...map]) {
+    if (keep.has(id)) continue;
+    try { URL.revokeObjectURL(u); } catch {}
+    map.delete(id);
+  }
 }
 
 // удаление книги с полки: карточка плавно уходит, а соседние съезжают на её место (FLIP)
@@ -2014,11 +2103,11 @@ async function renderShelfContinue() {
   if (activeCol && !lastId) { const g = await kvGet('lastBook'); if (g && colHas(activeCol, 'book', g)) lastId = g; }   // своя ещё не запомнилась, но глобальная — член
   let book = lastId && state.books.find(b => b.id === lastId);
   if (book && activeCol && !colHas(activeCol, 'book', book.id)) book = null;   // уже не в коллекции
-  if (!book) { box.innerHTML = ''; return; }
+  if (!book) { box.innerHTML = ''; return null; }
   const lastIdx = await kvGet('last:' + book.id);
   if (typeof lastIdx !== 'number' || !book.titles || !book.titles[lastIdx]) {
     box.innerHTML = '';
-    return;
+    return null;
   }
   const prog = await dbGet('progress', [book.id, lastIdx]);
   const pct = prog ? Math.round(prog.percent * 100) : 0;
@@ -2037,6 +2126,7 @@ async function renderShelfContinue() {
       ${left ? `<div class="cont-left">${T('timeLeft', { d: left })}</div>` : ''}
     </span>
   </button>`;
+  return book.id;
 }
 
 // узкая полоска статистики под «Продолжить чтение»: серия · сегодня · скорость.
@@ -2255,9 +2345,9 @@ async function saveShelfOrder(grid) {
   const slots = [];
   arr.forEach((r, i) => { if (shown.has(r.id)) slots.push(i); });
   slots.forEach((slot, k) => { const r = byId.get(ids[k]); if (r) arr[slot] = r; });
-  for (let i = 0; i < arr.length; i++) {
-    if (arr[i].ord !== i) { arr[i].ord = i; try { await dbPut(store, arr[i]); } catch {} }
-  }
+  const moved = [];
+  for (let i = 0; i < arr.length; i++) if (arr[i].ord !== i) { arr[i].ord = i; moved.push(arr[i]); }
+  if (moved.length) { try { await dbChunk(store, moved); } catch {} }   // одна транзакция на всю перестановку
 }
 
 // тихое удаление аудиокниги (deleteAudiobook — с подтверждением и перерисовкой, для пачки не годится)
@@ -2717,7 +2807,14 @@ function buildFiltersPanel() {
     <button id="flt-reset" class="ghost-btn slim"${filtersActive() ? '' : ' hidden'}>${t('filterReset')}</button></div>`;
 
   const q = $('#flt-q');
-  if (q) q.addEventListener('input', () => { f.q = q.value.trim(); applyFilters(); });
+  // печать — это серия событий: пересобирать полку на каждую букву незачем,
+  // ждём короткую паузу и рисуем один раз
+  let qTimer = null;
+  if (q) q.addEventListener('input', () => {
+    f.q = q.value.trim();
+    clearTimeout(qTimer);
+    qTimer = setTimeout(applyFilters, 180);
+  });
   const stbox = $('#flt-status');
   if (stbox) stbox.addEventListener('click', e => {
     const btn = e.target.closest('.flt-st'); if (!btn) return;
@@ -2761,7 +2858,12 @@ function buildAudioFiltersPanel() {
       </div></div>
     ${hasReset ? `<button id="aflt-reset" class="ghost-btn slim">${t('filterReset')}</button>` : ''}</div>`;
   const q = $('#aflt-q');
-  if (q) q.addEventListener('input', () => { f.q = q.value.trim(); renderAudioShelf(); });
+  let aqTimer = null;
+  if (q) q.addEventListener('input', () => {
+    f.q = q.value.trim();
+    clearTimeout(aqTimer);
+    aqTimer = setTimeout(renderAudioShelf, 180);
+  });
   const st = $('#aflt-status');
   if (st) st.addEventListener('click', e => {
     const b = e.target.closest('.flt-st'); if (!b) return;
@@ -2971,6 +3073,7 @@ function showShelf() {
   syncAddFab();
   updateTitle();
   renderShelf();
+  if (window.shelfBgKick) window.shelfBgKick();
   enterView($('#shelf-view'));
   updateWakeLock();
   syncSettingsUI();
@@ -3279,6 +3382,7 @@ async function doImport(files) {
     dlRemove(job);
   }
   importBusy = false;
+  invalidateShelfData();
   if (added) {
     state.books = sortShelf(await dbAll('books'));
     if (!$('#shelf-view').hidden) renderShelf();
@@ -3985,6 +4089,7 @@ async function mergeImport(file) {
 // общий финал восстановления (для обоих путей — обычного и потокового):
 // перечитать библиотеку, перерисовать что открыто и сказать человеку итог
 async function finishImport(added, merged, missing) {
+  invalidateShelfData();
   state.books = sortShelf(await dbAll('books'));
   // ВАЖНО: перерисовываем полку и прогресс — иначе слитый прогресс не виден до перезапуска
   // (частый случай: книги не добавлялись, только обновлялись — раньше UI не обновлялся вовсе)
@@ -4370,10 +4475,21 @@ let chapImgUrls = [];
 async function hydrateImages(bookId) {
   for (const u of chapImgUrls) URL.revokeObjectURL(u);
   chapImgUrls = [];
-  for (const img of document.querySelectorAll('#chapter-body img[data-i]')) {
-    const rec = await dbGet('images', [bookId, img.dataset.i]);
-    if (rec && rec.blob) {
-      const u = URL.createObjectURL(rec.blob);
+  const imgs = [...document.querySelectorAll('#chapter-body img[data-i]')];
+  if (!imgs.length) return;
+  // одна картинка (страница PDF/комикса) — точечный запрос; много (иллюстрированная
+  // глава) — один запрос на всю книгу, иначе это десятки отдельных транзакций подряд
+  let get;
+  if (imgs.length > 4) {
+    const map = new Map((await dbAll('images', bookRange(bookId))).map(r => [r.name, r.blob]));
+    get = name => map.get(name);
+  } else {
+    get = async name => { const rec = await dbGet('images', [bookId, name]); return rec && rec.blob; };
+  }
+  for (const img of imgs) {
+    const blob = await get(img.dataset.i);
+    if (blob) {
+      const u = URL.createObjectURL(blob);
       chapImgUrls.push(u);
       img.src = u;
     } else {
@@ -6247,8 +6363,10 @@ async function renderAudioShelf() {
   if (!state.audiobooks.length) {
     box.innerHTML = `<div class="tab-empty">${head}<p class="tab-empty-title">${esc(t('abEmptyT'))}</p><p class="tab-empty-sub">${esc(t('abEmptySub'))}</p></div>${addBtn}`;
   } else {
+    // прогресс всех аудиокниг — одним запросом (было по запросу на книгу, последовательно)
+    const progMap = await kvRange('aprog:');
     const progs = {};
-    for (const r of state.audiobooks) progs[r.id] = await kvGet('aprog:' + r.id);
+    for (const r of state.audiobooks) progs[r.id] = progMap.get(r.id) || undefined;
     const af = audioFilters;
     // фильтр по поиску и статусу прослушивания
     const shown = state.audiobooks.filter(r => {
@@ -6280,8 +6398,9 @@ async function renderAudioShelf() {
           ${pct ? `<div class="cont-track"><div class="cont-fill" style="width:${pct}%"></div></div>` : ''}
         </span></button>`;
     }
+    const revMap = await kvRange('review:');   // отзывы — тоже одним запросом
     const abRevs = {};
-    await Promise.all(shown.map(async r => { abRevs[r.id] = await kvGet('review:' + r.id); }));
+    for (const r of shown) abRevs[r.id] = revMap.get(r.id) || null;
     const cards = shown.map(r => {
       const url = abCoverUrl(r), p = progs[r.id];
       const pct = (p && r.totalDur) ? Math.min(100, Math.round((abPlayedSeconds(r, p) / r.totalDur) * 100)) : 0;
@@ -6292,7 +6411,7 @@ async function renderAudioShelf() {
         <button class="ab-card-cover" data-ab="${esc(r.id)}">${url ? `<img src="${url}" alt="">` : '<span>♪</span>'}
           ${pct ? `<span class="cover-pct">${pct}%</span>` : ''}
           <span class="sel-check" aria-hidden="true"></span></button>
-        <div class="ab-card-title">${esc(r.title)}</div>
+        <div class="ab-card-title"><span class="marq">${esc(r.title)}</span></div>
         ${stars ? `<div class="book-stars">${stars}</div>` : ''}
         <div class="ab-card-author">${esc(r.author || '')}</div>
         <div class="ab-card-bar"><i style="width:${pct}%"></i></div>
@@ -6303,7 +6422,8 @@ async function renderAudioShelf() {
     const contBox = $('#audio-continue');
     if (contBox) { contBox.innerHTML = contHtml; setupContMarquee(contBox); }
     box.innerHTML = `${gridHtml}${addBtn}`;
-    box.querySelectorAll('.ab-card-title').forEach(el => setMarquee(el, el.textContent));   // одна бегущая строка
+    cardMarquee(box);   // одна бегущая строка
+    pruneCoverUrls(abCoverUrls, new Set([...shown.map(r => r.id), cont ? cont.id : '']));
   }
 }
 
@@ -8129,6 +8249,7 @@ async function saveReview(share) {
   if (!reviewTarget) return;
   const rv = { stars: reviewStars, text: $('#review-text').value.trim(), at: Date.now() };
   if (!(await saveGuard(() => kvSet('review:' + reviewTarget.id, rv)))) return;
+  invalidateShelfData();
   if (reviewTarget.kind === 'audio') {
     refreshAudioReviewBadge();
     if (typeof renderAudioShelf === 'function') { try { renderAudioShelf(); } catch {} }
@@ -9002,6 +9123,7 @@ function bindUI() {
     if (!(await uiConfirm(T('resetQ', { x: state.book.title }), { yes: t('dlgReset'), danger: true }))) return;
     clearTimeout(saveTimer);
     dirty = null;
+    invalidateShelfData();
     await dbDel('progress', bookRange(state.book.id));
     await dbDel('kv', 'last:' + state.book.id);
     if ((await kvGet('lastBook')) === state.book.id) await dbDel('kv', 'lastBook');

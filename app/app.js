@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.1.14';
+const APP_VERSION = '1.1.15';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -3301,6 +3301,69 @@ const blobToB64 = blob => new Promise((res, rej) => {
   fr.onerror = () => rej(fr.error);
   fr.readAsDataURL(blob);
 });
+// байты → base64 без промежуточной data-URL строки (её FileReader делает на 33% длиннее самих данных)
+function b64FromBytes(bytes) {
+  let s = '';
+  const CH = 0x8000;   // по 32К символов: apply не переваривает миллионы аргументов
+  for (let i = 0; i < bytes.length; i += CH) s += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+  return btoa(s);
+}
+const utf8B64 = str => b64FromBytes(new TextEncoder().encode(str));   // btoa сам кириллицу не берёт
+
+// ── писатель копии: части уходят наружу ПО МЕРЕ появления, а не копятся до конца ──
+// Раньше куски JSON складывались в массив строк и склеивались в Blob последней строкой:
+// на библиотеке с аудио это означало всю копию в куче JS разом (и обрыв сохранения).
+// Теперь на телефоне каждый кусок сразу уходит в файл через мост, в браузере — оседает
+// в Blob (данные уходят из кучи в blob-хранилище). В памяти живёт только буфер.
+function createSink(name) {
+  const S = (name && isNativeApp() && window.AndroidSave && typeof window.AndroidSave.begin === 'function')
+    ? window.AndroidSave : null;
+  const native = !!(S && S.begin(name) === 'OK');
+  const FLUSH = 512 * 1024;   // столько текста копим перед отправкой (мост зовём не на каждый чих)
+  let buf = '', blobs = native ? null : [], done = false;
+  const flush = () => {
+    if (!buf) return;
+    if (native) {
+      if (S.chunk(utf8B64(buf)) !== 'OK') throw new Error('запись в файл прервана');
+    } else blobs.push(new Blob([buf]));
+    buf = '';
+  };
+  return {
+    native,
+    async text(s) {
+      buf += s;
+      if (buf.length >= FLUSH) { flush(); await new Promise(r => setTimeout(r, 0)); }   // отдаём поток
+    },
+    // Blob → base64 прямо в поток, кусками. Кусок КРАТЕН 3 байтам: тогда base64 частей
+    // склеивается встык, без padding-хвостов в середине строки.
+    async blob64(blob) {
+      const CH = 3 * 1024 * 1024;
+      for (let off = 0; off < blob.size; off += CH) {
+        const part = blob.slice(off, off + CH);
+        const bytes = new Uint8Array(typeof part.arrayBuffer === 'function'
+          ? await part.arrayBuffer()
+          : await new Response(part).arrayBuffer());
+        await this.text(b64FromBytes(bytes));
+      }
+    },
+    async finish() {
+      if (done) return { blob: null };
+      done = true;
+      flush();
+      if (native) {
+        const r = S.end();
+        if (typeof r === 'string' && r.indexOf('OK') === 0) return { blob: null, where: r.slice(3) || name };
+        throw new Error('файл не сохранился');
+      }
+      return { blob: new Blob(blobs, { type: 'application/json' }) };
+    },
+    abort() {
+      if (done) return;
+      done = true; buf = ''; blobs = null;
+      if (native) { try { S.abort(); } catch {} }
+    },
+  };
+}
 
 function b64ToBlob(im) {
   try {
@@ -3420,13 +3483,16 @@ async function nativeSaveToDownloads(blob, name) {
     return null;
   } catch { try { S.abort(); } catch {} return null; }
 }
-async function downloadBlob(blob, name) {
-  const where = await nativeSaveToDownloads(blob, name);
-  if (where) return { how: 'saved', where };
+function webSaveBlob(blob, name) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+}
+async function downloadBlob(blob, name) {
+  const where = await nativeSaveToDownloads(blob, name);
+  if (where) return { how: 'saved', where };
+  webSaveBlob(blob, name);
   return { how: 'download' };
 }
 window.__saveError = () => { try { showToast(T('backupFail', { e: '' })); } catch {} };
@@ -3448,7 +3514,10 @@ async function exportSync() {
   finally { backupBusy = false; }
 }
 
-async function buildBackup(scope) {
+// Копия пишется ПОТОКОМ: содержимое книги/дорожки уходит в файл сразу, кусками.
+// В памяти одновременно живут только текущий кусок (3 МБ) и буфер писателя, поэтому
+// размер библиотеки больше ничего не решает — гигабайты аудио проходят так же, как мегабайты.
+async function backupWrite(sink, scope) {
   const want = scope || { books: true, audio: true };
   const books = want.books ? sortShelf(await dbAll('books')) : [];
   const audiobooks = want.audio ? sortShelf(await dbAll('audiobooks')) : [];
@@ -3459,57 +3528,91 @@ async function buildBackup(scope) {
     lastBook: (await kvGet('lastBook')) || null,
     collections: await dbAll('collections'),   // свои полки
   };
-  const parts = [JSON.stringify(head).slice(0, -1) + ',"books":['];
+  await sink.text(JSON.stringify(head).slice(0, -1) + ',"books":[');
   for (let i = 0; i < books.length; i++) {
     const b = books[i];
     showToast(T('backupPrep', { n: b.title }));
     await new Promise(r => setTimeout(r, 0));
-    const chapters = (await dbAll('chapters', bookRange(b.id)))
-      .sort((x, y) => x.idx - y.idx)
-      .map(c => ({ title: c.title, html: c.html, plain: c.plain }));
-    const images = {};
-    for (const im of await dbAll('images', bookRange(b.id)))
-      images[im.name] = { m: im.blob.type || '', d: await blobToB64(im.blob) };
-    const progress = {};
-    for (const p of await dbAll('progress', bookRange(b.id)))
-      progress[p.idx] = { position: p.position, percent: p.percent };
-    const rec = {
-      id: b.id, title: b.title, author: b.author || '', lang: b.lang || '',
-      annotation: b.annotation || '', addedAt: b.addedAt, toc: b.toc,
-      year: b.year ?? null, genre: b.genre || '',   // иначе год, заданный руками, терялся при переносе
-      cover: b.cover ? { m: b.cover.type || '', d: await blobToB64(b.cover) } : null,
-      origCover: b.origCover ? { m: b.origCover.type || '', d: await blobToB64(b.origCover) } : null,
-      last: (await kvGet('last:' + b.id)) ?? null,
-      review: (await kvGet('review:' + b.id)) || null,
-      expanded: safeParse('talewyn-expanded:' + b.id, null, Array.isArray),
-      chapters, images, progress,
-      notes: await dbByIndex('notes', 'byBook', b.id),
-    };
-    parts.push((i ? ',' : '') + JSON.stringify(rec));
+    if (i) await sink.text(',');
+    await writeBookRec(sink, b);
   }
   // Аудиокниги — ЦЕЛИКОМ: дорожки, обложка, описание плюс состояние (прогресс и заметки).
-  // Пишем по одной книге за раз прямо в части файла, чтобы звук не собирался в памяти весь разом.
-  parts.push('],"audio":[');
+  await sink.text('],"audio":[');
   for (let i = 0; i < audiobooks.length; i++) {
     const a = audiobooks[i];
     showToast(T('backupPrep', { n: a.title }));
     await new Promise(r => setTimeout(r, 0));
-    const rec = await audioState(a);            // прогресс и заметки — как в лёгкой синхронизации
-    rec.meta = {
-      title: a.title, author: a.author || '', tracks: a.tracks || [],
-      count: a.count || (a.tracks || []).length, totalDur: a.totalDur || 0,
-      addedAt: a.addedAt || Date.now(), notes: Array.isArray(a.notes) ? a.notes : [],
-      cover: a.cover ? { m: a.cover.type || '', d: await blobToB64(a.cover) } : null,
-    };
-    rec.trackBlobs = [];
-    for (const tr of (await dbAll('audiotracks', bookRange(a.id))).sort((x, y) => x.idx - y.idx)) {
-      if (!tr.blob) continue;                   // стрим по ссылке: дорожка живёт по url, файла нет
-      rec.trackBlobs.push({ idx: tr.idx, m: tr.blob.type || '', d: await blobToB64(tr.blob) });
-    }
-    parts.push((i ? ',' : '') + JSON.stringify(rec));
+    if (i) await sink.text(',');
+    await writeAudioRec(sink, a);
   }
-  parts.push(']}');
-  return new Blob(parts, { type: 'application/json' });
+  await sink.text(']}');
+}
+
+// одна книга: сначала лёгкие поля, затем главы, затем картинки — каждая своим потоком байт
+async function writeBookRec(sink, b) {
+  const progress = {};
+  for (const p of await dbAll('progress', bookRange(b.id)))
+    progress[p.idx] = { position: p.position, percent: p.percent };
+  const rec = {
+    id: b.id, title: b.title, author: b.author || '', lang: b.lang || '',
+    annotation: b.annotation || '', addedAt: b.addedAt, toc: b.toc,
+    year: b.year ?? null, genre: b.genre || '',   // иначе год, заданный руками, терялся при переносе
+    cover: b.cover ? { m: b.cover.type || '', d: await blobToB64(b.cover) } : null,
+    origCover: b.origCover ? { m: b.origCover.type || '', d: await blobToB64(b.origCover) } : null,
+    last: (await kvGet('last:' + b.id)) ?? null,
+    review: (await kvGet('review:' + b.id)) || null,
+    expanded: safeParse('talewyn-expanded:' + b.id, null, Array.isArray),
+    progress,
+    notes: await dbByIndex('notes', 'byBook', b.id),
+  };
+  await sink.text(JSON.stringify(rec).slice(0, -1));   // без закрывающей скобки — дописываем ниже
+  const chapters = (await dbAll('chapters', bookRange(b.id)))
+    .sort((x, y) => x.idx - y.idx)
+    .map(c => ({ title: c.title, html: c.html, plain: c.plain }));
+  await sink.text(',"chapters":' + JSON.stringify(chapters));
+  await sink.text(',"images":{');
+  let first = true;
+  // getAll отдаёт записи со ССЫЛКАМИ на блобы — байты читаются только внутри blob64,
+  // по 3 МБ за раз. Поэтому книга с сотнями страниц-картинок (PDF, комикс) не разворачивается в память.
+  for (const im of await dbAll('images', bookRange(b.id))) {
+    if (!im.blob) continue;
+    await sink.text((first ? '' : ',') + JSON.stringify(im.name)
+      + ':{"m":' + JSON.stringify(im.blob.type || '') + ',"d":"');
+    await sink.blob64(im.blob);
+    await sink.text('"}');
+    first = false;
+  }
+  await sink.text('}}');
+}
+
+// одна аудиокнига: состояние + метаданные, затем дорожки по одной
+async function writeAudioRec(sink, a) {
+  const rec = await audioState(a);            // прогресс и заметки — как в лёгкой синхронизации
+  rec.meta = {
+    title: a.title, author: a.author || '', tracks: a.tracks || [],
+    count: a.count || (a.tracks || []).length, totalDur: a.totalDur || 0,
+    addedAt: a.addedAt || Date.now(), notes: Array.isArray(a.notes) ? a.notes : [],
+    cover: a.cover ? { m: a.cover.type || '', d: await blobToB64(a.cover) } : null,
+  };
+  await sink.text(JSON.stringify(rec).slice(0, -1));
+  await sink.text(',"trackBlobs":[');
+  let first = true;
+  for (const tr of (await dbAll('audiotracks', bookRange(a.id))).sort((x, y) => x.idx - y.idx)) {
+    if (!tr.blob) continue;                   // стрим по ссылке: дорожка живёт по url, файла нет
+    await sink.text((first ? '' : ',') + '{"idx":' + (+tr.idx || 0)
+      + ',"m":' + JSON.stringify(tr.blob.type || '') + ',"d":"');
+    await sink.blob64(tr.blob);
+    await sink.text('"}');
+    first = false;
+  }
+  await sink.text(']}');
+}
+
+// собрать копию в Blob (браузерный путь и самопроверка) — тем же писателем, без моста
+async function buildBackup(scope) {
+  const sink = createSink(null);
+  await backupWrite(sink, scope);
+  return (await sink.finish()).blob;
 }
 
 let backupBusy = false;
@@ -3518,12 +3621,15 @@ async function exportLibrary() {
   const scope = await askSyncScope('#backup-btn');
   if (!scope) return;
   backupBusy = true;
+  const name = stampName('talewyn-backup-', '.json');
+  const sink = createSink(name);   // на телефоне пишет прямо в «Загрузки», в браузере копит Blob
   try {
-    const blob = await buildBackup(scope);
-    const name = stampName('talewyn-backup-', '.json');
-    const r = await downloadBlob(blob, name);
-    showToast(t(r.how === 'saved' ? 'backupSavedTo' : 'backupDone'));
+    await backupWrite(sink, scope);
+    const r = await sink.finish();
+    if (r.blob) webSaveBlob(r.blob, name);
+    showToast(t(r.blob ? 'backupDone' : 'backupSavedTo'));
   } catch (e) {
+    sink.abort();   // недописанный файл не оставляем: он всё равно не восстановится
     showToast(T('backupFail', { e: e.message }));
   } finally {
     backupBusy = false;

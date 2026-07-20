@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.1.8';
+const APP_VERSION = '1.1.9';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -5313,6 +5313,8 @@ function ttsStart(fromEl = null, charOffset = 0, boundary = null, fromStart = fa
     }
   }
   document.body.classList.add('tts-on');
+  watchTtsBarLayout();          // панель заметок и меню голоса поедут за плеером вплотную
+  requestAnimationFrame(() => { placeSelToolbar(); repositionVoiceMenu(true); });
   $('#tts-rate-value').textContent = (Number.isInteger(settings.ttsRate) ? settings.ttsRate.toFixed(1) : String(settings.ttsRate)) + '×';
   ttsPlayFrom(pos);
 }
@@ -5395,17 +5397,49 @@ function hideTtsBar() {
   if (!bar || bar.hidden) return;
   bar.classList.remove('collapsed');
   bar.classList.add('tucked');
+  placeSelToolbar(); repositionVoiceMenu(true);   // плеер ушёл — панели опускаются следом
   setTimeout(() => {
     if (bar.classList.contains('tucked') && !tts.active) { bar.hidden = true; bar.classList.remove('tucked'); }
+    placeSelToolbar(); repositionVoiceMenu(false);
   }, 340);
 }
 // панель выделения («закладок»): появляется через slide-toast, а уходит ПЛАВНО вниз (.leaving),
 // а не пропадает резко. Плюс двигает открытое меню голоса под себя.
+// Панель выделения садится ВПЛОТНУЮ над панелью озвучки (8px), а не по жёсткому числу в CSS:
+// высота плеера со временем менялась, и от подгонки числом между панелями зиял просвет с текстом.
+// панель озвучки живая: выезжает, уезжает, меняет высоту — панель заметок и меню голоса
+// должны ехать за ней вплотную. Следим за размером и за концом каждой её анимации.
+function watchTtsBarLayout() {
+  const bar = $('#tts-bar'); if (!bar || bar._watched) return;
+  bar._watched = true;
+  const sync = () => requestAnimationFrame(() => requestAnimationFrame(() => {
+    placeSelToolbar();
+    repositionVoiceMenu(false);
+  }));
+  if (window.ResizeObserver) {
+    const ro = new ResizeObserver(sync);
+    try { ro.observe(bar, { box: 'border-box' }); } catch { ro.observe(bar); }
+  }
+  bar.addEventListener('transitionend', e => {
+    if (e.target === bar && (e.propertyName === 'transform' || e.propertyName === 'bottom' || e.propertyName === 'height')) sync();
+  });
+  addEventListener('resize', sync);
+}
+function placeSelToolbar() {
+  const st = $('#sel-toolbar'); if (!st || st.hidden) return;
+  const bar = $('#tts-bar');
+  const shown = bar && !bar.hidden && !bar.classList.contains('tucked')
+    && document.body.classList.contains('tts-on');
+  const r = shown ? bar.getBoundingClientRect() : null;
+  if (!r || !r.height) { st.style.bottom = ''; return; }   // озвучки нет — работает правило из CSS
+  st.style.bottom = Math.round(innerHeight - r.top + 8) + 'px';
+}
 function showSelToolbar() {
   const el = $('#sel-toolbar');
   if (!el) return;
   el.classList.remove('leaving');
   el.hidden = false;
+  placeSelToolbar();
   repositionVoiceMenu(true);
 }
 function hideSelToolbar() {

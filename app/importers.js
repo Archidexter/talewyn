@@ -1009,16 +1009,24 @@ async function importMobi(file, fname) {
 // Определяем формат по содержимому, а не по расширению: так надёжнее.
 async function importFile(file, onProgress) {
   const prog = typeof onProgress === 'function' ? onProgress : null;
-  const buf = await file.arrayBuffer();
-  if (!buf.byteLength) throw new Error('файл пустой');
-  const magic = new Uint8Array(buf, 0, Math.min(5, buf.byteLength));
+  // Формат определяем по ПЕРВОМУ КИЛОБАЙТУ, а не по всему файлу. Раньше здесь стоял
+  // `await file.arrayBuffer()` — файл целиком въезжал в память ещё до того, как мы поняли,
+  // что это вообще. Для .cbr/.7z и MOBI буфер потом даже не нужен (их читают из самого File),
+  // то есть гигабайтный архив читался в память дважды и валил приложение.
+  const canSlice = typeof file.slice === 'function' && typeof file.arrayBuffer === 'function';
+  const head = canSlice ? await file.slice(0, 1024).arrayBuffer() : await file.arrayBuffer();
+  if (!head.byteLength) throw new Error('файл пустой');
+  let _full = canSlice ? null : head;
+  const full = async () => (_full || (_full = await file.arrayBuffer()));
+  const magic = new Uint8Array(head, 0, Math.min(5, head.byteLength));
   if (magic[0] === 0x25 && magic[1] === 0x50 && magic[2] === 0x44 && magic[3] === 0x46)  // '%PDF'
-    return importPdf(buf, file.name, prog);
+    return importPdf(await full(), file.name, prog);
   if ((magic[0] === 0x52 && magic[1] === 0x61 && magic[2] === 0x72 && magic[3] === 0x21) ||   // 'Rar!'
       (magic[0] === 0x37 && magic[1] === 0x7a && magic[2] === 0xbc && magic[3] === 0xaf) ||     // 7z
       /\.(cbr|cb7|cbt)$/i.test(file.name))                                                       // tar по расширению
-    return importArchiveComic(file, file.name);
+    return importArchiveComic(file, file.name);   // libarchive читает сам File — буфер не нужен
   if (magic[0] === 0x50 && magic[1] === 0x4b) {           // 'PK' — ZIP
+    const buf = await full();
     const zip = await unzip(buf);
     if (zip.has('word/document.xml')) return importDocx(buf, file.name);   // DOCX
     if (zip.has('META-INF/container.xml')) return importEpub(buf);
@@ -1050,14 +1058,14 @@ async function importFile(file, onProgress) {
     throw new Error('в архиве нет поддерживаемых книг, аудио или изображений');
   }
   // MOBI / AZW3: сигнатура BOOKMOBI на смещении 60 (или по расширению)
-  const mobiSig = buf.byteLength >= 68 ? td.decode(new Uint8Array(buf, 60, 8)) : '';
+  const mobiSig = head.byteLength >= 68 ? td.decode(new Uint8Array(head, 60, 8)) : '';
   if (mobiSig === 'BOOKMOBI' || /\.(mobi|azw3?|prc)$/i.test(file.name)) return importMobi(file, file.name);
-  const headText = td.decode(new Uint8Array(buf, 0, Math.min(1024, buf.byteLength)));
-  if (/^﻿?\s*\{/.test(headText)) return importFbook(buf);
-  if (/<fictionbook/i.test(headText) || /\.fb2$/i.test(file.name)) return importFb2(buf);
-  if (/<!doctype\s+html|<html[\s>]/i.test(headText) || /\.x?html?$/i.test(file.name)) return importHtml(buf, file.name);
-  if (/<\?xml/i.test(headText)) return importFb2(buf);              // прочий XML — пробуем как FB2
-  if (/\.txt$/i.test(file.name) || isMostlyText(buf)) return importTxt(buf, file.name);
+  const headText = td.decode(new Uint8Array(head, 0, Math.min(1024, head.byteLength)));
+  if (/^﻿?\s*\{/.test(headText)) return importFbook(await full());
+  if (/<fictionbook/i.test(headText) || /\.fb2$/i.test(file.name)) return importFb2(await full());
+  if (/<!doctype\s+html|<html[\s>]/i.test(headText) || /\.x?html?$/i.test(file.name)) return importHtml(await full(), file.name);
+  if (/<\?xml/i.test(headText)) return importFb2(await full());     // прочий XML — пробуем как FB2
+  if (/\.txt$/i.test(file.name) || isMostlyText(head)) return importTxt(await full(), file.name);
   throw new Error('неизвестный формат — поддерживаются EPUB, FB2, MOBI/AZW3, PDF, DOCX, TXT, HTML, комиксы (CBZ/CBR/CB7/CBT), .fbook');
 }
 

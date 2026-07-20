@@ -690,6 +690,16 @@ html.t-dark .cover-img { opacity: .93; }
 }
 .book-title .crumbs-track, .ab-card-title .crumbs-track { display: inline-block; white-space: nowrap; }
 .book-title.marquee, .ab-card-title.marquee { text-align: left; }
+/* Названия карточек едут на CSS-анимации (та же, что у «Продолжить слушать»):
+   без таймера на каждую карточку — сотня книг больше не держит сотню таймеров. */
+.book-title .marq, .ab-card-title .marq { display: inline-block; white-space: nowrap; will-change: transform; }
+.book-title.is-marquee, .ab-card-title.is-marquee { text-align: left; }
+.book-title.is-marquee .marq, .ab-card-title.is-marquee .marq {
+  animation: cont-marq var(--marq-dur, 8s) ease-in-out infinite alternate;
+}
+@media (prefers-reduced-motion: reduce) {
+  .book-title.is-marquee .marq, .ab-card-title.is-marquee .marq { animation: none; }
+}
 .book-author {
   font-size: 11.5px; color: var(--faint); margin-top: 3px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

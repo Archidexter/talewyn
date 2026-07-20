@@ -1360,12 +1360,13 @@ body.col-viewing #add-fab .fab-collect svg { transform: scaleX(-1); }
 .col-scroll { position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; display: flex; flex-direction: column; gap: 8px; }
 .col-scroll::-webkit-scrollbar { display: none; }
 #col-drawer.open { transform: translateX(0); }
-.col-head { position: sticky; top: 0; z-index: 1; background: var(--elev); min-height: 40px; padding: 10px 0 14px; display: grid; place-items: center; border-bottom: 1px solid var(--border); }   /* вровень с шапкой полки */
+.col-head { position: sticky; top: 0; z-index: 1; background: var(--elev); min-height: 40px; padding: 10px 0 4px; display: block; }   /* вровень с шапкой полки */
+.col-head .confirm-orn { margin: 0 0 10px; }
 .col-title { display: block; text-align: center; font-size: 11px; font-weight: 700; letter-spacing: .17em; text-transform: uppercase; color: var(--gild); }
 .col-list { flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px; padding: 4px 0; }
 
 /* сегмент «Загрузки»: закреплён снизу, всегда виден, ~1/4 высоты панели; список скроллится */
-#dl-section { flex: 0 0 25%; min-height: 0; display: flex; flex-direction: column; border-top: 1px solid var(--border-strong); }
+#dl-section { flex: 0 0 25%; min-height: 0; display: flex; flex-direction: column; }
 .dl-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 8px; padding: 4px 0; scrollbar-width: none; }
 .dl-list::-webkit-scrollbar { display: none; }
 .dl-empty { color: var(--dim); font-size: 12px; text-align: center; padding: 14px 6px; }
@@ -1612,13 +1613,11 @@ body.col-open #col-tab svg { transform: rotate(180deg); }
    а не плавающей капсулой. Спец-стиль убран намеренно. */
 
 /* секции настроек */
-.set-section {
-  font-size: 11px; font-weight: 700; letter-spacing: .17em; text-transform: uppercase;
-  color: var(--gild); margin: 4px 0 14px; text-align: center;
-}
-.set-section:not(:first-of-type) { margin-top: 16px; padding-top: 13px; border-top: 1px solid var(--border); }
-/* после орнаментальной полосы своя линия секции не нужна — иначе разделителя два подряд */
-.confirm-orn + .set-section { margin-top: 0; padding-top: 0; border-top: none; }
+/* Заголовки разделов настроек — те же, что в «Словаре произношений»: подпись по центру
+   с золотыми лучами по краям. Отдельных разделительных линий между строками больше нет —
+   разделение держат сами заголовки. */
+#settings-sheet .confirm-orn.sheet-head { margin: 20px 0 12px; }
+#settings-sheet .sheet-grip + .confirm-orn.sheet-head { margin-top: 6px; }
 
 /* каждая настройка: подпись сверху, контрол во всю ширину снизу — ровно и предсказуемо */
 .set-group { margin-bottom: 14px; }
@@ -1652,9 +1651,8 @@ body.col-open #col-tab svg { transform: rotate(180deg); }
 /* ═══ v3 «Витраж и золото»: настройки чтения ═══ */
 .v3row {
   display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 12px;
-  padding: 14px 0; border-top: 1px solid color-mix(in srgb, var(--gild) 15%, transparent);
+  padding: 10px 0;
 }
-.set-section + .v3row { border-top: none; }
 .v3lbl { font-family: var(--display); font-weight: 600; font-size: 15px; color: var(--text); line-height: 1.15; }
 .v3row .themes { justify-self: stretch; width: 100%; }
 .v3row .chips { justify-self: stretch; width: 100%; }
@@ -1762,7 +1760,7 @@ body.col-open #col-tab svg { transform: rotate(180deg); }
 .ichip .ln { stroke: var(--faint); stroke-width: 1.8; stroke-linecap: round; }
 .ichip.active .ln { stroke: var(--gild); }
 /* ползунки размера/интервала с живым превью */
-.v3srow { padding: 14px 0; border-top: 1px solid color-mix(in srgb, var(--gild) 15%, transparent); }
+.v3srow { padding: 10px 0; }
 .v3srow-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
 .v3val { font-family: var(--display); font-weight: 600; font-size: 16px; color: var(--gild); font-variant-numeric: tabular-nums; }
 .v3preview {

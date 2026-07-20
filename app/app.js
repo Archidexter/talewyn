@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.1.19';
+const APP_VERSION = '1.1.20';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -822,8 +822,7 @@ function rangeFill(el) {
 }
 function syncSettingsUI() {
   for (const [segId, key] of [['seg-theme', 'theme'], ['seg-font', 'font'],
-    ['seg-width', 'width'], ['seg-align', 'align'],
-    ['seg-bg', 'bg'], ['seg-lang', 'lang']]) {
+    ['seg-width', 'width'], ['seg-align', 'align'], ['seg-lang', 'lang']]) {
     document.querySelectorAll(`#${segId} button`).forEach(b =>
       b.classList.toggle('active', b.dataset.v === String(settings[key])));
   }
@@ -9278,7 +9277,6 @@ function bindUI() {
   bindSeg('seg-font', 'font');
   bindSeg('seg-align', 'align');
   bindSeg('seg-width', 'width');
-  bindSeg('seg-bg', 'bg');
   bindSeg('seg-lang', 'lang');
   bindStep('size-minus', 'size-plus', 'size', 14, 26, 1, 0);
   bindStep('lh-minus', 'lh-plus', 'lh', 1.4, 2.0, 0.05, 2);

@@ -10,7 +10,7 @@
 if(th==='auto')th=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <link rel="stylesheet" href="fonts.css?v=9">
-<link rel="stylesheet" href="app.css?v=200">
+<link rel="stylesheet" href="app.css?v=201">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -140,7 +140,7 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <aside id="col-drawer" hidden aria-label="Коллекции">
   <!-- верхняя часть (прокручиваемая): коллекции -->
   <div class="col-scroll">
-    <div class="col-head"><span class="col-title" data-i18n="colTitle">Коллекции</span></div>
+    <div class="col-head"><div class="confirm-orn"><span class="sheet-name" data-i18n="colTitle">Коллекции</span></div></div>
     <div class="col-list" id="col-list"></div>
     <button class="col-add" id="col-add" data-i18n-title="colNew" title="Новая коллекция" aria-label="Новая коллекция">
       <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -148,7 +148,7 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
   </div>
   <!-- сегмент «Загрузки» ВНИЗУ, всегда виден, ~1/4 высоты: единицы импорта (книга/аудиокнига/ссылка), с отменой -->
   <section id="dl-section">
-    <div class="col-head"><span class="col-title" data-i18n="dlTitle">Загрузки</span></div>
+    <div class="col-head"><div class="confirm-orn"><span class="sheet-name" data-i18n="dlTitle">Загрузки</span></div></div>
     <div class="dl-list" id="dl-list"></div>
   </section>
 </aside>
@@ -429,7 +429,7 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <div id="settings-overlay" class="sheet-scrim" hidden></div>
 <div id="settings-sheet" class="sheet" hidden role="dialog" aria-label="Настройки чтения">
   <div class="sheet-grip"></div>
-  <div class="set-section" data-i18n="theme">Тема</div>
+  <div class="confirm-orn sheet-head"><span class="sheet-name" data-i18n="theme">Тема</span></div>
 
   <div class="v3row fullrow">
     <div class="themes" id="seg-theme">
@@ -443,15 +443,7 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     </div>
   </div>
 
-  <div class="set-section" data-i18n="bgSec">Фон полки</div>
-  <div class="v3row fullrow">
-    <div class="chips" id="seg-bg">
-      <button class="chip" data-v="on" data-i18n="bgOn">Живой</button>
-      <button class="chip" data-v="off" data-i18n="bgOff">Выключен</button>
-    </div>
-  </div>
-
-  <div class="set-section" data-i18n="textSec">Текст</div>
+  <div class="confirm-orn sheet-head"><span class="sheet-name" data-i18n="textSec">Текст</span></div>
   <!-- единый живой пример: шрифт + размер + интервал + выравнивание разом -->
   <div class="v3preview settings-preview" id="settings-preview" data-i18n="readerPrev">Тихий вечер опустился на город, и в тёплых окнах один за другим загорались огни. Дорога вела через старый лес, где солнечный свет мягко пробивался сквозь листву.</div>
 
@@ -504,7 +496,7 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     </div>
   </div>
 
-  <div class="set-section" data-i18n="trLangLbl">Переводчик</div>
+  <div class="confirm-orn sheet-head"><span class="sheet-name" data-i18n="trLangLbl">Переводчик</span></div>
   <div class="v3row fullrow">
     <div class="tr-controls">
       <button class="chip tr-auto" id="tr-auto" data-i18n="trAuto">Авто</button>
@@ -514,7 +506,7 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     </div>
   </div>
 
-  <div class="set-section" data-i18n="pronunSec">Произношение</div>
+  <div class="confirm-orn sheet-head"><span class="sheet-name" data-i18n="pronunSec">Произношение</span></div>
   <div class="v3row fullrow">
     <div class="pronun-block">
       <div class="pronun-hint" data-i18n="pronunHint">Как читать слово при озвучке. Напр.: GIF → джиф</div>
@@ -530,14 +522,14 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     </div>
   </div>
 
-  <div class="set-section" data-i18n="secApp">Приложение</div>
+  <div class="confirm-orn sheet-head"><span class="sheet-name" data-i18n="secApp">Приложение</span></div>
   <div class="v3row fullrow">
     <div class="chips" id="seg-lang">
       <button class="chip" data-v="ru">Русский</button>
       <button class="chip" data-v="en">English</button>
     </div>
   </div>
-  <div class="set-section" data-i18n="syncT">Синхронизация и копия</div>
+  <div class="confirm-orn sheet-head"><span class="sheet-name" data-i18n="syncT">Синхронизация и копия</span></div>
   <div class="set-group backup-row">
     <button id="sync-light-btn" class="tool-btn" hidden>
       <span data-i18n="syncLight">Синхронизация прогресса</span>
@@ -644,7 +636,7 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
   <span class="brand-logo info-logo" aria-hidden="true"></span>
   <div class="info-brand"><span class="brand-ad">AD.</span>Talewyn</div>
   <div class="confirm-orn"><span>◆</span></div><!-- та же полоса с ромбом, что в «Автопоиске» и «Вставить по ссылке» -->
-  <div class="set-section" data-i18n="infoSocial">Контакты</div><!-- i18n: Контакты/Contacts -->
+  <div class="confirm-orn sheet-head"><span class="sheet-name" data-i18n="infoSocial">Контакты</span></div><!-- i18n: Контакты/Contacts -->
   <div class="social-row">
     <a class="social-link" href="https://boosty.to/ad.tile" target="_blank" rel="noopener noreferrer">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6z" fill="currentColor" stroke="none"/></svg>
@@ -659,7 +651,7 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
       <span>YouTube</span>
     </a>
   </div>
-  <div class="set-section" data-i18n="infoLicense">Лицензия и авторство</div>
+  <div class="confirm-orn sheet-head"><span class="sheet-name" data-i18n="infoLicense">Лицензия и авторство</span></div>
   <div class="license-text">
     <p data-i18n="licApp">AD.Talewyn — приложение для чтения книг.</p>
     <p data-i18n="licRights">© 2026 Archidexter. Все права на приложение защищены.</p>
@@ -816,6 +808,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=253"></script>
+<script src="app.js?v=254"></script>
 </body>
 </html>

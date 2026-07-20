@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.1.4';
+const APP_VERSION = '1.1.5';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -338,15 +338,15 @@ const I18N = {
     backupT: 'Сохранить копию библиотеки',
     restoreT: 'Восстановить из копии',
     backupPrep: 'Готовлю копию: «{n}»…',
-    backupDone: 'Копия сохранена: {n} книг, {s} МБ',
+    backupDone: 'Копия сохранена', backupSavedTo: 'Копия сохранена в «Загрузки»',
     backupFail: 'Не получилось сохранить копию: {e}',
     restoreBusy: 'Восстанавливаю: «{n}»…',
     restoreDone: 'Восстановлено книг: {n}',
     restoreMixed: 'Восстановлено: {n}, уже на полке: {s}',
     restoreNone: 'Все книги из копии уже на полке',
     notBackup: 'это не копия библиотеки AD.Talewyn',
-    syncSaved: 'Файл синхронизации сохранён · {s} КБ', syncShare: 'Выбери, куда сохранить файл',
-    syncSavedTo: 'Сохранено в «Загрузки»: {n}',
+    syncSaved: 'Файл синхронизации сохранён', syncShare: 'Выбери, куда сохранить файл',
+    syncSavedTo: 'Файл синхронизации сохранён в «Загрузки»',
     syncResHead: 'Синхронизация', syncResAdd: 'добавлено книг: {n}', syncResUpd: 'обновлено книг: {n}',
     syncResNone: 'изменений нет', syncMissing: 'не найдено на устройстве: {x}',
     syncT: 'Синхронизация и копия',
@@ -517,15 +517,15 @@ const I18N = {
     backupT: 'Save a library backup',
     restoreT: 'Restore from backup',
     backupPrep: 'Preparing backup: “{n}”…',
-    backupDone: 'Backup saved: {n} books, {s} MB',
+    backupDone: 'Backup saved', backupSavedTo: 'Backup saved to Downloads',
     backupFail: 'Failed to save the backup: {e}',
     restoreBusy: 'Restoring: “{n}”…',
     restoreDone: 'Books restored: {n}',
     restoreMixed: 'Restored: {n}, already on the shelf: {s}',
     restoreNone: 'All books from the backup are already on the shelf',
     notBackup: 'this is not an AD.Talewyn library backup',
-    syncSaved: 'Sync file saved · {s} KB', syncShare: 'Choose where to save the file',
-    syncSavedTo: 'Saved to Downloads: {n}',
+    syncSaved: 'Sync file saved', syncShare: 'Choose where to save the file',
+    syncSavedTo: 'Sync file saved to Downloads',
     syncResHead: 'Synchronization', syncResAdd: 'books added: {n}', syncResUpd: 'books updated: {n}',
     syncResNone: 'no changes', syncMissing: 'not found on device: {x}',
     syncT: 'Sync & backup',
@@ -3441,7 +3441,7 @@ async function exportSync() {
     const blob = await buildSync(scope);
     const name = stampName('talewyn-sync-', '.json');
     const r = await downloadBlob(blob, name);
-    showToast(r.how === 'saved' ? T('syncSavedTo', { n: name }) : T('syncSaved', { s: Math.max(1, Math.round(blob.size / 1024)) }));
+    showToast(t(r.how === 'saved' ? 'syncSavedTo' : 'syncSaved'));
   } catch (e) { showToast(T('backupFail', { e: e.message })); }
   finally { backupBusy = false; }
 }
@@ -3520,8 +3520,7 @@ async function exportLibrary() {
     const blob = await buildBackup(scope);
     const name = stampName('talewyn-backup-', '.json');
     const r = await downloadBlob(blob, name);
-    showToast(r.how === 'saved' ? T('syncSavedTo', { n: name })
-      : T('backupDone', { n: scope.books ? state.books.length : 0, s: (blob.size / 1048576).toFixed(1) }));
+    showToast(t(r.how === 'saved' ? 'backupSavedTo' : 'backupDone'));
   } catch (e) {
     showToast(T('backupFail', { e: e.message }));
   } finally {

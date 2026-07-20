@@ -2080,6 +2080,12 @@ body.tts-on .chapter:has(.pdf-text) { padding-bottom: calc(14px + max(env(safe-a
 /* отдача нажатия (её не хватало) */
 .pronun-add-btn { transition: transform .12s ease, border-color .18s, background .18s; }
 .pronun-add-btn:active { transform: scale(.9); background: color-mix(in srgb, var(--accent) 20%, transparent); border-color: var(--accent); }
+/* пока открыт список слов — кнопка остаётся нажатой: то же поле и рамка, что при нажатии
+   (без scale — она не «залипает вдавленной», а просто подсвечена, как кнопки настроек) */
+.pronun-add-btn.sheet-on {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  border-color: var(--accent); color: var(--accent);
+}
 .pronun-del { transition: transform .12s ease, color .15s, background .15s; }
 .pronun-del:active { transform: scale(.84); color: var(--accent); }
 
@@ -2363,6 +2369,13 @@ html.t-dark #sel-tr, html.t-dark #sel-note, html.t-dark #sel-speak { color: var(
 @media (hover: hover) { .tool-btn:hover { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); } }
 /* активная (открыта панель) или нажатая — мягкое аметистовое поле + аметистовая рамка */
 .book-tools .tool-btn.active, .book-tools .tool-btn:active, .book-tools .tool-btn.sheet-on { background: var(--accent-soft); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+/* кнопки в настройках («Синхронизация прогресса», «Полная копия», словарь произношений):
+   пока открыто их окно — тот же вид, что у нажатых кнопок в читалке, с аметистовым полем.
+   Одной рамки мало: поверх лежит затемнение окна, и подсветку без заливки не видно. */
+.set-group .tool-btn.sheet-on, .backup-row .tool-btn.sheet-on {
+  background: var(--accent-soft); color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
 .tool-count { color: var(--accent); font-weight: 700; flex: none; }
 .tool-count.stars { letter-spacing: .05em; }
 

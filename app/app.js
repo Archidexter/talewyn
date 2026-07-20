@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.1.15';
+const APP_VERSION = '1.1.16';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -3205,8 +3205,9 @@ async function doImport(files) {
     showProgress(T('importing', { n: file.name }), null);
     await new Promise(r => setTimeout(r, 60));   // даём тосту отрисоваться
     try {
-      // файл синхры/копии (.tlib) — отдельный путь: умное слияние. Узнаём по началу файла.
-      const head = await file.slice(0, 200).text();
+      // файл синхры/копии — отдельный путь: умное слияние. Узнаём по началу файла;
+      // сжатую копию (.json.gz) распознаём по её первым распакованным байтам
+      const head = (await isGzipFile(file)) ? await gzipHead(file, 400) : await file.slice(0, 200).text();
       if (/"fmt"\s*:\s*"talewyn-(library|full|sync)"/.test(head)) {
         added += (await mergeImport(file)).added; dlRemove(job);
         continue;
@@ -3315,24 +3316,50 @@ const utf8B64 = str => b64FromBytes(new TextEncoder().encode(str));   // btoa с
 // на библиотеке с аудио это означало всю копию в куче JS разом (и обрыв сохранения).
 // Теперь на телефоне каждый кусок сразу уходит в файл через мост, в браузере — оседает
 // в Blob (данные уходят из кучи в blob-хранилище). В памяти живёт только буфер.
-function createSink(name) {
+const canGzip = () => typeof CompressionStream === 'function';
+function createSink(name, opts) {
   const S = (name && isNativeApp() && window.AndroidSave && typeof window.AndroidSave.begin === 'function')
     ? window.AndroidSave : null;
   const native = !!(S && S.begin(name) === 'OK');
   const FLUSH = 512 * 1024;   // столько текста копим перед отправкой (мост зовём не на каждый чих)
-  let buf = '', blobs = native ? null : [], done = false;
-  const flush = () => {
-    if (!buf) return;
+  // Сжатие в том же потоке: копия ужимается примерно на треть (base64 избыточен ровно
+  // настолько, а тексты книг жмутся вчетверо). Данные наружу уходят уже сжатыми кусками,
+  // так что памяти это не добавляет. Нет CompressionStream — пишем как раньше, без сжатия.
+  const gzip = !!(opts && opts.gzip) && canGzip();
+  let buf = '', blobs = native ? null : [], done = false, gzErr = null;
+  const emitBytes = bytes => {
     if (native) {
-      if (S.chunk(utf8B64(buf)) !== 'OK') throw new Error('запись в файл прервана');
-    } else blobs.push(new Blob([buf]));
-    buf = '';
+      if (S.chunk(b64FromBytes(bytes)) !== 'OK') throw new Error('запись в файл прервана');
+    } else blobs.push(new Blob([bytes]));
+  };
+  let writer = null, pump = null;
+  if (gzip) {
+    const cs = new CompressionStream('gzip');
+    writer = cs.writable.getWriter();
+    pump = (async () => {                       // сжатые куски вычитываем по мере появления
+      const rd = cs.readable.getReader();
+      for (;;) {
+        const { value, done: fin } = await rd.read();
+        if (fin) break;
+        try { emitBytes(value); } catch (e) { gzErr = e; try { await rd.cancel(); } catch {} break; }
+      }
+    })();
+  }
+  const flush = async () => {
+    if (!buf) return;
+    const s = buf; buf = '';
+    if (gzip) {
+      if (gzErr) throw gzErr;
+      await writer.write(new TextEncoder().encode(s));
+    } else if (native) {
+      if (S.chunk(utf8B64(s)) !== 'OK') throw new Error('запись в файл прервана');
+    } else blobs.push(new Blob([s]));
   };
   return {
-    native,
+    native, gzip,
     async text(s) {
       buf += s;
-      if (buf.length >= FLUSH) { flush(); await new Promise(r => setTimeout(r, 0)); }   // отдаём поток
+      if (buf.length >= FLUSH) { await flush(); await new Promise(r => setTimeout(r, 0)); }   // отдаём поток
     },
     // Blob → base64 прямо в поток, кусками. Кусок КРАТЕН 3 байтам: тогда base64 частей
     // склеивается встык, без padding-хвостов в середине строки.
@@ -3349,17 +3376,23 @@ function createSink(name) {
     async finish() {
       if (done) return { blob: null };
       done = true;
-      flush();
+      await flush();
+      if (gzip) {                        // дожимаем хвост и дожидаемся, пока всё уйдёт наружу
+        await writer.close();
+        await pump;
+        if (gzErr) throw gzErr;
+      }
       if (native) {
         const r = S.end();
         if (typeof r === 'string' && r.indexOf('OK') === 0) return { blob: null, where: r.slice(3) || name };
         throw new Error('файл не сохранился');
       }
-      return { blob: new Blob(blobs, { type: 'application/json' }) };
+      return { blob: new Blob(blobs, { type: gzip ? 'application/gzip' : 'application/json' }) };
     },
     abort() {
       if (done) return;
       done = true; buf = ''; blobs = null;
+      if (gzip) { try { writer.abort(); } catch {} }
       if (native) { try { S.abort(); } catch {} }
     },
   };
@@ -3621,8 +3654,11 @@ async function exportLibrary() {
   const scope = await askSyncScope('#backup-btn');
   if (!scope) return;
   backupBusy = true;
-  const name = stampName('talewyn-backup-', '.json');
-  const sink = createSink(name);   // на телефоне пишет прямо в «Загрузки», в браузере копит Blob
+  // .json.gz — копия сжимается на лету (примерно −30% к весу файла); на старом движке
+  // без CompressionStream сохраняем как раньше, обычным .json
+  const gz = canGzip();
+  const name = stampName('talewyn-backup-', gz ? '.json.gz' : '.json');
+  const sink = createSink(name, { gzip: gz });   // на телефоне пишет прямо в «Загрузки», в браузере копит Blob
   try {
     await backupWrite(sink, scope);
     const r = await sink.finish();
@@ -3762,8 +3798,35 @@ async function mergeCollectionsFromSync(cols) {
 // этого не переживает. Поэтому читаем файл потоком и выдаём записи книг/аудиокниг ПО ОДНОЙ:
 // разобрал запись → положил в базу → забыл. В памяти живёт только текущая книга.
 // Разбор простой: мы сами пишем этот файл, структура известна — "books":[…] и следом "audio":[…].
-async function streamRecords(file, onHead, onBook, onAudio, onProgress) {
-  const rd = file.stream().getReader();
+// ── сжатые копии (.json.gz) ──
+// Формат узнаём по первым двум байтам, а не по имени файла: переименованный или
+// пришедший из мессенджера файл всё равно откроется правильно.
+async function isGzipFile(file) {
+  try {
+    const s = new Uint8Array(await file.slice(0, 2).arrayBuffer());
+    return s.length === 2 && s[0] === 0x1f && s[1] === 0x8b;
+  } catch { return false; }
+}
+// начало распакованного содержимого — чтобы понять, наша ли это копия, не разжимая файл целиком
+async function gzipHead(file, n) {
+  try {
+    const rd = file.stream().pipeThrough(new DecompressionStream('gzip')).getReader();
+    const { value } = await rd.read();
+    try { await rd.cancel(); } catch {}
+    return value ? new TextDecoder().decode(value.slice(0, n)) : '';
+  } catch { return ''; }
+}
+
+async function streamRecords(file, onHead, onBook, onAudio, onProgress, gz) {
+  // прогресс считаем по СЖАТЫМ байтам: только их размер известен заранее (file.size)
+  let readRaw = 0;
+  let src = file.stream();
+  if (gz) {
+    src = src.pipeThrough(new TransformStream({
+      transform(chunk, ctrl) { readRaw += chunk.length; ctrl.enqueue(chunk); },
+    })).pipeThrough(new DecompressionStream('gzip'));
+  }
+  const rd = src.getReader();
   const dec = new TextDecoder();
   let buf = '', mode = 'head', done = false, read = 0;
   // выделить из буфера очередной объект верхнего уровня; вернуть его текст или null (мало данных)
@@ -3792,7 +3855,7 @@ async function streamRecords(file, onHead, onBook, onAudio, onProgress) {
     const { value, done: fin } = await rd.read();
     if (value) { read += value.length; buf += dec.decode(value, { stream: true }); }
     if (fin) { buf += dec.decode(); done = true; }
-    if (onProgress && file.size) onProgress(read / file.size);
+    if (onProgress && file.size) onProgress(Math.min(1, (gz ? readRaw : read) / file.size));
     for (;;) {
       if (mode === 'head') {
         const at = buf.indexOf('"books":[');
@@ -3828,7 +3891,7 @@ async function streamRecords(file, onHead, onBook, onAudio, onProgress) {
 }
 
 // потоковое восстановление: та же логика слияния, но записи приходят по одной
-async function mergeImportStream(file) {
+async function mergeImportStream(file, gz) {
   const byKey = new Map((await dbAll('books')).map(b => [syncKey(b), b.id]));
   const aByKey = new Map((await dbAll('audiobooks')).map(a => [audioKey(a), a.id]));
   const wasEmpty = !state.books.length;
@@ -3860,7 +3923,7 @@ async function mergeImportStream(file) {
     frac => {   // на большом файле человек должен видеть, что идёт работа, а не гадать
       const p = Math.round(frac * 100);
       if (p !== pct) { pct = p; showProgress(T('restorePct', { p }), frac); }
-    });
+    }, gz);
   await mergeCollectionsFromSync(head && head.collections);
   await mergeStats(head && head.stats);
   mergePronun(head && (Array.isArray(head.pronun) ? head.pronun : (head.settings && head.settings.pronun)));
@@ -3874,9 +3937,11 @@ async function mergeImportStream(file) {
 }
 
 async function mergeImport(file) {
-  // потоковый путь — для больших копий; маленькие файлы синхронизации читаем как раньше
-  if (file.size > 48 * 1024 * 1024 && typeof file.stream === 'function') {
-    try { return await mergeImportStream(file); } catch (e) { if (e && e.fatal) throw e; }
+  const gz = typeof file.slice === 'function' && await isGzipFile(file);
+  // сжатую копию всегда читаем потоком (распаковывать её целиком в память незачем),
+  // большие обычные — тоже; маленькие файлы синхронизации читаем как раньше
+  if ((gz || file.size > 48 * 1024 * 1024) && typeof file.stream === 'function') {
+    try { return await mergeImportStream(file, gz); } catch (e) { if (e && e.fatal) throw e; }
   }
   let j = null;
   try { j = JSON.parse(await file.text()); } catch { throw new Error(t('notBackup')); }

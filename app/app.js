@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.1.5';
+const APP_VERSION = '1.1.6';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -339,6 +339,7 @@ const I18N = {
     restoreT: 'Восстановить из копии',
     backupPrep: 'Готовлю копию: «{n}»…',
     backupDone: 'Копия сохранена', backupSavedTo: 'Копия сохранена в «Загрузки»',
+    restorePct: 'Восстановление: {p}%',
     backupFail: 'Не получилось сохранить копию: {e}',
     restoreBusy: 'Восстанавливаю: «{n}»…',
     restoreDone: 'Восстановлено книг: {n}',
@@ -518,6 +519,7 @@ const I18N = {
     restoreT: 'Restore from backup',
     backupPrep: 'Preparing backup: “{n}”…',
     backupDone: 'Backup saved', backupSavedTo: 'Backup saved to Downloads',
+    restorePct: 'Restoring: {p}%',
     backupFail: 'Failed to save the backup: {e}',
     restoreBusy: 'Restoring: “{n}”…',
     restoreDone: 'Books restored: {n}',
@@ -3553,8 +3555,11 @@ async function restoreBook(b, id) {
 async function restoreAudiobook(a) {
   const id = newId('ab'); const m = a.meta || {};
   const tracks = (a.trackBlobs || []).map(tb => ({ book: id, idx: tb.idx, blob: b64ToBlob(tb) })).filter(t => t.blob);
-  if (!tracks.length) return null;
-  await dbChunk('audiotracks', tracks);
+  // аудиокнига по ссылке: файлов нет, дорожки живут по адресу в сети — восстанавливаем запись
+  // как есть, иначе такие книги молча пропадали при восстановлении
+  const byUrl = Array.isArray(m.tracks) && m.tracks.some(x => x && x.url);
+  if (!tracks.length && !byUrl) return null;
+  if (tracks.length) await dbChunk('audiotracks', tracks);
   await dbPut('audiobooks', {
     id, kind: 'audiobook', title: m.title || a.title || 'Аудиокнига', author: m.author || a.author || '',
     cover: m.cover ? b64ToBlob(m.cover) : null,
@@ -3646,7 +3651,127 @@ async function mergeCollectionsFromSync(cols) {
 // ══════════ УМНЫЙ импорт-слияние: лёгкая синхра / полная копия / старая копия ══════════
 // Книги сопоставляются по отпечатку. Новые (с содержимым) — добавляем; существующим —
 // СЛИВАЕМ состояние без дублей и без перезаписи. Старый формат talewyn-library тоже принимаем.
+// Большую копию нельзя читать целиком: 540 МБ текста разворачиваются в памяти примерно в
+// гигабайт (строки двухбайтные), а JSON.parse строит поверх ещё столько же объектов — телефон
+// этого не переживает. Поэтому читаем файл потоком и выдаём записи книг/аудиокниг ПО ОДНОЙ:
+// разобрал запись → положил в базу → забыл. В памяти живёт только текущая книга.
+// Разбор простой: мы сами пишем этот файл, структура известна — "books":[…] и следом "audio":[…].
+async function streamRecords(file, onHead, onBook, onAudio, onProgress) {
+  const rd = file.stream().getReader();
+  const dec = new TextDecoder();
+  let buf = '', mode = 'head', done = false, read = 0;
+  // выделить из буфера очередной объект верхнего уровня; вернуть его текст или null (мало данных)
+  const takeObject = () => {
+    let i = 0;
+    while (i < buf.length && (buf[i] === ',' || buf[i] === ' ' || buf[i] === '\n' || buf[i] === '\r')) i++;
+    if (i >= buf.length) return null;
+    if (buf[i] === ']') { buf = buf.slice(i + 1); return ']'; }        // конец массива
+    if (buf[i] !== '{') { buf = buf.slice(i + 1); return null; }
+    let depth = 0, inStr = false, esc = false;
+    for (let k = i; k < buf.length; k++) {
+      const c = buf[k];
+      if (esc) { esc = false; continue; }
+      if (c === '\\') { esc = true; continue; }
+      if (c === '"') { inStr = !inStr; continue; }
+      if (inStr) continue;
+      if (c === '{') depth++;
+      else if (c === '}') {
+        depth--;
+        if (!depth) { const s = buf.slice(i, k + 1); buf = buf.slice(k + 1); return s; }
+      }
+    }
+    return null;   // объект ещё не дочитан
+  };
+  while (!done) {
+    const { value, done: fin } = await rd.read();
+    if (value) { read += value.length; buf += dec.decode(value, { stream: true }); }
+    if (fin) { buf += dec.decode(); done = true; }
+    if (onProgress && file.size) onProgress(read / file.size);
+    for (;;) {
+      if (mode === 'head') {
+        const at = buf.indexOf('"books":[');
+        if (at < 0) break;
+        await onHead(buf.slice(0, at) + '"books":[]}');   // голова = всё до книг, закрываем скобками
+        buf = buf.slice(at + '"books":['.length);
+        mode = 'books';
+        continue;
+      }
+      if (mode === 'books' || mode === 'audio') {
+        const s = takeObject();
+        if (s === null) break;
+        if (s === ']') {
+          if (mode === 'books') {
+            const at = buf.indexOf('"audio":[');
+            if (at < 0 && !done) break;                  // ждём, пока подтянется секция аудио
+            if (at < 0) { mode = 'end'; continue; }
+            buf = buf.slice(at + '"audio":['.length);
+            mode = 'audio';
+          } else mode = 'end';
+          continue;
+        }
+        let rec = null;
+        try { rec = JSON.parse(s); } catch { continue; }
+        if (mode === 'books') await onBook(rec); else await onAudio(rec);
+        continue;
+      }
+      break;
+    }
+    if (mode === 'end') break;
+  }
+  try { await rd.cancel(); } catch {}
+}
+
+// потоковое восстановление: та же логика слияния, но записи приходят по одной
+async function mergeImportStream(file) {
+  const byKey = new Map((await dbAll('books')).map(b => [syncKey(b), b.id]));
+  const aByKey = new Map((await dbAll('audiobooks')).map(a => [audioKey(a), a.id]));
+  const wasEmpty = !state.books.length;
+  let added = 0, merged = 0, missing = 0, head = null, pct = -1;
+  const bad = () => { const e = new Error(t('notBackup')); e.fatal = true; return e; };
+  await streamRecords(file,
+    async txt => {
+      try { head = JSON.parse(txt); } catch { throw bad(); }
+      if (!head || !/^talewyn-(sync|full|library)$/.test(head.fmt || '')) throw bad();
+    },
+    async b => {
+      const key = b.key || syncKey({ title: b.title, author: b.author, count: (b.chapters ? b.chapters.length : b.count) || 0 });
+      const id = byKey.get(key);
+      if (id) { await mergeBookState(id, b); merged++; }
+      else if (b.chapters) {
+        const nid = newId('b');
+        try { await restoreBook(b, nid); await mergeBookState(nid, b); byKey.set(key, nid); added++; } catch {}
+      } else missing++;
+    },
+    async a => {
+      const key = a.key || audioKey(a);
+      const id = aByKey.get(key);
+      if (id) { await mergeAudioState(id, a); merged++; }
+      else if ((Array.isArray(a.trackBlobs) && a.trackBlobs.length) || a.meta) {
+        const nid = await restoreAudiobook(a);   // с файлами или по ссылке
+        if (nid) { await mergeAudioState(nid, a); aByKey.set(key, nid); added++; } else missing++;
+      } else missing++;
+    },
+    frac => {   // на большом файле человек должен видеть, что идёт работа, а не гадать
+      const p = Math.round(frac * 100);
+      if (p !== pct) { pct = p; showProgress(T('restorePct', { p }), frac); }
+    });
+  await mergeCollectionsFromSync(head && head.collections);
+  await mergeStats(head && head.stats);
+  mergePronun(head && (Array.isArray(head.pronun) ? head.pronun : (head.settings && head.settings.pronun)));
+  if (wasEmpty && added && head && head.fmt !== 'talewyn-library' && head.settings
+      && typeof head.settings === 'object' && !Array.isArray(head.settings)) {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(head.settings));
+    Object.assign(settings, loadSettings()); applySettings();
+    if (typeof head.ttsBase === 'string' && head.ttsBase) localStorage.setItem('talewyn-tts-base', head.ttsBase);
+  }
+  return await finishImport(added, merged, missing);
+}
+
 async function mergeImport(file) {
+  // потоковый путь — для больших копий; маленькие файлы синхронизации читаем как раньше
+  if (file.size > 48 * 1024 * 1024 && typeof file.stream === 'function') {
+    try { return await mergeImportStream(file); } catch (e) { if (e && e.fatal) throw e; }
+  }
   let j = null;
   try { j = JSON.parse(await file.text()); } catch { throw new Error(t('notBackup')); }
   if (!j || !/^talewyn-(sync|full|library)$/.test(j.fmt || '') || !Array.isArray(j.books)) throw new Error(t('notBackup'));
@@ -3672,7 +3797,7 @@ async function mergeImport(file) {
     const key = a.key || audioKey(a);
     const id = aByKey.get(key);
     if (id) { await mergeAudioState(id, a); merged++; }
-    else if (Array.isArray(a.trackBlobs) && a.trackBlobs.length) { const nid = await restoreAudiobook(a); if (nid) { await mergeAudioState(nid, a); aByKey.set(key, nid); added++; } }
+    else if ((Array.isArray(a.trackBlobs) && a.trackBlobs.length) || a.meta) { const nid = await restoreAudiobook(a); if (nid) { await mergeAudioState(nid, a); aByKey.set(key, nid); added++; } else missing++; }
     else missing++;
   }
   await mergeCollectionsFromSync(j.collections);
@@ -3683,7 +3808,13 @@ async function mergeImport(file) {
     Object.assign(settings, loadSettings()); applySettings();
     if (typeof j.ttsBase === 'string' && j.ttsBase) localStorage.setItem('talewyn-tts-base', j.ttsBase);
   }
-  state.books = await dbAll('books');
+  return await finishImport(added, merged, missing);
+}
+
+// общий финал восстановления (для обоих путей — обычного и потокового):
+// перечитать библиотеку, перерисовать что открыто и сказать человеку итог
+async function finishImport(added, merged, missing) {
+  state.books = sortShelf(await dbAll('books'));
   // ВАЖНО: перерисовываем полку и прогресс — иначе слитый прогресс не виден до перезапуска
   // (частый случай: книги не добавлялись, только обновлялись — раньше UI не обновлялся вовсе)
   try { await loadCollections(); } catch {}

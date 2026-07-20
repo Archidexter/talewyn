@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.1.3';
+const APP_VERSION = '1.1.4';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -243,7 +243,7 @@ const I18N = {
     colCancel: 'Отменить', colSave: 'Сохранить', colDelete: 'Удалить коллекцию',
     colDelConfirm: 'Удалить коллекцию «{n}»?', colAddT: 'В коллекцию',
     colPickTitle: 'В какие коллекции добавить', colAdd2: 'Добавить',
-    syncPickTitle: 'Что сохранить', syncKindBooks: 'Книги', syncKindAudio: 'Аудиокниги',
+    syncPickTitle: 'Что сохранить?', syncKindBooks: 'Книги', syncKindAudio: 'Аудиокниги',
     syncPickNone: 'Отметьте хотя бы одно',
     colNoneYet: 'Сначала создайте коллекцию', colAdded: 'Добавлено в коллекции',
     colRemoveYes: 'Убрать', colRemoveNo: 'Оставить', colRemoved: 'Убрано из коллекции',
@@ -422,7 +422,7 @@ const I18N = {
     colCancel: 'Cancel', colSave: 'Save', colDelete: 'Delete collection',
     colDelConfirm: 'Delete collection "{n}"?', colAddT: 'To collection',
     colPickTitle: 'Add to which collections', colAdd2: 'Add',
-    syncPickTitle: 'What to save', syncKindBooks: 'Books', syncKindAudio: 'Audiobooks',
+    syncPickTitle: 'What to save?', syncKindBooks: 'Books', syncKindAudio: 'Audiobooks',
     syncPickNone: 'Tick at least one',
     colNoneYet: 'Create a collection first', colAdded: 'Added to collections',
     colRemoveYes: 'Remove', colRemoveNo: 'Keep', colRemoved: 'Removed from collection',
@@ -3351,8 +3351,12 @@ const statsForSync = async () => ({ readDays: (await kvGet('readDays')) || {}, w
 // ── что класть в файл: книги и/или аудиокниги (обе галочки по умолчанию) ──
 // Возвращает {books, audio} или null, если человек передумал.
 let syncPickResolve = null, syncPickHideT = 0;
-function askSyncScope() {
+// trigSel — кнопка, которая открыла окно: пока идёт выбор, она выглядит нажатой (.sheet-on),
+// как кнопки настроек, — чтобы было видно, ЧТО именно сохраняешь
+function askSyncScope(trigSel) {
   const box = $('#sync-pick'); if (!box) return Promise.resolve({ books: true, audio: true });
+  document.querySelectorAll('#sync-light-btn, #backup-btn').forEach(b => b.classList.remove('sheet-on'));
+  if (trigSel) document.querySelectorAll(trigSel).forEach(b => b.classList.add('sheet-on'));
   const bB = $('#sync-pick-books'), bA = $('#sync-pick-audio');
   bB.classList.add('on'); bA.classList.add('on');   // по умолчанию сохраняем всё
   if (syncPickResolve) { const r = syncPickResolve; syncPickResolve = null; r(null); }
@@ -3363,6 +3367,7 @@ function askSyncScope() {
 }
 function closeSyncPick(res) {
   const box = $('#sync-pick'); if (!box) return;
+  document.querySelectorAll('#sync-light-btn, #backup-btn').forEach(b => b.classList.remove('sheet-on'));
   box.classList.remove('open');
   clearTimeout(syncPickHideT);
   syncPickHideT = setTimeout(() => { box.hidden = true; }, 360);
@@ -3429,7 +3434,7 @@ const stampName = (prefix, ext) => {
 };
 async function exportSync() {
   if (backupBusy) return;
-  const scope = await askSyncScope();
+  const scope = await askSyncScope('#sync-light-btn');
   if (!scope) return;                    // передумал
   backupBusy = true;
   try {
@@ -3444,17 +3449,13 @@ async function exportSync() {
 async function buildBackup(scope) {
   const want = scope || { books: true, audio: true };
   const books = want.books ? sortShelf(await dbAll('books')) : [];
-  // Аудиокниги кладём СОСТОЯНИЕМ (прогресс, заметки, оценка), а не самими файлами:
-  // звук на сотни мегабайт в JSON раздувает файл вчетверо и его уже не разобрать.
-  const audio = [];
-  if (want.audio) for (const a of await dbAll('audiobooks')) audio.push(await audioState(a));
+  const audiobooks = want.audio ? sortShelf(await dbAll('audiobooks')) : [];
   const head = {
     fmt: 'talewyn-library', ver: 1, app: APP_VERSION, created: Date.now(),
     settings,
     ttsBase: localStorage.getItem('talewyn-tts-base') || null,
     lastBook: (await kvGet('lastBook')) || null,
     collections: await dbAll('collections'),   // свои полки
-    audio,
   };
   const parts = [JSON.stringify(head).slice(0, -1) + ',"books":['];
   for (let i = 0; i < books.length; i++) {
@@ -3484,6 +3485,27 @@ async function buildBackup(scope) {
     };
     parts.push((i ? ',' : '') + JSON.stringify(rec));
   }
+  // Аудиокниги — ЦЕЛИКОМ: дорожки, обложка, описание плюс состояние (прогресс и заметки).
+  // Пишем по одной книге за раз прямо в части файла, чтобы звук не собирался в памяти весь разом.
+  parts.push('],"audio":[');
+  for (let i = 0; i < audiobooks.length; i++) {
+    const a = audiobooks[i];
+    showToast(T('backupPrep', { n: a.title }));
+    await new Promise(r => setTimeout(r, 0));
+    const rec = await audioState(a);            // прогресс и заметки — как в лёгкой синхронизации
+    rec.meta = {
+      title: a.title, author: a.author || '', tracks: a.tracks || [],
+      count: a.count || (a.tracks || []).length, totalDur: a.totalDur || 0,
+      addedAt: a.addedAt || Date.now(), notes: Array.isArray(a.notes) ? a.notes : [],
+      cover: a.cover ? { m: a.cover.type || '', d: await blobToB64(a.cover) } : null,
+    };
+    rec.trackBlobs = [];
+    for (const tr of (await dbAll('audiotracks', bookRange(a.id))).sort((x, y) => x.idx - y.idx)) {
+      if (!tr.blob) continue;                   // стрим по ссылке: дорожка живёт по url, файла нет
+      rec.trackBlobs.push({ idx: tr.idx, m: tr.blob.type || '', d: await blobToB64(tr.blob) });
+    }
+    parts.push((i ? ',' : '') + JSON.stringify(rec));
+  }
   parts.push(']}');
   return new Blob(parts, { type: 'application/json' });
 }
@@ -3491,7 +3513,7 @@ async function buildBackup(scope) {
 let backupBusy = false;
 async function exportLibrary() {
   if (backupBusy || !(state.books.length || (state.audiobooks || []).length)) return;
-  const scope = await askSyncScope();
+  const scope = await askSyncScope('#backup-btn');
   if (!scope) return;
   backupBusy = true;
   try {
@@ -8829,6 +8851,7 @@ const SHEET_TRIGGER = {
   'settings-sheet': '#shelf-settings-btn, #lib-settings-btn, #reader-settings-btn',
   'info-sheet': '#info-btn',
   'review-sheet': '#review-btn, #ab-review-btn',
+  'pronun-sheet': '#pronun-open-list',
 };
 function sheetShow(sheet, overlay) {
   overlay.hidden = false;

@@ -1602,6 +1602,8 @@ body.col-open #col-tab svg { transform: rotate(180deg); }
   color: var(--gild); margin: 4px 0 14px; text-align: center;
 }
 .set-section:not(:first-of-type) { margin-top: 16px; padding-top: 13px; border-top: 1px solid var(--border); }
+/* после орнаментальной полосы своя линия секции не нужна — иначе разделителя два подряд */
+.confirm-orn + .set-section { margin-top: 0; padding-top: 0; border-top: none; }
 
 /* каждая настройка: подпись сверху, контрол во всю ширину снизу — ровно и предсказуемо */
 .set-group { margin-bottom: 14px; }

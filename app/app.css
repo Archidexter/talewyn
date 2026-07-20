@@ -21,6 +21,8 @@
   --nt-y: #d9b23c; --nt-g: #7fa35c; --nt-v: #a678cf; --nt-t: #c96f4a;
   /* радиусы: 10 — малые элементы, 12 — кнопки/поля, 16 — карточки, 20 — листы */
   --r-sm: 10px; --r-md: 12px; --r-lg: 16px; --r-xl: 20px;
+  /* зерно фона полки — картинка-плитка, одна на все темы */
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' seed='9' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='linear' slope='0.06'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)'/%3E%3C/svg%3E");
   /* рисунок золотой крупки на фоне полки — маска, одна на все темы (цвет задаётся отдельно) */
   --fleck: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='600' viewBox='0 0 300 600' preserveAspectRatio='xMidYMid slice'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.62' numOctaves='2' seed='8' result='n'/%3E%3CfeColorMatrix in='n' type='matrix' values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1.4 0 0 0 -0.2' result='a'/%3E%3CfeComponentTransfer in='a' result='s'%3E%3CfeFuncA type='discrete' tableValues='0 0 0 0 0 0 1 1'/%3E%3C/feComponentTransfer%3E%3CfeFlood flood-color='%23fff' result='c'/%3E%3CfeComposite in='c' in2='s' operator='in'/%3E%3C/filter%3E%3Crect width='300' height='600' filter='url(%23f)'/%3E%3C/svg%3E");
 }
@@ -123,17 +125,14 @@ body {
   -webkit-font-smoothing: antialiased;
   transition: background .25s, color .25s;
 }
-/* Смена темы: цвета перетекают на ВСЕЙ странице, а не щёлкают вразнобой (раньше плавно
-   менялся только фон body, а панели, карточки и шапки переключались мгновенно — из-за
-   этого переход выглядел рывком). Класс живёт только те 0.3 с, пока идёт переход, —
-   держать переходы цвета на всём дереве постоянно нельзя, это дорого. */
-html.theme-shift, html.theme-shift * {
-  transition: background-color .3s ease, color .3s ease, border-color .3s ease,
-              fill .3s ease, stroke .3s ease, box-shadow .3s ease !important;
+/* Смена темы: цвета перетекают у фона страницы и фона полки, а весь тяжёлый
+   пересчёт спрятан за системный кроссфейд (см. applySettings). Размытие за
+   панелями НЕ трогаем — любое изменение его радиуса видно как щелчок. */
+html.theme-shift body,
+html.theme-shift #shelf-bg .sbg-base {
+  transition: background-color .28s ease, color .28s ease;
 }
-@media (prefers-reduced-motion: reduce) {
-  html.theme-shift, html.theme-shift * { transition: none !important; }
-}
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: .3s; }
 button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; padding: 0; }
 /* ссылки тоже: у <a> подсветка тапа своя, и без сброса кнопки-ссылки (Boosty/Telegram/
    YouTube) вспыхивали синим прямоугольником, хотя рядом такие же кнопки — нет */
@@ -236,9 +235,19 @@ body.bg-live:has(#shelf-view:not([hidden])) #shelf-bg { display: block; }
 #shelf-bg .sbg-vignette {
   background: radial-gradient(125% 92% at 50% 48%, transparent 52%, rgba(0, 0, 0, .22) 80%, rgba(0, 0, 0, .46) 100%);
 }
-#shelf-bg .sbg-grain { filter: url(#bgGrain); opacity: .6; mix-blend-mode: overlay; }
+/* зерно — готовая картинка (тот же fractalNoise, но растрируется один раз), а не живой
+   SVG-фильтр: фильтр пересчитывался при каждой перерисовке фона, в том числе на смене темы */
+#shelf-bg .sbg-grain {
+  opacity: .6; mix-blend-mode: overlay;
+  background: var(--grain) 0 0 / 180px 180px repeat;
+}
+/* Крупка ездит параллаксом, но слой вынесен на видеокарту: сдвиг делается
+   translate3d по готовому растру, а не перерисовкой маски на каждом кадре
+   (раньше от любого дрожания руки перерисовывался весь экран). */
 #shelf-bg .sbg-fleck {
-  opacity: .85; translate: var(--px, 0) var(--py, 0); will-change: translate;
+  opacity: .85;
+  transform: translate3d(var(--px, 0px), var(--py, 0px), 0);
+  will-change: transform; backface-visibility: hidden;
   -webkit-mask: linear-gradient(180deg, #000, transparent 40%, transparent 62%, #000);
   mask: linear-gradient(180deg, #000, transparent 40%, transparent 62%, #000);
 }
@@ -251,14 +260,20 @@ body.bg-live:has(#shelf-view:not([hidden])) #shelf-bg { display: block; }
   position: absolute; inset: 0; background-color: var(--gild);
   -webkit-mask: var(--fleck) center / cover no-repeat;
   mask: var(--fleck) center / cover no-repeat;
-  transition: background-color .3s ease;
+  /* цвет крупки меняется мгновенно: переливать полноэкранный слой с маской —
+     значит перерисовывать его на каждом кадре перехода, это и есть мигание */
+  transition: none;
 }
 /* слой блеска: зажигает искры РОВНО в точках крупки (позиции считаны с неё) и
    только при наклоне; в покое пуст, поэтому патина под ним видна как есть */
 #shelf-bg .sbg-glint {
   position: absolute; inset: 0; width: 100%; height: 100%;
-  mix-blend-mode: screen; translate: var(--px, 0) var(--py, 0); will-change: translate;
+  mix-blend-mode: screen;
+  transform: translate3d(var(--px, 0px), var(--py, 0px), 0);
+  will-change: transform; backface-visibility: hidden;
 }
+/* сама крупка растрируется один раз и дальше только ездит вместе со слоем */
+#shelf-bg .sbg-fleck-ink { contain: paint; }
 .lib-header { padding: 10px 0 14px; border-bottom: 1px solid var(--border); }
 /* у шапки полки вместо простой линии — орнамент-разделитель (золотые линии + ромб),
    как в автопоиске и окнах заметок/перевода */
@@ -289,8 +304,8 @@ body.bg-live:has(#shelf-view:not([hidden])) #shelf-bg { display: block; }
   background-size: 220% 100%;
   -webkit-mask: url(logo.png) center / contain no-repeat;
   mask: url(logo.png) center / contain no-repeat;
-  animation: brand-sheen 5s ease-in-out infinite;
 }
+.brand-logo { animation: brand-sheen 5s ease-in-out infinite; }
 html.t-light .brand-logo, html.t-sepia .brand-logo {
   background: linear-gradient(115deg,
     var(--accent2) 0%, var(--accent2) 30%,
@@ -334,19 +349,22 @@ html.t-light .brand-logo, html.t-sepia .brand-logo {
 #continue-card, #shelf-continue { margin-top: 20px; }
 #shelf-continue:empty, #continue-card:empty { margin: 0; }
 
-/* ═══ Панель фильтров полки — раскрывается сверху вниз: высота едет от 0 к своей
-   (её проставляет JS по факту содержимого), содержимое обрезается по пути ═══ */
+/* ═══ Панель фильтров полки — раскрывается сверху вниз, а полка под ней одновременно
+   отъезжает. Обе анимации идут на видеокарте (обрезка + сдвиг): высоту анимировать
+   нельзя — каждый кадр пересчитывалась бы вся сетка обложек, на телефоне это лаг. ═══ */
 #shelf-filters, #audio-filters {
   margin: 0 0 18px; border-radius: var(--r-lg);
   background: var(--elev); border: 1px solid var(--border);
-  overflow: hidden; opacity: 0;
-  transition: height .3s cubic-bezier(.4, 0, .2, 1), opacity .22s ease;
-  will-change: height, opacity;
+  opacity: 0; clip-path: inset(0 0 100% 0);
+  transition: clip-path .3s cubic-bezier(.32, .72, 0, 1), opacity .2s ease;
 }
 #shelf-filters { margin-top: 16px; }
-#shelf-filters.open, #audio-filters.open { opacity: 1; }
+#shelf-filters.open, #audio-filters.open { opacity: 1; clip-path: inset(0 0 0 0); }
+/* полка едет следом за раскрытием — сдвигом, без перекладки */
+.flt-shift { transition: transform .3s cubic-bezier(.32, .72, 0, 1); will-change: transform; }
 @media (prefers-reduced-motion: reduce) {
-  #shelf-filters, #audio-filters { transition: opacity .15s ease; }
+  #shelf-filters, #audio-filters { transition: opacity .15s ease; clip-path: none; }
+  .flt-shift { transition: none; }
 }
 .flt-inner { padding: 14px; display: flex; flex-direction: column; gap: 13px; }
 #shelf-filters .field, #audio-filters .field { width: 100%; }
@@ -720,7 +738,8 @@ html.t-dark .cover-img { opacity: .93; }
    без таймера на каждую карточку — сотня книг больше не держит сотню таймеров. */
 .book-title .marq, .ab-card-title .marq { display: inline-block; white-space: nowrap; will-change: transform; }
 .book-title.is-marquee, .ab-card-title.is-marquee { text-align: left; }
-.book-title.is-marquee .marq, .ab-card-title.is-marquee .marq {
+/* едут только видимые карточки — за экраном анимация не нужна никому */
+.book-title.is-marquee.marq-live .marq, .ab-card-title.is-marquee.marq-live .marq {
   animation: cont-marq var(--marq-dur, 8s) ease-in-out infinite alternate;
 }
 @media (prefers-reduced-motion: reduce) {

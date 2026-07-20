@@ -1419,9 +1419,14 @@ body.col-open #col-tab svg { transform: rotate(180deg); }
   width: min(360px, 92vw); background: var(--elev); border: 1px solid var(--border-strong);
   border-radius: var(--r-lg); padding: 18px; box-shadow: 0 20px 60px rgb(0 0 0 / .5);
   display: flex; flex-direction: column; gap: 14px;
-  transform: translateY(10px) scale(.98); transition: transform .2s ease;
+  /* влетает из-за левого края и уезжает обратно — ровно как окна «Автопоиск» и
+     «Вставить по ссылке» (.confirm-card); --lift держит окно выше клавиатуры */
+  --lift: 69px;
+  transform: translate(-110vw, calc(-1 * var(--lift)));
+  transition: transform .34s cubic-bezier(.22, .9, .28, 1);
 }
-#col-create.open .col-modal-box, #col-pick.open .col-modal-box { transform: none; }
+#col-create.open .col-modal-box,
+#col-pick.open .col-modal-box { transform: translate(0, calc(-1 * var(--lift))); }
 .col-modal-title { font-weight: 700; font-size: 15px; color: var(--text); text-align: center; }
 .col-modal-actions { display: flex; gap: 10px; }
 .col-modal-actions > * { flex: 1; }
@@ -2164,7 +2169,9 @@ html.t-dark #sel-tr, html.t-dark #sel-note, html.t-dark #sel-speak { color: var(
 .color-row.seg .sel-dot.on { border-color: var(--text); box-shadow: inset 0 0 0 1px var(--accent); }
 .color-row.seg .sel-dot:active { transform: scale(.96); }
 #note-text, #review-text, #annot-input {
-  width: 100%; padding: 11px 13px; border-radius: var(--r-md); resize: vertical;
+  /* resize: none — иначе браузер рисует свою ручку растягивания в правом нижнем углу
+     (уголок-прямоугольник у описания, точка у заметки); пальцем она всё равно бесполезна */
+  width: 100%; padding: 11px 13px; border-radius: var(--r-md); resize: none;
   min-height: 80px; border: 1px solid var(--border); background: var(--bg);
   color: var(--text); font: inherit; font-size: 14.5px; outline: none;
   transition: border-color .18s;

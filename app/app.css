@@ -1504,6 +1504,10 @@ body.col-open #col-tab svg { transform: rotate(180deg); }
 .col-pick-item.on .col-pick-check { border-color: var(--gild); background: var(--gild); }
 .col-pick-item.on .col-pick-check::after { content: '✓'; color: #1b1206; font-size: 13px; font-weight: 800; line-height: 1; }
 .col-pick-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* «Книги» и «Аудиокниги» — двумя кнопками в один ряд, столбиком они занимали лишнюю высоту */
+#sync-pick .col-pick-list { flex-direction: row; gap: 10px; }
+#sync-pick .col-pick-item { flex: 1; min-width: 0; justify-content: center; gap: 8px; padding: 11px 10px; }
+#sync-pick .col-pick-name { flex: 0 1 auto; }
 @keyframes fab-del-press { 0%, 100% { transform: scale(1); } 45% { transform: scale(.82); } }
 @keyframes trash-open { 0% { transform: rotate(0); } 40% { transform: rotate(32deg) translateY(-1.5px); } 100% { transform: rotate(0); } }
 

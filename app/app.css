@@ -335,8 +335,8 @@ html.t-light .brand-logo, html.t-sepia .brand-logo {
 .sort-frame .lang-trigger, .sort-frame .flt-select .lang-trigger { border: 0; background: transparent; height: 100%; }
 .sort-cb-lbl { display: flex; align-items: center; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .sort-frame .scan-cb { width: 18px; height: 18px; }
-/* в панелях фильтров рамка тянется на всю строку и ростом с остальные поля */
-.flt-sort .sort-frame { flex: 1; min-width: 0; height: 46px; border-radius: var(--r-md); }
+/* в панелях фильтров рамка тянется на всю строку и ростом с остальные поля (44px) */
+.flt-sort .sort-frame { flex: 1; min-width: 0; height: 44px; border-radius: var(--r-md); }
 .flt-sort .sort-frame .flt-select { flex: 1; min-width: 0; }
 @media (prefers-reduced-motion: reduce) {
   #shelf-filters, #audio-filters { transition: opacity .15s ease; clip-path: none; }

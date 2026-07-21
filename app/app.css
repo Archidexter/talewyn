@@ -1403,9 +1403,9 @@ body.sel-mode .fold-edit { display: none; }   /* в режиме выбора �
   border-radius: var(--r-md);
   background: color-mix(in srgb, var(--elev) 60%, transparent);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--gild) 12%, transparent);
-  animation: fold-sec-in .32s cubic-bezier(.2, .8, .3, 1);
+  /* раскрытие и закрытие — рост и схлопывание по ВЫСОТЕ (см. toggleFolder): полка под
+     секцией едет вместе с ней в потоке, без прыжков */
 }
-@keyframes fold-sec-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
 .fold-sec-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .fold-sec-toggle {
   flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
@@ -1430,8 +1430,6 @@ body.sel-mode .fold-edit { display: none; }   /* в режиме выбора �
 /* сетка внутри секции — той же меры, что полка (колонки совпадают, книги не «плывут») */
 .fold-sec-grid.shelf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 24px 18px; }
 @media (max-width: 480px) { .fold-sec-grid.shelf-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@keyframes fold-in { from { opacity: 0; transform: translateX(-26px) scale(.92); } to { opacity: 1; transform: none; } }
-.fold-kid.fold-in { animation: fold-in .34s cubic-bezier(.2, .8, .3, 1) backwards; animation-delay: calc(var(--fold-i, 0) * 45ms); }
 /* сборка: книги втягиваются САМИ В СЕБЯ на своих местах и гаснут — по экрану ничего не бегает */
 @keyframes fold-suck { from { transform: scale(1); opacity: 1; } to { transform: scale(.18); opacity: 0; } }
 .fold-suck { animation: fold-suck .26s cubic-bezier(.4, 0, .6, 1) forwards; pointer-events: none; }

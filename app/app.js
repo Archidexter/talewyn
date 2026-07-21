@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.2.2';
+const APP_VERSION = '1.2.3';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -1759,7 +1759,10 @@ const menuOptionsHtml = (options, cur) => options.map(o =>
 
 const appMenus = [];   // все меню-порталы, живущие в body
 function closeAppMenus() { for (const m of appMenus) m.classList.remove('open'); }
-function makeMenu(trigger, { extraClass = '', minWidth = 0, cap = 280, align = 'left', onPick } = {}) {
+// anchor — элемент, по которому равняется меню (левая грань и ширина); по умолчанию
+// сам триггер. Нужен, когда триггер живёт внутри рамки-контейнера (сортировка с
+// галочкой): меню обязано вставать по грани РАМКИ, а не уезжать под триггер.
+function makeMenu(trigger, { extraClass = '', minWidth = 0, cap = 280, align = 'left', onPick, anchor = null } = {}) {
   // подчищаем меню, чей триггер уже выброшен из документа (панели пересобираются)
   for (let i = appMenus.length - 1; i >= 0; i--) {
     const m = appMenus[i];
@@ -1773,7 +1776,7 @@ function makeMenu(trigger, { extraClass = '', minWidth = 0, cap = 280, align = '
   appMenus.push(menu);
   // раскрываем ВНИЗ, если влезает; вверх — только когда снизу места нет
   const place = () => {
-    const r = trigger.getBoundingClientRect();
+    const r = (anchor || trigger).getBoundingClientRect();
     const w = Math.max(r.width, minWidth);
     menu.style.width = w + 'px';
     menu.style.maxHeight = 'none';
@@ -1813,7 +1816,7 @@ addEventListener('pointerdown', e => {
 }, true);
 
 // выпадашка с подписью/иконкой текущего значения (автопоиск: формат и сортировка)
-function buildDropdown(container, options, value, onChange) {
+function buildDropdown(container, options, value, onChange, anchor) {
   if (!container) return;
   if (container._ddMenu) container._ddMenu.remove();   // пересборка — убираем прежнее меню-портал
   container.innerHTML = menuTriggerHtml();
@@ -1827,7 +1830,7 @@ function buildDropdown(container, options, value, onChange) {
     menu.querySelectorAll('.lang-opt').forEach(op => op.classList.toggle('sel', op.dataset.v === val));
   };
   const { menu } = makeMenu(trigger, {
-    extraClass: 'dd-menu', minWidth: 150,
+    extraClass: 'dd-menu', minWidth: 150, anchor,
     onPick: v => { val = v; sync(); onChange(val); },
   });
   menu.innerHTML = menuOptionsHtml(options, val);
@@ -1909,7 +1912,10 @@ function buildScanSortDD() {
     { v: 'date', label: t('sortDate'), icon: SORT_IC.date },
     { v: 'size', label: t('sortSize'), icon: SORT_IC.size },
   ];
-  buildDropdown($('#scan-sort'), opts, scanSort, v => { scanSort = v; renderScanResults(); });
+  const mount = $('#scan-sort');
+  // меню равняется по общей рамке «галочка + сортировка», а не по триггеру внутри неё
+  buildDropdown(mount, opts, scanSort, v => { scanSort = v; renderScanResults(); },
+    mount && mount.closest('.sort-frame'));
 }
 function renderScanResults() {
   const box = $('#scan-list');
@@ -3825,6 +3831,7 @@ function filterSelect(mount, options, current, onChange) {
   curEl.textContent = lbl();
   const { menu } = makeMenu(trigger, {
     cap: 300,
+    anchor: mount.closest('.sort-frame'),   // сортировка: меню по грани общей рамки
     onPick: v => {
       current = v;
       curEl.textContent = lbl();

@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.2.9';
+const APP_VERSION = '1.2.10';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -2511,8 +2511,8 @@ function refreshSelChecks() {
   });
   updateSelFabs();
 }
-// кружки следуют за СОСТАВОМ выбора в коллекции: есть реальные книги — есть урна,
-// есть нескачанные записи каталога — есть «скачать всё»; смешанный выбор — оба разом
+// кружки следуют за СОСТАВОМ выбора (коллекция и каталог): есть скачанное — есть урна,
+// есть нескачанное — есть «скачать всё»; смешанный выбор — оба разом
 function updateSelFabs() {
   let canDel = true, canDl = false;
   if (selMode && !selKind.startsWith('cat') && activeCol) {
@@ -2520,6 +2520,9 @@ function updateSelFabs() {
     const real = id => pool.some(r => r.id === id);
     canDel = selIds.some(real);
     canDl = selIds.some(id => !real(id));   // не книга из библиотеки = нескачанная запись каталога
+  } else if (selMode && selKind.startsWith('cat')) {
+    canDel = selIds.some(k => catBookIdOf({ key: k }));    // скачанная запись — есть что удалить
+    canDl = selIds.some(k => !catBookIdOf({ key: k }));
   }
   const b = document.body;
   const changed = b.classList.contains('sel-can-del') !== canDel
@@ -2758,12 +2761,16 @@ function pluralRu(n, one, few, many) {
   return many;
 }
 async function deleteSelected() {
-  if (!selIds.length || selKind.startsWith('cat')) return;   // в каталоге мусорки нет
-  const kind = selKind;
-  // в коллекции выбор смешанный: урна касается только реальных книг из библиотеки,
-  // нескачанные записи каталога молча пропускает (удалять у них нечего)
-  const pool = kind === 'audio' ? (state.audiobooks || []) : state.books;
-  const ids = selIds.filter(id => pool.some(r => r.id === id));
+  if (!selIds.length) return;
+  const audio = selKind === 'audio' || selKind === 'cataudio';
+  // урна касается только СКАЧАННОГО и молча пропускает остальное: в коллекции — нескачанные
+  // записи каталога, в каталоге — записи без скачанного воплощения
+  let ids;
+  if (selKind.startsWith('cat')) ids = selIds.map(k => catBookIdOf({ key: k })).filter(Boolean);
+  else {
+    const pool = audio ? (state.audiobooks || []) : state.books;
+    ids = selIds.filter(id => pool.some(r => r.id === id));
+  }
   if (!ids.length) return;
   const n = ids.length;
   // видимая анимация нажатия: кнопка «клюёт», крышка мусорки откидывается
@@ -2771,14 +2778,14 @@ async function deleteSelected() {
   if (fab) { fab.classList.remove('pressing'); void fab.offsetWidth; fab.classList.add('pressing'); }
   await new Promise(r => setTimeout(r, 230));
   const noun = uiLang() === 'ru'
-    ? (kind === 'audio' ? pluralRu(n, 'аудиокнигу', 'аудиокниги', 'аудиокниг') : pluralRu(n, 'книгу', 'книги', 'книг'))
-    : (kind === 'audio' ? 'audiobook' : 'book') + (n === 1 ? '' : 's');
+    ? (audio ? pluralRu(n, 'аудиокнигу', 'аудиокниги', 'аудиокниг') : pluralRu(n, 'книгу', 'книги', 'книг'))
+    : (audio ? 'audiobook' : 'book') + (n === 1 ? '' : 's');
   const msg = uiLang() === 'ru'
     ? `Удалить ${n} ${noun} вместе с прогрессом?`
     : `Delete ${n} ${noun} along with progress?`;
   if (!(await uiConfirm(msg, { yes: t('dlgDelete'), danger: true }))) return;
   exitSelMode();
-  if (kind === 'audio') {
+  if (audio) {
     for (const id of ids) { try { await dropAudiobook(id); } catch {} }
     await loadAudiobooks();
     renderAudioShelf();
@@ -3806,7 +3813,8 @@ function catDownloadSelected() {
   if (!selMode || !selIds.length) return;
   if (selKind.startsWith('cat')) {   // каталог: выбор — ключи записей активной витрины
     const cat = activeCat; if (!cat) return;
-    const keys = selIds.slice();
+    const keys = selIds.filter(k => !catBookIdOf({ key: k }));   // скачанные пропускаем
+    if (!keys.length) return;
     exitSelMode();
     for (const k of keys) {
       const en = (cat.entries || []).find(x => x.key === k);

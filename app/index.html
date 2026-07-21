@@ -10,7 +10,7 @@
 if(th==='auto')th=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <link rel="stylesheet" href="fonts.css?v=9">
-<link rel="stylesheet" href="app.css?v=208">
+<link rel="stylesheet" href="app.css?v=214">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -120,6 +120,7 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     <div id="audio-continue"></div>
     <div id="audio-filters" class="shelf-filters" hidden></div>
     <div id="audio-content"></div>
+    <footer class="lib-footer" id="audio-footer"></footer>
   </div>
 
 </main>
@@ -133,7 +134,17 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <!-- Коллекции: выдвижной раздел слева, лежит поверх интерфейса -->
 <div id="col-scrim" hidden></div>
 <aside id="col-drawer" hidden aria-label="Коллекции">
-  <!-- верхняя часть (прокручиваемая): коллекции -->
+  <!-- секция «Каталог» СВЕРХУ, треть высоты: витрины книг из сети + свои OPDS-серверы -->
+  <section id="cat-section">
+    <div class="col-head"><div class="confirm-orn"><span class="sheet-name" data-i18n="catTitle">Каталог</span></div></div>
+    <div class="cat-scroll">
+      <div class="cat-list" id="cat-list"></div>
+      <button class="col-add" id="cat-add-btn" data-i18n-title="catAddT" title="Добавить каталог" aria-label="Добавить каталог">
+        <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </div>
+  </section>
+  <!-- средняя часть (прокручиваемая): коллекции -->
   <div class="col-scroll">
     <div class="col-head"><div class="confirm-orn"><span class="sheet-name" data-i18n="colTitle">Коллекции</span></div></div>
     <div class="col-list" id="col-list"></div>
@@ -158,6 +169,20 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     <div class="col-modal-actions">
       <button id="col-create-cancel" class="ghost-btn" data-i18n="colCancel">Отменить</button>
       <button id="col-create-save" class="primary-btn" data-i18n="colSave">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- добавление своего OPDS-каталога: адрес + логин/пароль (для личных серверов) -->
+<div id="cat-add" hidden>
+  <div class="col-modal-box">
+    <div class="col-modal-title" data-i18n="catAddT">Добавить каталог</div>
+    <input id="cat-url" type="url" class="field" autocomplete="off" data-i18n-ph="catUrlPh" placeholder="https://адрес OPDS-каталога">
+    <input id="cat-user" type="text" class="field" autocomplete="off" data-i18n-ph="catUserPh" placeholder="Логин (если нужен)">
+    <input id="cat-pass" type="password" class="field" autocomplete="off" data-i18n-ph="catPassPh" placeholder="Пароль (если нужен)">
+    <div class="col-modal-actions">
+      <button id="cat-add-cancel" class="ghost-btn" data-i18n="colCancel">Отменить</button>
+      <button id="cat-add-save" class="primary-btn" data-i18n="colSave">Сохранить</button>
     </div>
   </div>
 </div>
@@ -216,6 +241,7 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
       <div class="scan-ctl">
         <div class="fmt-pick" id="scan-fmt"></div>
         <div class="fmt-pick scan-sort" id="scan-sort"></div>
+        <input type="checkbox" id="scan-sort-on" class="scan-cb" checked data-i18n-title="sortOnT" title="Включить или отключить сортировку">
         <label class="scan-all-lbl"><input type="checkbox" id="scan-allcb" class="scan-cb"><span data-i18n="scanSelAll">Все</span></label>
       </div>
       <div class="scan-list" id="scan-list"></div>
@@ -650,6 +676,8 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     <p data-i18n="licApp">AD.Talewyn — приложение для чтения книг.</p>
     <p data-i18n="licRights">© 2026 Archidexter. Все права на приложение защищены.</p>
     <p data-i18n="licFiles">Книги и другие файлы, которые вы добавляете, принадлежат их правообладателям. Приложение хранит их только на вашем устройстве и никуда не передаёт.</p>
+    <p data-i18n="licCatalog">Каталог показывает книги из открытых легальных источников — общественное достояние и свободные лицензии. Правовой статус произведения может отличаться от страны к стране: скачивая книгу, вы подтверждаете, что в вашей стране это разрешено.</p>
+    <p data-i18n="licSources">Источники каталога: Викитека — свободная библиотека Викимедии (ru.wikisource.org), Project Gutenberg (gutenberg.org), LibriVox (librivox.org). Сведения об авторах, участниках и лицензиях сохраняются внутри самих скачанных книг.</p>
   </div>
   <div class="info-version" id="info-version"></div>
 </div>
@@ -803,6 +831,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=263"></script>
+<script src="app.js?v=275"></script>
 </body>
 </html>

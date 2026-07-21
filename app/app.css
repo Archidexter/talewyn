@@ -326,6 +326,9 @@ html.t-light .brand-logo, html.t-sepia .brand-logo {
 #shelf-filters.open, #audio-filters.open { opacity: 1; clip-path: inset(0 0 0 0); }
 /* полка едет следом за раскрытием — сдвигом, без перекладки */
 .flt-shift { transition: transform .3s cubic-bezier(.32, .72, 0, 1); will-change: transform; }
+/* ряд «Сортировка»: выпадашка + галочка вкл/выкл рядом (как в автопоиске) */
+.flt-sort { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+.flt-sort .flt-select { flex: 1; min-width: 0; }
 @media (prefers-reduced-motion: reduce) {
   #shelf-filters, #audio-filters { transition: opacity .15s ease; clip-path: none; }
   .flt-shift { transition: none; }
@@ -1413,8 +1416,49 @@ body.col-viewing #add-fab .fab-collect svg { transform: scaleX(-1); }
 }
 .col-add:active { transform: scale(.9); }
 @media (hover: hover) { .col-add:hover { border-color: var(--gild); background: color-mix(in srgb, var(--gild) 10%, transparent); } }
+
+/* ═══ секция «Каталог» в шкафу: треть высоты, свой скролл ═══ */
+#cat-section { flex: 0 0 33%; min-height: 0; display: flex; flex-direction: column; }
+.cat-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; display: flex; flex-direction: column; }
+.cat-scroll::-webkit-scrollbar { display: none; }
+.cat-list { flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px; padding: 4px 0; }
+/* иконка витрины (глобус у пресетов, «полка-сервер» у своих) */
+.cat-ic { flex: none; display: grid; place-items: center; color: var(--gild); padding-left: 6px; }
+/* категории активной витрины: вложенные строки со сдвигом по глубине и шевроном */
+.cat-node { padding-left: calc(16px + var(--cd, 0) * 14px); }
+.cat-tw { flex: none; width: 16px; height: 16px; display: grid; place-items: center; color: var(--faint); transition: transform .18s ease; }
+.cat-tw.open { transform: rotate(90deg); }
+.cat-tw .cat-spin { width: 12px; height: 12px; border-width: 2px; }
+
+/* карточки каталога в полочной сетке */
+.cat-card .cover { cursor: pointer; }
+.cat-cimg { position: absolute; inset: 0; z-index: 4; }   /* обложка поверх заглушки; не загрузилась — заглушка остаётся */
+.cat-badge {
+  position: absolute; left: 6px; bottom: 6px; z-index: 5;
+  width: 27px; height: 27px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: color-mix(in srgb, var(--elev) 86%, #000);
+  border: 1px solid var(--border-strong); color: var(--gild);
+  box-shadow: 0 2px 6px rgb(0 0 0 / .35);
+}
+.cat-badge.done { border-color: color-mix(in srgb, var(--gild) 55%, transparent); }
+/* служебная строка на всю ширину сетки: загрузка / ошибка / дозагрузка / пусто */
+.cat-note {
+  grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 18px 10px; color: var(--dim); font-size: 13px; text-align: center;
+}
+.cat-note.cat-err { color: var(--accent); cursor: pointer; }
+.cat-spin {
+  width: 16px; height: 16px; border-radius: 50%; flex: none;
+  border: 2px solid color-mix(in srgb, var(--gild) 30%, transparent); border-top-color: var(--gild);
+  animation: cat-spin .8s linear infinite;
+}
+.cat-badge .cat-spin { width: 13px; height: 13px; border-width: 2px; }
+@keyframes cat-spin { to { transform: rotate(360deg); } }
 /* пусто → «+» ровно по центру (на уровне язычка); есть коллекции → сразу после списка (не внизу) */
-#col-drawer.col-empty .col-add { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0; }
+/* пустые коллекции: их «плюс» по центру СВОЕЙ секции (.col-scroll — positioned),
+   а не всего шкафа — иначе он наезжает на «плюс» каталога */
+#col-drawer.col-empty .col-scroll .col-add { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0; }
 
 /* язычок на левом краю (только на полке) */
 #col-tab {
@@ -1433,8 +1477,8 @@ body.col-open #col-tab svg { transform: rotate(180deg); }
 #shelf-view[hidden] ~ #col-tab { display: none; }   /* язычок виден только на главной полке */
 
 /* центральные окна: создание имени / выбор коллекций */
-#col-create, #col-pick, #sync-pick { position: fixed; inset: 0; z-index: 82; display: grid; place-items: center; padding: 20px; background: rgb(9 11 6 / .5); opacity: 0; transition: opacity .2s ease; }
-#col-create.open, #col-pick.open, #sync-pick.open { opacity: 1; }
+#col-create, #col-pick, #sync-pick, #cat-add { position: fixed; inset: 0; z-index: 82; display: grid; place-items: center; padding: 20px; background: rgb(9 11 6 / .5); opacity: 0; transition: opacity .2s ease; }
+#col-create.open, #col-pick.open, #sync-pick.open, #cat-add.open { opacity: 1; }
 .col-modal-box {
   width: min(360px, 92vw); background: var(--elev); border: 1px solid var(--border-strong);
   border-radius: var(--r-lg); padding: 18px; box-shadow: 0 20px 60px rgb(0 0 0 / .5);
@@ -1447,7 +1491,8 @@ body.col-open #col-tab svg { transform: rotate(180deg); }
 }
 #col-create.open .col-modal-box,
 #col-pick.open .col-modal-box,
-#sync-pick.open .col-modal-box { transform: translate(0, calc(-1 * var(--lift))); }
+#sync-pick.open .col-modal-box,
+#cat-add.open .col-modal-box { transform: translate(0, calc(-1 * var(--lift))); }
 .col-modal-title { font-weight: 700; font-size: 15px; color: var(--text); text-align: center; }
 .col-modal-actions { display: flex; gap: 10px; }
 .col-modal-actions > * { flex: 1; }

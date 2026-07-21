@@ -1091,22 +1091,11 @@ html.t-light .ch-row.current .ch-name, html.t-sepia .ch-row.current .ch-name { c
   transition: top .25s ease;   /* тем же механизмом, что полоса-том — синхронно, без щели */
 }
 .reader-header.hidden { top: calc(-50px - max(env(safe-area-inset-top, 0px), var(--sat, 0px))); }   /* уезжает через top — синхронно с полосой-том, между ними не открывается щель */
-/* кнопки шапки чтения/плеера всегда в рамке — как элементы шкафа, а не голые значки */
-.reader-header .icon-btn {
-  width: 38px; height: 38px;
-  border-color: var(--border-strong);
-  background: color-mix(in srgb, var(--bg) 45%, transparent);
-}
+.reader-header .icon-btn { width: 38px; height: 38px; }
 /* В шапке — только кнопки, и они раскладываются равномерно по всей ширине */
 #reader-header { justify-content: space-between; gap: 0; }
-/* включённая функция (закладка стоит, прокрутка/озвучка/перевод идут, окно открыто) —
-   золотом, как активные элементы полки; НЕ акцентным «вдавленным» фоном, иначе кнопка
-   постоянно выглядит нажатой */
-.reader-header .icon-btn.active, .reader-header .icon-btn.sheet-on {
-  color: var(--gild);
-  border-color: color-mix(in srgb, var(--gild) 55%, transparent);
-  background: color-mix(in srgb, var(--gild) 12%, transparent);
-}
+/* активная функция в шапке подсвечивается позолотой (закладка стоит / прокрутка идёт) */
+#reader-header .icon-btn.active { color: var(--gild); }
 /* Автопрокрутка включена — стрелка уступает место самой скорости: цифра встаёт ровно
    по центру кнопки, а не жмётся значком в углу, где она наезжала и обрезалась. */
 #scroll-btn { position: relative; }
@@ -2330,8 +2319,7 @@ html.t-dark #sel-tr, html.t-dark #sel-note, html.t-dark #sel-speak { color: var(
   border-left: 2px solid color-mix(in srgb, var(--accent2) 55%, transparent);
   color: var(--dim); font-size: .92em; text-align: left;
 }
-/* включённый перевод оформляется общим золотым правилом шапки (.reader-header .icon-btn.active) —
-   своё акцентное правило перебивало его ID-специфичностью и кнопка выглядела вечно нажатой */
+#tr-btn.active { color: var(--accent); background: var(--accent-soft); }
 #tr-orig {
   margin: 0; padding: 2px 4px; max-height: 100px; overflow-y: auto;
   font-family: var(--serif); font-style: italic; font-size: 14.5px; color: var(--dim);

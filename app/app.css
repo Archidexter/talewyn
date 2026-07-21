@@ -519,6 +519,7 @@ html.t-light .brand-logo, html.t-sepia .brand-logo {
    без разрыва внизу. Живёт внутри #shelf-view, поэтому на других экранах исчезает сам. */
 #add-fab {
   position: fixed; z-index: 40;
+  /* якорь для уезжающих кнопок, которые на время анимации выходят из потока */
   right: max(16px, max(env(safe-area-inset-right, 0px), var(--sar, 0px)));
   /* подняты на полторы своей общей высоты (50 + 10 зазора + 60 = 120 → +180) */
   bottom: calc(18px + 180px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));
@@ -581,21 +582,54 @@ html.t-light .brand-logo, html.t-sepia .brand-logo {
 /* режим захвата: кластер приподнят, главная чуть крупнее */
 #add-fab.fab-dragging button, #add-fab.fab-gliding button { box-shadow: 0 12px 32px rgb(0 0 0 / .55); }
 #add-fab.fab-dragging .fab-main { transform: scale(1.08); box-shadow: 0 14px 36px rgb(0 0 0 / .6), 0 0 0 2px var(--gild); }
-/* корзина/коллекция по умолчанию ПЕРЕД основными (слева в строке / сверху в колонке);
-   если с той стороны нет места — .fab-extra-flip переносит их в КОНЕЦ (вправо/вниз),
-   чтобы 3 основные кнопки не прыгали (сторону выбирает chooseExtraSide по факту «влезает ли») */
-#add-fab.fab-extra-flip .fab-del { order: 5; }
-#add-fab.fab-extra-flip .fab-dl { order: 5; }
-#add-fab.fab-extra-flip .fab-collect { order: 6; }
-/* на нижней рельсе корзина/коллекция вылетают СНИЗУ и уходят туда же, а не из-за правого края */
-body.sel-mode #add-fab.fab-dock-bottom .fab-del,
-body.sel-mode #add-fab.fab-dock-bottom .fab-dl,
-body.sel-mode #add-fab.fab-dock-bottom .fab-collect { animation-name: fab-del-in-v; }
+/* Ситуативные кружки (скачать · коллекция · сборник · удалить) стоят по сторонам от главной:
+   по умолчанию перед ней (сверху в колонке / слева в строке), в порядке «ближе к главной =
+   скачать». Место кончилось — КАЖДЫЙ кружок сам перелетает в конец кластера (порядок им
+   раздаёт applyFabDock через inline order, по одному, а не всей группой). */
+
+/* Родные анимации кластера: кружок выезжает из-за края экрана и уходит туда же.
+   Направление — по рельсе: колонка у правого края → по X, строка внизу → по Y. */
+@keyframes fab-del-in { from { transform: translateX(160%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes fab-del-out { from { transform: translateX(0); opacity: 1; } to { transform: translateX(160%); opacity: 0; } }
 @keyframes fab-del-in-v { from { transform: translateY(160%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-body.sel-exiting #add-fab.fab-dock-bottom .fab-del,
-body.sel-exiting #add-fab.fab-dock-bottom .fab-dl,
-body.sel-exiting #add-fab.fab-dock-bottom .fab-collect { animation-name: fab-del-out-v; }
 @keyframes fab-del-out-v { from { transform: translateY(0); opacity: 1; } to { transform: translateY(160%); opacity: 0; } }
+body.sel-mode #add-fab .fab-extra { animation: fab-del-in .3s cubic-bezier(.2, .8, .3, 1); }
+body.sel-exiting #add-fab .fab-extra { animation: fab-del-out .28s cubic-bezier(.4, 0, .2, 1) forwards; }
+body.sel-mode #add-fab.fab-dock-bottom .fab-extra { animation-name: fab-del-in-v; }
+body.sel-exiting #add-fab.fab-dock-bottom .fab-extra { animation-name: fab-del-out-v; }
+/* перелёт на другую сторону — теми же родными анимациями: сперва кружок убирается,
+   потом возникает уже на новом месте */
+#add-fab .fab-hop-out { animation: fab-del-out .17s cubic-bezier(.4, 0, .2, 1) forwards !important; }
+#add-fab .fab-hop-in { animation: fab-del-in .3s cubic-bezier(.2, .8, .3, 1) !important; }
+#add-fab.fab-dock-bottom .fab-hop-out { animation-name: fab-del-out-v !important; }
+#add-fab.fab-dock-bottom .fab-hop-in { animation-name: fab-del-in-v !important; }
+
+/* ── «ещё»: троеточие под главной, вместо постоянных лупы и ссылки ──
+   Тап — троеточие схлопывается в точку, а на его место теми же родными анимациями
+   кластера выезжают лупа и ссылка. Повторный тап (или тап мимо) — обратно. */
+/* специфичность как у общего `#add-fab button { display: grid }` — иначе оно перебивает */
+#add-fab #scan-btn, #add-fab #url-btn { display: none; }
+#add-fab.more-open #scan-btn,
+#add-fab.more-open #url-btn { display: grid; animation: fab-del-in .3s cubic-bezier(.2, .8, .3, 1); }
+#add-fab.more-open.fab-dock-bottom #scan-btn,
+#add-fab.more-open.fab-dock-bottom #url-btn { animation-name: fab-del-in-v; }
+/* уходят ровно туда же, откуда пришли — за край экрана, со своих мест (без прыжков);
+   а сам кластер в это время плавно подтягивается на новое место (.fab-sliding) */
+#add-fab.more-closing #scan-btn,
+#add-fab.more-closing #url-btn { display: grid; pointer-events: none;
+  animation: fab-del-out .28s cubic-bezier(.4, 0, .2, 1) forwards; }
+#add-fab.fab-sliding { transition: top .3s cubic-bezier(.3, .8, .3, 1), left .3s cubic-bezier(.3, .8, .3, 1); }
+#add-fab.more-closing.fab-dock-bottom #scan-btn,
+#add-fab.more-closing.fab-dock-bottom #url-btn { animation-name: fab-del-out-v; }
+/* пока кнопки на месте (раскрыто) и пока они уезжают — троеточия в потоке нет,
+   иначе оно вклинивалось бы перед ними и толкало их с места */
+#add-fab.more-open #fab-more, #add-fab.more-closing #fab-more { display: none; }
+/* схлопывание самого троеточия — в центр, точками внутрь */
+#add-fab.more-opening #fab-more { display: grid; pointer-events: none; animation: fab-more-collapse .2s cubic-bezier(.4, 0, .6, 1) forwards; }
+@keyframes fab-more-collapse { from { transform: scale(1); opacity: 1; } to { transform: scale(.1); opacity: 0; } }
+/* …и обратный рост — уже после того, как лупа со ссылкой ушли за край */
+#add-fab.more-grow #fab-more { display: grid; animation: fab-more-grow .26s cubic-bezier(.2, .8, .3, 1); }
+@keyframes fab-more-grow { from { transform: scale(.1); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
 .import-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 9px;
@@ -729,15 +763,21 @@ html.t-dark .cover-img { opacity: .93; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 /* удалить — крестик справа сверху; один и тот же элемент у книг и аудиокниг */
+/* крестик на карточке — такой же кружок, как стрелка-скачать и карандаш сборника:
+   стекло с рамкой в цвет темы, а не чёрная клякса; краснеет только под пальцем */
 .book-del, .ab-del {
-  position: absolute; top: 6px; right: 6px; left: auto; z-index: 4;
+  position: absolute; top: 6px; right: 6px; left: auto; z-index: 6;
   width: 26px; height: 26px; border-radius: 50%;
-  background: rgb(0 0 0 / .5); color: #fff; font-size: 13px; line-height: 1;
-  display: flex; align-items: center; justify-content: center; opacity: .85;
-  transition: background-color .15s, opacity .15s;
+  display: grid; place-items: center;
+  font-size: 13px; line-height: 1; color: var(--dim);
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  border: 1px solid var(--border-strong);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  transition: color .15s, border-color .15s, transform .12s;
 }
+.book-del:active, .ab-del:active { color: #ff8080; border-color: #ff8080; transform: scale(.92); }
 @media (hover: hover) {
-  .book-del:hover, .ab-del:hover { background: var(--danger); color: #fff; opacity: 1; }
+  .book-del:hover, .ab-del:hover { color: #ff8080; border-color: #ff8080; }
 }
 
 .shelf-empty { grid-column: 1 / -1; text-align: center; padding: 56px 12px; color: var(--dim); }
@@ -1320,6 +1360,92 @@ body.reader-comic .chapter-body img { margin: 0 auto; border-radius: 4px; }
 .fabnav-btn:disabled { opacity: 0; pointer-events: none; }   /* нет соседней главы — кнопки нет */
 @media (hover: hover) { .fabnav-btn:hover { color: var(--accent); border-color: var(--accent); } }
 
+/* ═══ Сборники: стопка книг одной карточкой ═══ */
+.fold-cover { position: relative; overflow: visible !important; }
+.fold-stack { position: absolute; inset: 0; display: block; }
+/* веер: две нижние обложки выглядывают из-под верхней */
+.fold-face { position: absolute; inset: 0; border-radius: inherit; overflow: hidden;
+  background: var(--elev2); box-shadow: 0 6px 16px rgb(0 0 0 / .4); }
+.fold-face .cover-img, .fold-face .cover-blank { width: 100%; height: 100%; }
+.fold-face-1 { transform: translate(5px, -4px) scale(.965); filter: brightness(.72); z-index: 1; }
+.fold-face-2 { transform: translate(10px, -8px) scale(.93); filter: brightness(.55); z-index: 0; }
+.fold-face-0 { z-index: 2; }
+.fold-card .fold-face-0 { border: 1px solid var(--border-strong); }
+/* счётчик книг в стопке — в том же углу, что бейдж каталога */
+.fold-n {
+  position: absolute; left: 6px; bottom: 6px; z-index: 5;
+  min-width: 27px; height: 27px; padding: 0 7px; border-radius: 14px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700; color: var(--gild);
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--gild) 45%, transparent);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+/* карандаш — левый верхний угол карточки (крестик «расформировать» живёт в правом) */
+.fold-edit {
+  position: absolute; left: 6px; top: 6px; z-index: 6;
+  width: 26px; height: 26px; border-radius: 50%;
+  display: grid; place-items: center;
+  color: var(--dim); background: color-mix(in srgb, var(--bg) 72%, transparent);
+  border: 1px solid var(--border-strong);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+.fold-edit:active { color: var(--gild); border-color: var(--gild); transform: scale(.92); }
+body.sel-mode .fold-edit { display: none; }   /* в режиме выбора — как крестики */
+
+/* Раскрытый сборник — СЕКЦИЯ ВО ВСЮ ШИРИНУ полки, вставленная между рядами: своя подложка,
+   шапка с именем и собственная сетка книг. Полка ниже разъезжается FLIP-переездом
+   (см. flipCards), книги внутри наплывают слева направо. */
+.fold-sec {
+  grid-column: 1 / -1;
+  margin: 2px 0 6px; padding: 12px 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--gild) 26%, var(--border-strong));
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--elev) 60%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--gild) 12%, transparent);
+  animation: fold-sec-in .32s cubic-bezier(.2, .8, .3, 1);
+}
+@keyframes fold-sec-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+.fold-sec-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.fold-sec-toggle {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
+  background: none; border: 0; padding: 0; color: var(--text); text-align: left;
+}
+.fold-sec-ic { display: inline-flex; color: var(--gild); flex: none; }
+.fold-sec-name { flex: 1; min-width: 0; font-weight: 700; font-size: 14.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fold-sec-n {
+  flex: none; min-width: 22px; height: 22px; padding: 0 7px; border-radius: 11px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: var(--gild);
+  border: 1px solid color-mix(in srgb, var(--gild) 40%, transparent);
+}
+.fold-sec .fold-edit { position: static; flex: none; }
+.fold-sec-x {
+  flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+  color: var(--dim); font-size: 13px; background: transparent; border: 1px solid var(--border-strong);
+  transition: color .15s, border-color .15s, transform .12s;
+}
+.fold-sec-x:active { color: #ff8080; border-color: #ff8080; transform: scale(.92); }
+/* сетка внутри секции — той же меры, что полка (колонки совпадают, книги не «плывут») */
+.fold-sec-grid.shelf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 24px 18px; }
+@media (max-width: 480px) { .fold-sec-grid.shelf-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@keyframes fold-in { from { opacity: 0; transform: translateX(-26px) scale(.92); } to { opacity: 1; transform: none; } }
+.fold-kid.fold-in { animation: fold-in .34s cubic-bezier(.2, .8, .3, 1) backwards; animation-delay: calc(var(--fold-i, 0) * 45ms); }
+/* сборка: книги втягиваются САМИ В СЕБЯ на своих местах и гаснут — по экрану ничего не бегает */
+@keyframes fold-suck { from { transform: scale(1); opacity: 1; } to { transform: scale(.18); opacity: 0; } }
+.fold-suck { animation: fold-suck .26s cubic-bezier(.4, 0, .6, 1) forwards; pointer-events: none; }
+/* …а на месте самой первой из них рождается стопка */
+@keyframes fold-born { 0% { transform: scale(.5); opacity: 0; } 60% { transform: scale(1.06); opacity: 1; } 100% { transform: scale(1); } }
+.fold-born { animation: fold-born .38s cubic-bezier(.2, .8, .3, 1); }
+/* книгу тянут на сборник: цель мягко подсвечивается и чуть подрастает */
+.fold-magnet { outline: 2px solid var(--gild); outline-offset: 2px; border-radius: var(--r-md); }
+.fold-card.fold-magnet .fold-face-0 { border-color: var(--gild); }
+.fold-sec.fold-magnet { background: color-mix(in srgb, var(--gild) 10%, var(--elev)); }
+/* книгу вытаскивают ИЗ сборника — рамка секции гаснет, карточка теряет подсветку */
+.fold-losing { border-color: color-mix(in srgb, var(--dim) 40%, transparent); }
+.card-eject .cover, .card-eject .ab-card-cover { outline: 2px dashed color-mix(in srgb, var(--gild) 60%, transparent); outline-offset: 2px; }
+
 /* ═══ Мультивыбор на полке (долгое нажатие) ═══ */
 .book-card .cover, .ab-card .ab-card-cover { position: relative; }
 /* кружок-чекбокс в левом нижнем углу обложки; виден только в режиме выбора */
@@ -1340,46 +1466,36 @@ body.sel-mode .ab-card.sel .ab-card-cover { outline: 2.5px solid var(--gild); ou
 
 /* красная кнопка-мусорка в стопке FAB — такой же кружок, как «по ссылке», но с красноватой
    заливкой; видна только в режиме выбора. Крышка мусорки приоткрывается при нажатии. */
-/* #add-fab-специфичность нужна: #add-fab button { display:grid } иначе перебивает display:none */
+/* ═══ умные кружки мультивыбора — ВЕЗДЕ (полка, коллекция, каталог) ═══
+   Показ задаётся ОДНИМ правилом на все ситуативные (.fab-extra), а классы состава выбора
+   (их ставит updateSelFabs) лишь вычёркивают неподходящие: можно скачать → стрелка,
+   можно удалить → урна, есть что объединить → папка. Анимация вылета/ухода общая,
+   направление берётся из --fx/--fy — см. блок рельсы выше.
+   #add-fab-специфичность нужна: `#add-fab button { display: grid }` иначе перебивает. */
+#add-fab .fab-extra { display: none; }
+body.sel-mode #add-fab .fab-extra { display: grid; }
+body.sel-exiting #add-fab .fab-extra { display: grid; pointer-events: none; }
+body.sel-mode:not(.sel-can-del) #add-fab .fab-del,
+body.sel-exiting:not(.sel-can-del) #add-fab .fab-del,
+body.sel-mode:not(.sel-can-dl) #add-fab .fab-dl,
+body.sel-exiting:not(.sel-can-dl) #add-fab .fab-dl,
+body.sel-mode:not(.sel-can-fold) #add-fab .fab-fold,
+body.sel-exiting:not(.sel-can-fold) #add-fab .fab-fold { display: none !important; }
+/* мусорка — единственная красная в кластере */
 #add-fab .fab-del {
-  display: none;
   color: #ff8080;
   border: 1px solid color-mix(in srgb, #e5484d 55%, var(--border-strong));
   background: color-mix(in srgb, #e5484d 22%, var(--elev));
 }
-/* видна ТОЛЬКО в режиме выбора (а он включается лишь при выбранном ≥1 элементе);
-   выезжает из-за правого края экрана */
-body.sel-mode #add-fab .fab-del { display: grid; animation: fab-del-in .3s cubic-bezier(.2, .8, .3, 1); }
-@keyframes fab-del-in { from { transform: translateX(160%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-/* выход из выбора — кружки так же плавно уезжают за правый край, а не пропадают резко */
-body.sel-exiting #add-fab .fab-del,
-body.sel-exiting #add-fab .fab-collect { display: grid; pointer-events: none; animation: fab-del-out .28s cubic-bezier(.4, 0, .2, 1) forwards; }
-@keyframes fab-del-out { from { transform: translateX(0); opacity: 1; } to { transform: translateX(160%); opacity: 0; } }
 .fab-del .trash-lid { transform-origin: 19px 7px; transition: transform .2s cubic-bezier(.3, 1.5, .5, 1); }
 .fab-del:active { filter: brightness(1.1); border-color: #ff8080; }
 .fab-del:active .trash-lid { transform: rotate(26deg) translateY(-1px); }   /* крышка поднимается ВВЕРХ */
 /* явная анимация нажатия: кнопка «клюёт», крышка мусорки поднимается и опускается */
 .fab-del.pressing { animation: fab-del-press .3s ease; }
 .fab-del.pressing .trash-lid { animation: trash-open .44s ease; }
-/* иконка «в коллекцию» — как урна: только в режиме выбора, стоит над ней */
-#add-fab .fab-collect { display: none; }
-body.sel-mode #add-fab .fab-collect { display: grid; animation: fab-del-in .3s cubic-bezier(.2, .8, .3, 1); }
+#add-fab .fab-dl { color: var(--gild); }
 /* внутри коллекции стрелка разворачивается — «убрать из коллекции» */
 body.col-viewing #add-fab .fab-collect svg { transform: scaleX(-1); }
-
-/* ═══ умные кружки мультивыбора — ВЕЗДЕ (полка, коллекция, каталог). Классы ставит
-   updateSelFabs по составу выбора: можно скачать (нескачанная запись каталога или
-   стрим-аудиокнига) → золотая стрелка; можно удалить → урна; и то и другое → обе ═══ */
-#add-fab .fab-dl { display: none; color: var(--gild); }
-body.sel-mode.sel-can-dl #add-fab .fab-dl { display: grid; animation: fab-del-in .3s cubic-bezier(.2, .8, .3, 1); }
-body.sel-exiting.sel-can-dl #add-fab .fab-dl { display: grid; pointer-events: none; animation: fab-del-out .28s cubic-bezier(.4, 0, .2, 1) forwards; }
-/* нижняя рельса: вылет/уход СНИЗУ, как у мусорки и коллекции. Отдельные правила обязательны:
-   animation-шортхенд выше специфичнее общих .fab-dock-bottom-правил (лишний класс)
-   и молча перебивал бы вертикальный вариант */
-body.sel-mode.sel-can-dl #add-fab.fab-dock-bottom .fab-dl { animation-name: fab-del-in-v; }
-body.sel-exiting.sel-can-dl #add-fab.fab-dock-bottom .fab-dl { animation-name: fab-del-out-v; }
-body.sel-mode:not(.sel-can-del) #add-fab .fab-del,
-body.sel-exiting:not(.sel-can-del) #add-fab .fab-del { display: none !important; }
 /* пока выбираем — стрелки-скачать на обложках прячутся (и каталожные, и у стрим-аудиокниг):
    как крестики удаления; скачивает большой кружок */
 body.sel-mode .cat-badge, body.sel-exiting .cat-badge { display: none; }

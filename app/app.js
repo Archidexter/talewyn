@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.2.11';
+const APP_VERSION = '1.2.17';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -25,7 +25,7 @@ let _db = null;
 function idb() {
   if (_db) return _db;
   _db = new Promise((res, rej) => {
-    const rq = indexedDB.open('talewyn', 4);
+    const rq = indexedDB.open('talewyn', 5);
     rq.onupgradeneeded = () => {
       const d = rq.result;
       if (!d.objectStoreNames.contains('books')) {
@@ -46,6 +46,9 @@ function idb() {
       }
       if (!d.objectStoreNames.contains('collections')) {   // версия 4: свои коллекции
         d.createObjectStore('collections', { keyPath: 'id' });
+      }
+      if (!d.objectStoreNames.contains('folders')) {   // версия 5: сборники (стопки на полке)
+        d.createObjectStore('folders', { keyPath: 'id' });
       }
     };
     rq.onsuccess = () => res(rq.result);
@@ -139,6 +142,7 @@ async function copyText(s) {
 const state = {
   books: [],           // записи книг на полке
   audiobooks: [],      // аудиокниги (отдельные аудиофайлы)
+  folders: [],         // сборники — стопки книг/аудиокниг прямо на полке
   book: null,          // открытая книга (запись из books)
   toc: [],             // дерево оглавления открытой книги
   flat: [],            // главы в порядке чтения: {idx, title, crumb, groups}
@@ -266,6 +270,12 @@ const I18N = {
     syncPickNone: 'Отметьте хотя бы одно',
     colNoneYet: 'Сначала создайте коллекцию', colAdded: 'Добавлено в коллекции',
     colRemoveYes: 'Убрать', colRemoveNo: 'Оставить', colRemoved: 'Убрано из коллекции',
+    moreAddT: 'Ещё способы',
+    foldT: 'Объединить в сборник', foldN: 'в сборнике: {n}', foldRename: 'Название сборника',
+    foldBreak: 'Расформировать сборник', foldNameQ: 'Название сборника',
+    foldBreakQ: 'Расформировать сборник «{n}»?',
+    foldBreakYes: 'Расформировать', foldMade: 'Сборник «{n}»', foldBroken: 'Сборник расформирован',
+    foldOut: 'Убрать из сборника',
     timeLeft: '≈ {d} до конца', hUnit: 'ч', minUnit: 'мин',
     statStreak: 'серия', statToday: 'сегодня', dayShort: 'дн', wpm: 'сл/мин',
     otaAvail: 'Доступно обновление {v}', otaAvailApp: 'Доступно обновление приложения {v}',
@@ -468,6 +478,12 @@ const I18N = {
     syncPickNone: 'Tick at least one',
     colNoneYet: 'Create a collection first', colAdded: 'Added to collections',
     colRemoveYes: 'Remove', colRemoveNo: 'Keep', colRemoved: 'Removed from collection',
+    moreAddT: 'More ways',
+    foldT: 'Group into a set', foldN: 'in the set: {n}', foldRename: 'Set name',
+    foldBreak: 'Break up the set', foldNameQ: 'Set name',
+    foldBreakQ: 'Break up the set "{n}"?',
+    foldBreakYes: 'Break up', foldMade: 'Set "{n}"', foldBroken: 'Set broken up',
+    foldOut: 'Take out of the set',
     timeLeft: '≈ {d} left', hUnit: 'h', minUnit: 'min',
     statStreak: 'streak', statToday: 'today', dayShort: 'd', wpm: 'wpm',
     otaAvail: 'Update {v} available', otaAvailApp: 'App update {v} available',
@@ -1429,6 +1445,7 @@ async function deleteBook(id) {
   await dbDel('kv', 'review:' + id);
   await dbDel('books', id);
   await purgeFromCollections('book', id);   // убрать из всех коллекций
+  await purgeFromFolders('book', id);       // и из сборника
   if ((await kvGet('lastBook')) === id) await dbDel('kv', 'lastBook');
   localStorage.removeItem('talewyn-expanded:' + id);
   if (coverUrls.has(id)) {
@@ -1440,6 +1457,7 @@ async function deleteBook(id) {
 // системная «назад»/свайп от края: закрыть открытую шторку → иначе на уровень выше
 window.__appBack = () => {
   if (selMode) { exitSelMode(); return true; }   // «назад» сначала выходит из мультивыбора
+  if (fabMoreOpen()) { closeFabMore(); return true; }   // раскрытое «ещё» — обратно в троеточие
   if (confirmOpen()) { closeConfirm(false); return true; }
   if (typeof scanOpen === 'function' && scanOpen()) { closeScan(); return true; }
   if (!$('#lightbox').hidden) { closeLightbox(); return true; }
@@ -1460,6 +1478,7 @@ window.__appBack = () => {
   if (!$('#audio-view').hidden) { closeAudioView(); return true; }
   if (!$('#reader-view').hidden) { location.hash = state.book ? '#/b/' + state.book.id : '#/'; return true; }
   if (!$('#library-view').hidden) { location.hash = '#/'; return true; }
+  if (activeFolder) { closeFolder(); return true; }   // раскрытая стопка — обратно на полку
   return false;   // полка — приложению свернуться
 };
 
@@ -1478,6 +1497,7 @@ async function boot() {
     state.books = [];
   }
   await loadCollections();
+  await loadFolders();
   route();
   hideBootSplash();
   if (urlParams.get('selftest')) selftest();
@@ -2026,7 +2046,7 @@ async function scanDoAdd() {
   if (bookFiles.length) await doImport(bookFiles);
   else if (!anyAudio) showToast(t('scanErr'));
 }
-$('#scan-btn')?.addEventListener('click', openScan);
+$('#scan-btn')?.addEventListener('click', () => { closeFabMore(true); openScan(); });
 $('#scan-all')?.addEventListener('click', () => startScan('all'));
 $('#scan-folder')?.addEventListener('click', () => startScan('folder'));
 $('#scan-cancel')?.addEventListener('click', closeScan);
@@ -2298,6 +2318,31 @@ function filteredBooks() {
   });
 }
 
+// карточка книги на полке (она же — внутри раскрытого сборника)
+function bookCardHtml(b, en) {
+  en = en || {};
+  const url = coverUrl(b);
+  const pct = bookPctCache.get(b.id) || 0;
+  const rev = bookRevCache.get(b.id) || null;
+  const stars = rev && rev.stars ? STAR.repeat(rev.stars) : '';
+  const face = url
+    ? `<img class="cover-img" src="${url}" alt="" loading="lazy">`
+    : `<span class="cover-blank" style="--h:${hueOf(b.title)}"><span>${esc(b.title)}</span></span>`;
+  return `<div class="book-card${en.inFold ? ' fold-kid' : ''}" data-book="${b.id}"${en.inFold ? ` data-in-fold="${esc(en.inFold)}"` : ''}${en.colcat ? ` data-colcat="${esc(en.colcat)}"` : ''}>
+      <button class="cover" data-open="${b.id}">${face}
+        ${pct ? `<span class="cover-pct">${pct}%</span>` : ''}
+        <span class="cover-track"><span class="cover-fill" style="width:${pct}%"></span></span>
+        <span class="sel-check" aria-hidden="true"></span>
+      </button>
+      <div class="book-meta">
+        <div class="book-title"><span class="marq">${esc(b.title)}</span></div>
+        ${stars ? `<div class="book-stars">${stars}</div>` : ''}
+        ${b.author ? `<div class="book-author">${esc(b.author)}</div>` : ''}
+      </div>
+      <button class="book-del" data-del="${b.id}" title="${t('deleteT')}" aria-label="${t('deleteT')}">✕</button>
+    </div>`;
+}
+
 let seenBookIds = null;   // id книг, уже показанных на полке — чтобы анимировать только НОВЫЕ
 async function renderShelf() {
   // просмотр каталога: та же сетка, но записи приходят из сети (см. блок каталога)
@@ -2338,29 +2383,15 @@ async function renderShelf() {
     renderShelfFooter(0);
     return;
   }
-  grid.innerHTML = (colEntries || list.map(b => ({ b }))).map(en => {
+  // книги, собранные в стопку, показываются одной карточкой; раскрытая стопка расставляет
+  // свои книги следом за собой, прямо в этой же сетке
+  const entries = foldEntries(colEntries || list.map(b => ({ b })), 'book');
+  grid.innerHTML = entries.map(en => {
+    // раскрытая стопка — секция во всю ширину полки со своей сеткой внутри
+    if (en.f) return en.open ? folderSectionHtml(en.f, en.items, false)
+                             : folderCardHtml(en.f, en.items, false);
     if (en.ph) return colCatCardHtml(en.ph);   // нескачанная запись каталога — со стрелкой
-    const b = en.b;
-    const url = coverUrl(b);
-    const pct = bookPctCache.get(b.id) || 0;
-    const rev = bookRevCache.get(b.id) || null;
-    const stars = rev && rev.stars ? STAR.repeat(rev.stars) : '';
-    const face = url
-      ? `<img class="cover-img" src="${url}" alt="" loading="lazy">`
-      : `<span class="cover-blank" style="--h:${hueOf(b.title)}"><span>${esc(b.title)}</span></span>`;
-    return `<div class="book-card" data-book="${b.id}"${en.colcat ? ` data-colcat="${esc(en.colcat)}"` : ''}>
-      <button class="cover" data-open="${b.id}">${face}
-        ${pct ? `<span class="cover-pct">${pct}%</span>` : ''}
-        <span class="cover-track"><span class="cover-fill" style="width:${pct}%"></span></span>
-        <span class="sel-check" aria-hidden="true"></span>
-      </button>
-      <div class="book-meta">
-        <div class="book-title"><span class="marq">${esc(b.title)}</span></div>
-        ${stars ? `<div class="book-stars">${stars}</div>` : ''}
-        ${b.author ? `<div class="book-author">${esc(b.author)}</div>` : ''}
-      </div>
-      <button class="book-del" data-del="${b.id}" title="${t('deleteT')}" aria-label="${t('deleteT')}">✕</button>
-    </div>`;
+    return bookCardHtml(en.b, en);
   }).join('');
   cardMarquee(grid);   // названия — одной бегущей строкой (проезжает, если не влезает)
   // плавное появление — только у книг, впервые попавших в библиотеку (не при фильтрации/первом рендере)
@@ -2526,22 +2557,40 @@ const selCanDelete = key => !!selRecOf(key);
 const selCanDownload = key => { const r = selRecOf(key); return !r || !!r.stream; };
 
 // кружки следуют за СОСТАВОМ выбора ВЕЗДЕ (полка, коллекция, каталог): есть скачанное —
-// есть урна, есть нескачанное — есть «скачать всё»; смешанный выбор — оба разом
+// есть урна, есть нескачанное — есть «скачать всё»; смешанный выбор — оба разом.
+// «Объединить в сборник» — когда выбрано хотя бы две своих книги (в каталоге нечего собирать).
 function updateSelFabs() {
-  let canDel = true, canDl = false;
+  let canDel = true, canDl = false, canFold = false;
   if (selMode && selIds.length) {
     canDel = selIds.some(selCanDelete);
     canDl = selIds.some(selCanDownload);
+    canFold = !selKind.startsWith('cat') && !activeFolder && foldTargets().length >= 2;
   }
   const b = document.body;
   const changed = b.classList.contains('sel-can-del') !== canDel
-    || b.classList.contains('sel-can-dl') !== canDl;
+    || b.classList.contains('sel-can-dl') !== canDl
+    || b.classList.contains('sel-can-fold') !== canFold;
   b.classList.toggle('sel-can-del', canDel);
   b.classList.toggle('sel-can-dl', canDl);
+  b.classList.toggle('sel-can-fold', canFold);
   if (changed && selMode) applyFabDock();   // кружков стало больше/меньше — пере-клампим кластер
+}
+// что реально попадёт в сборник: свои книги и уже готовые стопки (их содержимое вливается).
+// Нескачанные записи каталога собирать нечего — их пропускаем.
+function foldTargets() {
+  const kind = (selKind === 'audio' || selKind === 'cataudio') ? 'audio' : 'book';
+  const out = [];
+  for (const key of selIds) {
+    const f = folderById(key);
+    if (f && f.kind === kind) { out.push(...(f.items || [])); continue; }
+    const r = selRecOf(key);
+    if (r) out.push(r.id);
+  }
+  return [...new Set(out)];
 }
 let selExitTimer = null;
 function enterSelMode(kind, firstId) {
+  closeFabMore(true);   // в выборе кластеру не до «ещё» — там свои кружки
   selMode = true; selKind = kind; selIds.length = 0;
   if (firstId) selIds.push(firstId);
   clearTimeout(selExitTimer);
@@ -2595,7 +2644,8 @@ let cardDrag = null;         // идёт перетаскивание
 let cardDragEndedAt = 0;     // отпускание после перетаскивания не должно считаться тапом
 const DRAG_START = 6;        // с какого сдвига считаем, что человек повёл, а не дрогнул
 
-const dragGridOf = card => card.closest('#shelf-grid, .ab-grid');
+// сетка, внутри которой едет карточка: полка, вкладка аудио или сетка раскрытого сборника
+const dragGridOf = card => card.closest('.fold-sec-grid, #shelf-grid, .ab-grid');
 
 function beginCardDrag(x, y) {
   if (!cardHold) return;
@@ -2625,7 +2675,18 @@ function beginCardDrag(x, y) {
     x1: Math.max(...rects.map(r => r.x + r.w)),
     y1: Math.max(...rects.map(r => r.y + r.h)),
   };
-  cardDrag = { card, grid, items, rects, bounds, from, to: from,
+  // Рамку раздвигаем до всей полки, если рядом есть сборники: книгу нужно донести до любой
+  // стопки (и до шапки раскрытой секции), а из раскрытого сборника — вынести за его край.
+  const sec = grid.closest('.fold-sec');
+  const outer = (sec || grid).closest('#shelf-grid, .ab-grid') || grid;
+  if (sec || outer.querySelector('.fold-card, .fold-sec')) {
+    const ro = outer.getBoundingClientRect();
+    bounds.x0 = Math.min(bounds.x0, ro.left + scrollX);
+    bounds.y0 = Math.min(bounds.y0, ro.top + scrollY);
+    bounds.x1 = Math.max(bounds.x1, ro.right + scrollX);
+    bounds.y1 = Math.max(bounds.y1, ro.bottom + scrollY);
+  }
+  cardDrag = { card, grid, items, rects, bounds, from, to: from, sec,
                x0: x + scrollX, y0: y + scrollY, cx: x, cy: y, raf: 0,
                scrollMin: Math.max(0, bounds.y0 - 96),
                scrollMax: Math.max(0, bounds.y1 + 24 - innerHeight) };
@@ -2649,16 +2710,69 @@ function layoutCardSlots(d) {
   });
 }
 
+// Книгу можно бросить в сборник: под пальцем она мягко притягивается к его центру и
+// чуть съёживается. Цель — карточка-стопка или шапка раскрытой секции; сам сборник и
+// книги, уже лежащие в нём, за цель не считаются.
+function magnetTargetAt(d, cx, cy) {
+  if (d.card.classList.contains('fold-card')) return null;   // стопку в стопку не кладём
+  const kind = d.card.classList.contains('ab-card') ? 'audio' : 'book';
+  const id = cardIdOf(d.card);
+  for (const el of document.querySelectorAll('.fold-card, .fold-sec')) {
+    const fid = el.dataset.foldId;
+    const f = folderById(fid);
+    if (!f || f.kind !== kind || (f.items || []).includes(id)) continue;
+    const r = el.classList.contains('fold-sec')
+      ? el.querySelector('.fold-sec-head').getBoundingClientRect()   // у раскрытой цель — шапка
+      : el.getBoundingClientRect();
+    const x = cx - scrollX, y = cy - scrollY;
+    if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom)
+      return { el, id: fid, r };
+  }
+  return null;
+}
+function setMagnet(d, m) {
+  if ((d.magnet && d.magnet.id) === (m && m.id)) { d.magnet = m; return; }
+  if (d.magnet) d.magnet.el.classList.remove('fold-magnet');
+  d.magnet = m;
+  if (m) {
+    m.el.classList.add('fold-magnet');
+    if (navigator.vibrate) { try { navigator.vibrate(8); } catch {} }
+  }
+}
 function cardDragMove() {
   const d = cardDrag; if (!d) return;
   const r0 = d.rects[d.from], b = d.bounds;
   // держим карточку внутри рамки книг: за последней книгой пустое место — уводить её туда незачем
-  const dx = Math.max(b.x0 - r0.x, Math.min(b.x1 - r0.w - r0.x, d.cx + scrollX - d.x0));
-  const dy = Math.max(b.y0 - r0.y, Math.min(b.y1 - r0.h - r0.y, d.cy + scrollY - d.y0));
+  let dx = Math.max(b.x0 - r0.x, Math.min(b.x1 - r0.w - r0.x, d.cx + scrollX - d.x0));
+  let dy = Math.max(b.y0 - r0.y, Math.min(b.y1 - r0.h - r0.y, d.cy + scrollY - d.y0));
+  let cx = r0.x + r0.w / 2 + dx, cy = r0.y + r0.h / 2 + dy;
+  // Куда кладут — решает ПАЛЕЦ, а не центр карточки: карточка высокая и упирается в рамку
+  // перетаскивания, её центр физически не достаёт до верхних целей.
+  const fx = d.cx, fy = d.cy;
+  // книгу вытащили за рамку раскрытого сборника — значит её оттуда выносят
+  if (d.sec) {
+    const rs = d.sec.getBoundingClientRect();
+    const out = fx < rs.left || fx > rs.right || fy < rs.top || fy > rs.bottom;
+    if (out !== d.eject) {
+      d.eject = out;
+      d.card.classList.toggle('card-eject', out);
+      d.sec.classList.toggle('fold-losing', out);
+      if (out && navigator.vibrate) { try { navigator.vibrate(8); } catch {} }
+    }
+    if (out) { d.card.style.transform = `translate(${dx}px, ${dy}px) scale(1.02)`; return; }
+  }
+  setMagnet(d, magnetTargetAt(d, fx + scrollX, fy + scrollY));
+  if (d.magnet) {   // притяжение: треть пути к центру сборника и лёгкое уменьшение
+    const tx = d.magnet.r.left + scrollX + d.magnet.r.width / 2;
+    const ty = d.magnet.r.top + scrollY + d.magnet.r.height / 2;
+    dx += (tx - cx) * 0.34; dy += (ty - cy) * 0.34;
+    d.card.style.transform = `translate(${dx}px, ${dy}px) scale(.82)`;
+    return;                                    // соседи не разъезжаются — книга уходит в сборник
+  }
   d.card.style.transform = `translate(${dx}px, ${dy}px) scale(1.06)`;
   // куда встанет — ближайший слот к центру перетаскиваемой карточки (сетка двумерная,
   // поэтому не «номер строки», а честное расстояние до центров)
-  const cx = r0.x + r0.w / 2 + dx, cy = r0.y + r0.h / 2 + dy;
+  cx = r0.x + r0.w / 2 + dx; cy = r0.y + r0.h / 2 + dy;
   let to = d.from, best = Infinity;
   d.rects.forEach((r, i) => {
     const q = Math.hypot(r.x + r.w / 2 - cx, r.y + r.h / 2 - cy);
@@ -2691,6 +2805,33 @@ async function endCardDrag() {
   cancelAnimationFrame(d.raf);
   cardDragEndedAt = performance.now();
   const { card, grid, items, rects, from, to } = d;
+  // бросили на сборник — книга всасывается в него; вынесли за рамку — покидает сборник
+  if (d.magnet) {
+    const fid = d.magnet.id;
+    d.magnet.el.classList.remove('fold-magnet');
+    card.style.transition = 'transform .26s cubic-bezier(.4, 0, .2, 1), opacity .26s ease';
+    const r = d.magnet.r, r0 = rects[from];
+    card.style.transform = `translate(${r.left + scrollX + r.width / 2 - r0.x - r0.w / 2}px, `
+      + `${r.top + scrollY + r.height / 2 - r0.y - r0.h / 2}px) scale(.15)`;
+    card.style.opacity = '0';
+    await new Promise(res => setTimeout(res, 250));
+    for (const el of items) { el.style.transition = ''; el.style.transform = ''; el.style.opacity = ''; }
+    card.classList.remove('card-drag');
+    grid.classList.remove('grid-dragging');
+    grid.style.touchAction = '';
+    await addToFolder(fid, cardIdOf(card));
+    return;
+  }
+  if (d.eject && d.sec) {
+    card.classList.remove('card-eject');
+    d.sec.classList.remove('fold-losing');
+    for (const el of items) { el.style.transition = ''; el.style.transform = ''; }
+    card.classList.remove('card-drag');
+    grid.classList.remove('grid-dragging');
+    grid.style.touchAction = '';
+    await takeOutOfFolder(d.sec.dataset.foldId, cardIdOf(card));
+    return;
+  }
   // доводим карточку до слота (заодно сходит увеличение), и только потом трогаем DOM —
   // к этому моменту она уже стоит там, где окажется, поэтому перестановка не мигает
   card.style.transition = 'transform .2s cubic-bezier(.4, 0, .2, 1), filter .2s ease';
@@ -2705,8 +2846,21 @@ async function endCardDrag() {
   for (const el of items) { el.style.transition = ''; el.style.transform = ''; }
   grid.classList.remove('grid-dragging');
   grid.style.touchAction = '';
-  // в коллекции порядок хранит она сама (там смешанный список), на полке — ord книг
-  if (to !== from) await (activeCol && !activeCat ? saveColOrder(grid) : saveShelfOrder(grid));
+  // порядок: внутри раскрытого сборника — его собственный, в коллекции — её (там смешанный
+  // список), на полке — ord книг
+  if (to !== from) {
+    if (d.sec) await saveFolderOrder(d.sec.dataset.foldId, grid);
+    else await (activeCol && !activeCat ? saveColOrder(grid) : saveShelfOrder(grid));
+  }
+}
+
+// порядок книг ВНУТРИ сборника хранит он сам
+async function saveFolderOrder(folderId, grid) {
+  const f = folderById(folderId); if (!f) return;
+  const ids = [...grid.children].filter(el => el.matches('.book-card, .ab-card')).map(cardIdOf);
+  const rest = (f.items || []).filter(x => !ids.includes(x));
+  f.items = [...ids, ...rest];
+  try { await saveFolder(f); } catch {}
 }
 
 // порядок из DOM — в state и базу. При фильтре или в коллекции видна лишь часть полки:
@@ -2762,6 +2916,7 @@ async function dropAudiobook(id) {
   await dbDel('kv', 'review:' + id);
   if (abCoverUrls.has(id)) { try { URL.revokeObjectURL(abCoverUrls.get(id)); } catch {} abCoverUrls.delete(id); }
   await purgeFromCollections('audio', id);   // убрать из всех коллекций
+  await purgeFromFolders('audio', id);       // и из сборника
 }
 function pluralRu(n, one, few, many) {
   const m10 = n % 10, m100 = n % 100;
@@ -2799,6 +2954,255 @@ async function deleteSelected() {
     await renderShelf();
   }
   showToast(T('deletedN', { n }));
+}
+
+// ══════════════════ сборники (стопки прямо на полке) ══════════════════
+// Многотомник не должен занимать полку двадцатью карточками. Сборник — одна карточка-стопка
+// на месте своих книг: { id, name, kind:'book'|'audio', items:[id…], auto:bool, createdAt }.
+// Это свойство САМИХ книг, а не коллекции: стопка одинаково видна и на общей полке, и внутри
+// коллекции (там — теми книгами, что в этой коллекции есть). Книга состоит максимум в одном
+// сборнике. Расформирование убирает только стопку — книги остаются на месте.
+let activeFolder = null;   // id раскрытого сборника (лист снизу)
+async function loadFolders() {
+  try { state.folders = (await dbAll('folders')).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)); }
+  catch { state.folders = []; }
+}
+const saveFolder = f => dbPut('folders', f);
+function folderById(id) { return (state.folders || []).find(f => f.id === id) || null; }
+// сборник, в котором состоит книга/аудиокнига (или null)
+function folderOfItem(kind, id) {
+  return (state.folders || []).find(f => f.kind === kind && (f.items || []).includes(id)) || null;
+}
+// книгу удалили из библиотеки — вынимаем её из сборника, пустой/одиночный сборник распускаем
+async function purgeFromFolders(kind, id) {
+  for (const f of (state.folders || []).slice()) {
+    if (f.kind !== kind || !(f.items || []).includes(id)) continue;
+    f.items = f.items.filter(x => x !== id);
+    if (f.items.length < 2) {   // сборник из одной книги смысла не имеет
+      state.folders = state.folders.filter(x => x !== f);
+      try { await dbDel('folders', f.id); } catch {}
+    } else { try { await saveFolder(f); } catch {} }
+  }
+}
+// имя по общему началу названий («Реинкарнация безработного. Том 1/2/3» → «Реинкарнация
+// безработного»); слишком короткое общее начало не годится — тогда имя спросим у человека
+function folderAutoName(titles) {
+  if (titles.length < 2) return '';
+  let p = String(titles[0] || '');
+  for (const t of titles) { const s = String(t || ''); while (p && !s.startsWith(p)) p = p.slice(0, -1); }
+  p = p.replace(/[\s.,:;_\-–—(\[]*(?:том|часть|книга|кн|vol|volume|book|part|no)?\.?\s*\d*\s*$/i, '').trim();
+  return p.length >= 3 ? p : '';
+}
+// ── полка с учётом сборников: книги, входящие в стопку, заменяются одной карточкой ──
+// entries — [{ b }|{ ph }] в порядке показа; на выходе к ним добавляются { f, items }.
+// Стопка встаёт на место ПЕРВОЙ своей книги в этом списке, остальные её книги уходят.
+function foldEntries(entries, kind) {
+  if (!(state.folders || []).length) return entries;
+  const out = [], used = new Set();
+  for (const en of entries) {
+    if (!en.b) { out.push(en); continue; }
+    const f = folderOfItem(kind, en.b.id);
+    if (!f) { out.push(en); continue; }
+    if (used.has(f.id)) continue;                      // эта стопка уже стоит выше
+    used.add(f.id);
+    // в стопке — только те книги, что реально видны здесь (в коллекции их может быть часть)
+    const items = entries.filter(x => x.b && (f.items || []).includes(x.b.id)).map(x => x.b);
+    if (items.length < 2) { out.push({ b: en.b }); continue; }   // одна книга — показываем её саму
+    // раскрытая стопка занимает секцию во всю ширину — книги живут внутри неё, а не в потоке
+    out.push({ f, items, open: activeFolder === f.id });
+  }
+  return out;
+}
+// раскрытая стопка = секция во всю ширину полки: шапка с именем и своя сетка книг внутри.
+// Так сборник получает собственное пространство и не мешается с остальной полкой.
+function folderSectionHtml(f, items, audio, cardFn) {
+  const card = cardFn || (b => bookCardHtml(b, { inFold: f.id }));
+  const inner = items.map((b, i) =>
+    cardFn ? cardFn(b, { inFold: f.id }) : card(b, i)).join('');
+  return `<div class="fold-sec" data-fold-id="${esc(f.id)}">
+    <div class="fold-sec-head">
+      <button class="fold-sec-toggle" data-folder="${esc(f.id)}" aria-expanded="true">
+        <span class="fold-sec-ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5a1.5 1.5 0 0 1 1.5-1.5h4l2 2.5h8a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-14A1.5 1.5 0 0 1 3 18z"/></svg></span>
+        <span class="fold-sec-name">${esc(f.name)}</span>
+        <span class="fold-sec-n">${items.length}</span>
+      </button>
+      <button class="fold-edit" data-foldedit="${esc(f.id)}" title="${esc(t('foldRename'))}" aria-label="${esc(t('foldRename'))}">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>
+      <button class="fold-sec-x" data-foldbreak="${esc(f.id)}" title="${esc(t('foldBreak'))}" aria-label="${esc(t('foldBreak'))}">✕</button>
+    </div>
+    <div class="${audio ? 'ab-grid' : 'shelf-grid'} fold-sec-grid">${inner}</div>
+  </div>`;
+}
+// карточка-стопка: обложки веером, счётчик, карандаш (имя) и крестик (расформировать)
+function folderCardHtml(f, items, audio, open) {
+  const faces = items.slice(0, 3).map((b, i) => {
+    const url = audio ? abCoverUrl(b) : coverUrl(b);
+    const face = url
+      ? `<img class="cover-img" src="${url}" alt="" loading="lazy">`
+      : `<span class="cover-blank" style="--h:${hueOf(b.title)}"><span>${esc(b.title)}</span></span>`;
+    return `<span class="fold-face fold-face-${i}">${face}</span>`;
+  }).reverse().join('');
+  const cover = `<button class="${audio ? 'ab-card-cover' : 'cover'} fold-cover" data-folder="${esc(f.id)}">
+      <span class="fold-stack">${faces}</span>
+      <span class="fold-n">${items.length}</span>
+      <span class="sel-check" aria-hidden="true"></span>
+    </button>`;
+  const acts = `<button class="fold-edit" data-foldedit="${esc(f.id)}" title="${esc(t('foldRename'))}" aria-label="${esc(t('foldRename'))}">`
+    + `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>`
+    + `<button class="${audio ? 'ab-del' : 'book-del'}" data-foldbreak="${esc(f.id)}" title="${esc(t('foldBreak'))}" aria-label="${esc(t('foldBreak'))}">✕</button>`;
+  const cls = 'fold-card' + (open ? ' fold-open' : '');
+  if (audio) return `<div class="ab-card ${cls}" data-fold-id="${esc(f.id)}">${cover}
+      <div class="ab-card-title"><span class="marq">${esc(f.name)}</span></div>
+      <div class="ab-card-author">${esc(T('foldN', { n: items.length }))}</div>${acts}</div>`;
+  return `<div class="book-card ${cls}" data-fold-id="${esc(f.id)}">${cover}
+      <div class="book-meta">
+        <div class="book-title"><span class="marq">${esc(f.name)}</span></div>
+        <div class="book-author">${esc(T('foldN', { n: items.length }))}</div>
+      </div>${acts}</div>`;
+}
+
+// ── собрать выбранное в сборник (кружок-папка) ──
+// Выбраны только свободные книги — рождается новый сборник; попала в выбор готовая стопка —
+// остальное вливается в неё. Имя берём из общего начала названий, а не вышло — спрашиваем.
+async function foldSelected() {
+  if (!selMode || !selIds.length) return;
+  const kind = (selKind === 'audio' || selKind === 'cataudio') ? 'audio' : 'book';
+  const ids = foldTargets();
+  if (ids.length < 2) return;
+  const pool = kind === 'audio' ? (state.audiobooks || []) : state.books;
+  const titleOf = id => { const r = pool.find(x => x.id === id); return r ? r.title : ''; };
+  // целевая стопка: если в выборе была готовая — вливаем в неё (её имя сохраняется)
+  let target = null;
+  for (const key of selIds) { const f = folderById(key); if (f && f.kind === kind) { target = f; break; } }
+  let name = target ? target.name : folderAutoName(ids.map(titleOf));
+  let auto = !!name;
+  if (!name) {
+    name = (await uiPrompt(t('foldNameQ'), { ph: titleOf(ids[0]).slice(0, 40), yes: t('colAdd2') }) || '').trim();
+    if (!name) return;   // передумали — выбор не трогаем
+  }
+  // книги могли состоять в других сборниках — вынимаем их оттуда, пустые распускаем
+  for (const f of (state.folders || []).slice()) {
+    if (f === target || f.kind !== kind) continue;
+    const left = (f.items || []).filter(x => !ids.includes(x));
+    if (left.length === (f.items || []).length) continue;
+    if (left.length < 2) { state.folders = state.folders.filter(x => x !== f); try { await dbDel('folders', f.id); } catch {} }
+    else { f.items = left; try { await saveFolder(f); } catch {} }
+  }
+  if (target) target.items = [...new Set([...(target.items || []), ...ids])];
+  else {
+    target = { id: newId('fold'), name, kind, items: ids, auto, createdAt: Date.now() };
+    state.folders.push(target);
+  }
+  // сборка без беготни по экрану: выбранные книги втягиваются САМИ В СЕБЯ на своих местах
+  // и гаснут, а на месте самой первой из них рождается стопка
+  const grid = kind === 'audio' ? $('#audio-content') : $('#shelf-grid');
+  const dying = grid ? [...grid.querySelectorAll('[data-book], [data-ab-id]')]
+    .filter(el => ids.includes(el.dataset.book || el.dataset.abId)) : [];
+  exitSelMode();
+  for (const el of dying) el.classList.add('fold-suck');
+  if (dying.length) await new Promise(r => setTimeout(r, 260));
+  try { await saveFolder(target); } catch {}
+  if (kind === 'audio') await renderAudioShelf(); else await renderShelf();
+  const card = grid && grid.querySelector(`[data-fold-id="${CSS.escape(target.id)}"]`);
+  if (card) { card.classList.add('fold-born'); card.addEventListener('animationend', () => card.classList.remove('fold-born'), { once: true }); }
+  showToast(T('foldMade', { n: target.name }));
+}
+// ── книга въезжает в сборник (бросили на него) и покидает его (вытащили за рамку) ──
+async function addToFolder(folderId, id) {
+  const f = folderById(folderId);
+  if (!f || !id || (f.items || []).includes(id)) return;
+  for (const o of (state.folders || []).slice()) {   // из прежнего сборника вынимаем
+    if (o === f || o.kind !== f.kind || !(o.items || []).includes(id)) continue;
+    o.items = o.items.filter(x => x !== id);
+    if (o.items.length < 2) { state.folders = state.folders.filter(x => x !== o); try { await dbDel('folders', o.id); } catch {} }
+    else { try { await saveFolder(o); } catch {} }
+  }
+  f.items = [...(f.items || []), id];
+  try { await saveFolder(f); } catch {}
+  if (f.kind === 'audio') await renderAudioShelf(); else await renderShelf();
+  const card = document.querySelector(`[data-fold-id="${CSS.escape(f.id)}"]`);
+  if (card) { card.classList.add('fold-born'); card.addEventListener('animationend', () => card.classList.remove('fold-born'), { once: true }); }
+}
+async function takeOutOfFolder(folderId, id) {
+  const f = folderById(folderId);
+  if (!f || !(f.items || []).includes(id)) return;
+  f.items = f.items.filter(x => x !== id);
+  const audio = f.kind === 'audio';
+  if (f.items.length < 2) {   // сборник из одной книги смысла не имеет — распускаем
+    state.folders = (state.folders || []).filter(x => x !== f);
+    if (activeFolder === f.id) activeFolder = null;
+    try { await dbDel('folders', f.id); } catch {}
+  } else { try { await saveFolder(f); } catch {} }
+  if (audio) await renderAudioShelf(); else await renderShelf();
+}
+
+// ── раскрытие стопки ПРЯМО В СЕТКЕ: книги встают следом за ней и раздвигают полку;
+//    повторный тап по стопке — сворачивает обратно ──
+async function toggleFolder(id) {
+  const f = folderById(id); if (!f) return;
+  const audio = f.kind === 'audio';
+  const grid = audio ? $('#audio-content') : $('#shelf-grid');
+  const before = cardRects(grid);
+  activeFolder = activeFolder === id ? null : id;
+  if (audio) await renderAudioShelf(); else await renderShelf();
+  // новые книги наплывают слева направо, соседи разъезжаются на свои новые места
+  flipCards(grid, before);
+  if (activeFolder === id) {
+    const kids = [...grid.querySelectorAll(`[data-in-fold="${CSS.escape(id)}"]`)];
+    kids.forEach((el, i) => {
+      el.style.setProperty('--fold-i', String(i));
+      el.classList.add('fold-in');
+      el.addEventListener('animationend', () => el.classList.remove('fold-in'), { once: true });
+    });
+  }
+}
+function closeFolder() { if (activeFolder) toggleFolder(activeFolder); }
+// снимок позиций карточек — для FLIP-переезда после перерисовки
+function cardRects(grid) {
+  const m = new Map();
+  if (!grid) return m;
+  for (const el of grid.querySelectorAll('[data-book], [data-ab-id], [data-fold-id]')) {
+    const k = el.dataset.foldId ? 'f:' + el.dataset.foldId
+      : (el.dataset.inFold ? 'i:' + el.dataset.inFold + ':' : '') + (el.dataset.book || el.dataset.abId);
+    m.set(k, el.getBoundingClientRect());
+  }
+  return m;
+}
+function flipCards(grid, before) {
+  if (!grid || !before.size) return;
+  for (const el of grid.querySelectorAll('[data-book], [data-ab-id], [data-fold-id]')) {
+    const k = el.dataset.foldId ? 'f:' + el.dataset.foldId
+      : (el.dataset.inFold ? 'i:' + el.dataset.inFold + ':' : '') + (el.dataset.book || el.dataset.abId);
+    const prev = before.get(k); if (!prev) continue;
+    const now = el.getBoundingClientRect();
+    const dx = prev.left - now.left, dy = prev.top - now.top;
+    if (!dx && !dy) continue;
+    el.style.transition = 'none';
+    el.style.transform = `translate(${dx}px, ${dy}px)`;
+    requestAnimationFrame(() => {
+      el.style.transition = 'transform .34s cubic-bezier(.4, 0, .2, 1)';
+      el.style.transform = '';
+      setTimeout(() => { el.style.transition = ''; }, 360);
+    });
+  }
+}
+async function renameFolder(id) {
+  const f = folderById(id); if (!f) return;
+  const name = (await uiPrompt(t('foldRename'), { val: f.name, yes: t('colAdd2') }) || '').trim();
+  if (!name || name === f.name) return;
+  f.name = name; f.auto = false;
+  try { await saveFolder(f); } catch {}
+  if (f.kind === 'audio') renderAudioShelf(); else await renderShelf();
+}
+// расформировать: уходит только стопка, книги остаются на полке
+async function breakFolder(id) {
+  const f = folderById(id); if (!f) return;
+  if (!(await uiConfirm(T('foldBreakQ', { n: f.name }), { yes: t('foldBreakYes'), danger: true }))) return;
+  state.folders = (state.folders || []).filter(x => x.id !== id);
+  if (activeFolder === id) activeFolder = null;
+  try { await dbDel('folders', id); } catch {}
+  if (f.kind === 'audio') renderAudioShelf(); else await renderShelf();
+  showToast(t('foldBroken'));
 }
 
 // ══════════════════ коллекции («свои полки») ══════════════════
@@ -4265,8 +4669,53 @@ function setShelfTab(tab) {
 // поэтому показываем и прячем их вместе с ней вручную.
 function syncAddFab() {
   const f = $('#add-fab');
-  if (f) { f.hidden = !!$('#shelf-view').hidden; if (!f.hidden) applyFabDock(); }
+  if (f) {
+    f.hidden = !!$('#shelf-view').hidden;
+    if (f.hidden) closeFabMore(true);   // ушли с полки — «ещё» схлопываем без анимации
+    else applyFabDock();
+  }
 }
+
+// ── «ещё» (троеточие): под ним живут лупа и ссылка ──
+// Троеточие схлопывается в точку, на его место теми же анимациями кластера выезжают обе кнопки.
+let fabMoreT = 0;
+// кластер меняет длину — переезжает на новое место плавно, а не скачком
+function slideFab(fab) {
+  fab.classList.add('fab-sliding');
+  applyFabDock();
+  clearTimeout(slideFab._t);
+  slideFab._t = setTimeout(() => fab.classList.remove('fab-sliding'), 340);
+}
+function openFabMore() {
+  const fab = $('#add-fab'); if (!fab || fab.classList.contains('more-open')) return;
+  clearTimeout(fabMoreT);
+  fab.classList.remove('more-closing');
+  fab.classList.add('more-opening');           // троеточие схлопывается…
+  fabMoreT = setTimeout(() => {
+    fab.classList.remove('more-opening');
+    fab.classList.add('more-open');            // …и на его месте выезжают лупа со ссылкой
+    slideFab(fab);
+  }, 190);
+}
+function closeFabMore(instant) {
+  const fab = $('#add-fab'); if (!fab) return;
+  clearTimeout(fabMoreT);
+  fab.classList.remove('more-opening');
+  if (!fab.classList.contains('more-open')) { fab.classList.remove('more-closing'); return; }
+  fab.classList.remove('more-open');
+  if (instant) { fab.classList.remove('more-closing'); applyFabDock(); return; }
+  // лупа и ссылка уезжают за тот же край экрана, откуда появились, никуда не прыгая:
+  // троеточие в это время ещё вне потока. Ушли — оно вырастает, а кластер плавно
+  // подтягивается к новой (короткой) длине
+  fab.classList.add('more-closing');
+  fabMoreT = setTimeout(() => {
+    fab.classList.remove('more-closing');
+    fab.classList.add('more-grow');
+    slideFab(fab);
+    setTimeout(() => fab.classList.remove('more-grow'), 280);
+  }, 280);
+}
+const fabMoreOpen = () => !!$('#add-fab')?.classList.contains('more-open');
 
 // ── перетаскивание кластера #add-fab по L-рельсе (правый край ↔ низ), с инерцией и запоминанием ──
 // позиция = ДОЛЯ (0..1) центра ГЛАВНОЙ кнопки вдоль рельсы. Якорим по ней и клампим ВЕСЬ кластер:
@@ -4280,34 +4729,94 @@ function cssInset(n) { const v = parseFloat(getComputedStyle(document.documentEl
 // не сдвигает главную. Доп-иконки показываем с той стороны, где влезают (по умолчанию перед
 // основными; если там нет места — .fab-extra-flip уносит их в конец), а если не влезают нигде —
 // оставляем по умолчанию (крайний случай). frac = доля позиции ГЛАВНОЙ вдоль рельсы.
+// Ситуативные кружки в порядке близости к главной. Кто не помещается на своей стороне —
+// перелетает в конец кластера ПООДИНОЧКЕ: сначала убирается родной анимацией, потом
+// возникает уже с другой стороны. Остальные при этом стоят на месте.
+const FAB_EXTRAS = ['#fab-dl', '#fab-collect', '#fab-fold', '#fab-del'];
+let fabHopT = 0;
+// раздать места: первые nBefore по близости остаются перед главной, прочие уходят в конец.
+// Перелёт строго в два такта, иначе кнопка «возникает из ниоткуда» на новом месте и только
+// потом играет свою анимацию: сперва она уходит за край СО СТАРОГО места, и лишь когда её
+// уже не видно — меняется порядок и она выезжает с новой стороны.
+const fabOrderOf = (i, after) => after ? String(10 + i) : String(-(i + 1));
+function applyFabSides(fab, nBefore) {
+  const btns = FAB_EXTRAS.map(s => $(s)).filter(b => b && getComputedStyle(b).display !== 'none');
+  const moved = [];
+  btns.forEach((b, i) => {
+    const after = i >= nBefore;
+    const known = b.dataset.fabAfter !== undefined;
+    if (known && (b.dataset.fabAfter === '1') !== after) { moved.push({ b, i, after }); return; }
+    if (!known || b.classList.contains('fab-hop-out')) {   // первый расчёт — сразу, без перелёта
+      b.dataset.fabAfter = after ? '1' : '0';
+      b.style.order = fabOrderOf(i, after);
+    }
+  });
+  if (fabHopT || !moved.length) return;
+  for (const { b } of moved) { b.classList.remove('fab-hop-in'); b.classList.add('fab-hop-out'); }
+  fabHopT = setTimeout(() => {
+    fabHopT = 0;
+    for (const { b, i, after } of moved) {          // кнопки уже за краем — переставляем незаметно
+      b.dataset.fabAfter = after ? '1' : '0';
+      b.style.order = fabOrderOf(i, after);
+      b.classList.remove('fab-hop-out');
+      b.classList.add('fab-hop-in');
+    }
+    applyFabDock();                                  // длина кластера изменилась — подтянуть место
+    setTimeout(() => { for (const { b } of moved) b.classList.remove('fab-hop-in'); }, 320);
+  }, 190);
+}
 function applyFabDock() {
   const fab = $('#add-fab');
   if (!fab || fab.hidden || !fabDock) return;
   const bottom = fabDock.edge === 'bottom';
   fab.classList.toggle('fab-dock-bottom', bottom);
-  const rm = $('#import-btn').getBoundingClientRect();     // главная
-  const ru = $('#url-btn').getBoundingClientRect();         // одна из основных (перед главной)
-  const rs = $('#scan-btn').getBoundingClientRect();        // одна из основных (после главной)
-  const rFull = fab.getBoundingClientRect();
-  if (!rFull.width || !rFull.height) return;                // ещё не в потоке — применим при показе
+  // постоянная часть кластера — главная и всё, что ПОД ней («ещё» либо раскрытые лупа+ссылка).
+  // Ситуативные кружки живут только НАД главной, поэтому перед главной постоянного ничего нет.
+  // Меряем ТОЛЬКО offset-геометрией: getBoundingClientRect учитывает transform, и кнопку,
+  // застигнутую анимацией (схлопывание троеточия, вылет кружка), он показывает меньше её
+  // настоящего размера — кластер тогда уезжал за край экрана.
+  const main = $('#import-btn');
+  // хвост — последняя РЕАЛЬНО видимая кнопка под главной: пока лупа со ссылкой уезжают,
+  // они ещё занимают место, и кластер обязан считаться по ним, а не по спрятанному троеточию
+  const t = [$('#url-btn'), $('#scan-btn'), $('#fab-more')]
+    .find(b => b && getComputedStyle(b).display !== 'none') || main;
+  if (!fab.offsetWidth || !fab.offsetHeight) return;        // ещё не в потоке — применим при показе
   const W = innerWidth, H = innerHeight, m = 16;
+  // Сколько ситуативных кружков влезает перед главной, а сколько уйдёт за хвост. Главную
+  // ограничивают ТОЛЬКО основные (она сама и хвост) — упёрлась в стенку, значит лишние
+  // кружки перелетают за неё поодиночке. Позицию правим лишь тогда, когда иначе они не
+  // помещаются вовсе (кластер длиннее свободного места с обеих сторон).
+  const spread = (want, lead, trail, step, count, lo, hi) => {
+    let pos = Math.max(lo + lead, Math.min(hi - trail, want));
+    if (!count || step <= 0) return { pos, nBefore: 0 };
+    for (let k = 0; k < 3; k++) {
+      const roomB = pos - lead - lo, roomA = hi - trail - pos;
+      const nB = Math.max(0, Math.min(count, Math.floor(roomB / step + 1e-6)));
+      const need = (count - nB) * step;
+      if (need <= roomA + 1e-6) return { pos, nBefore: nB };
+      // сзади не помещается — двигаем главную вперёд, освобождая место позади
+      const next = Math.min(hi - trail, pos + (need - roomA));
+      if (next <= pos + 0.5) return { pos, nBefore: Math.min(count, nB + Math.floor(roomA / step + 1e-6)) };
+      pos = next;
+    }
+    return { pos, nBefore: Math.max(0, Math.min(count, Math.floor((pos - lead - lo) / step + 1e-6))) };
+  };
+  const shown = FAB_EXTRAS.map(s => $(s)).filter(b => b && getComputedStyle(b).display !== 'none');
+  const gap = parseFloat(getComputedStyle(fab).gap) || 10;
   if (bottom) {   // нижняя рельса (строка): двигаем по X
-    const c = rm.left + rm.width / 2;
-    const lead = c - ru.left, trail = rs.right - c;        // основные слева/справа от центра главной
-    const extra = selMode ? Math.max(0, rFull.width - (rs.right - ru.left)) : 0;   // ширина доп-иконок+gap
-    const mainT = Math.max(m + lead, Math.min(W - m - trail, fabDock.frac * W));   // главная в пределах 3 основных
-    if (selMode) {
-      const fitsLeft = mainT - lead - extra >= m;
-      const fitsRight = mainT + trail + extra <= W - m;
-      fab.classList.toggle('fab-extra-flip', !fitsLeft && fitsRight);
-    } else fab.classList.remove('fab-extra-flip');
-    const r2 = fab.getBoundingClientRect(), rm2 = $('#import-btn').getBoundingClientRect();
-    const off = (rm2.left + rm2.width / 2) - r2.left;       // центр главной от левого края кластера (после выбора стороны)
-    fab.style.top = 'auto'; fab.style.left = (mainT - off) + 'px'; fab.style.right = 'auto'; fab.style.bottom = '';
+    const cOff = main.offsetLeft + main.offsetWidth / 2;    // центр главной внутри кластера
+    const lead = main.offsetWidth / 2;                      // постоянная часть слева от центра
+    const trail = (t.offsetLeft + t.offsetWidth) - cOff;    // и справа (главная + хвост)
+    const step = shown.length ? shown[0].offsetWidth + gap : 0;
+    const r = spread(fabDock.frac * W, lead, trail, step, shown.length, m, W - m);
+    applyFabSides(fab, r.nBefore);
+    const off = main.offsetLeft + main.offsetWidth / 2;     // центр главной от левого края кластера
+    fab.style.top = 'auto'; fab.style.left = (r.pos - off) + 'px'; fab.style.right = 'auto'; fab.style.bottom = '';
   } else {        // правая рельса (колонка): двигаем по Y, с потолком по вкладкам
-    const c = rm.top + rm.height / 2;
-    const lead = c - ru.top, trail = rs.bottom - c;
-    const extra = selMode ? Math.max(0, rFull.height - (rs.bottom - ru.top)) : 0;
+    const cOff = main.offsetTop + main.offsetHeight / 2;
+    const lead = main.offsetHeight / 2;
+    const trail = (t.offsetTop + t.offsetHeight) - cOff;
+    const step = shown.length ? shown[0].offsetHeight + gap : 0;
     // Потолок — вкладки книга/аудио, но привязанный к ЭКРАНУ, а не к прокрученной шапке:
     // вкладки уезжают вверх вместе с полкой, и по их текущему rect запрет переставал работать —
     // кнопки поднимались под самый верх, а после возврата полки оказывались поверх логотипа.
@@ -4316,15 +4825,10 @@ function applyFabDock() {
     const ceil = (tabs && !tabs.hidden) ? tabs.getBoundingClientRect().top + scrollY : (m + 80);
     const topMin = Math.max(m + cssInset('--sat'), ceil);
     const botMax = H - m - cssInset('--sab');
-    const mainT = Math.max(topMin + lead, Math.min(botMax - trail, fabDock.frac * H));
-    if (selMode) {
-      const fitsUp = mainT - lead - extra >= topMin;
-      const fitsDown = mainT + trail + extra <= botMax;
-      fab.classList.toggle('fab-extra-flip', !fitsUp && fitsDown);
-    } else fab.classList.remove('fab-extra-flip');
-    const r2 = fab.getBoundingClientRect(), rm2 = $('#import-btn').getBoundingClientRect();
-    const off = (rm2.top + rm2.height / 2) - r2.top;
-    fab.style.top = (mainT - off) + 'px'; fab.style.left = 'auto'; fab.style.right = ''; fab.style.bottom = 'auto';
+    const r = spread(fabDock.frac * H, lead, trail, step, shown.length, topMin, botMax);
+    applyFabSides(fab, r.nBefore);
+    const off = main.offsetTop + main.offsetHeight / 2;
+    fab.style.top = (r.pos - off) + 'px'; fab.style.left = 'auto'; fab.style.right = ''; fab.style.bottom = 'auto';
   }
 }
 // плавная перестройка колонка↔строка: FLIP — кнопки едут из старых экранных позиций в новые
@@ -5304,6 +5808,7 @@ async function mergeCollectionsFromSync(cols) {
   const bByKey = new Map((await dbAll('books')).map(b => [syncKey(b), b.id]));
   const aByKey = new Map((await dbAll('audiobooks')).map(a => [audioKey(a), a.id]));
   await loadCollections();
+  await loadFolders();
   const byName = new Map((state.collections || []).map(c => [(c.name || '').trim().toLowerCase(), c]));
   let maxOrder = (state.collections || []).reduce((m, c) => Math.max(m, c.order || 0), 0);
   for (const c of cols) {
@@ -5317,6 +5822,7 @@ async function mergeCollectionsFromSync(cols) {
     await dbPut('collections', local);
   }
   await loadCollections();
+  await loadFolders();
 }
 
 // ══════════ УМНЫЙ импорт-слияние: лёгкая синхра / полная копия / старая копия ══════════
@@ -7807,7 +8313,7 @@ async function renderAudioShelf() {
     const colEntries = activeCol
       ? colOrderedEntries('audio').filter(en => !en.b || !af.status.size || af.status.has(abStatusOf(en.b, progs[en.b.id])))
       : null;
-    const entries = colEntries || state.audiobooks.filter(r => {
+    let entries = colEntries || state.audiobooks.filter(r => {
       if (af.q) { const q = af.q.toLowerCase(); if (!((r.title || '').toLowerCase().includes(q) || (r.author || '').toLowerCase().includes(q))) return false; }
       if (af.status.size && !af.status.has(abStatusOf(r, progs[r.id]))) return false;
       return true;
@@ -7839,9 +8345,10 @@ async function renderAudioShelf() {
     const revMap = await kvRange('review:');   // отзывы — тоже одним запросом
     const abRevs = {};
     for (const r of shown) abRevs[r.id] = revMap.get(r.id) || null;
-    const cards = entries.map(en => {
-      if (en.ph) return colCatCardHtml(en.ph);   // нескачанная запись каталога — со стрелкой
-      const r = en.b;
+    entries = foldEntries(entries, 'audio');   // стопки; раскрытая расставляет свои книги следом
+    // карточка аудиокниги (она же — внутри раскрытого сборника)
+    const abCardHtml = (r, en) => {
+      en = en || {};
       const url = abCoverUrl(r), p = progs[r.id];
       const pct = (p && r.totalDur) ? Math.min(100, Math.round((abPlayedSeconds(r, p) / r.totalDur) * 100)) : 0;
       const rv = abRevs[r.id];
@@ -7852,7 +8359,7 @@ async function renderAudioShelf() {
         : abDlBusy.has(r.id)
         ? `<span class="cat-badge busy" aria-hidden="true"><span class="cat-spin"></span></span>`
         : `<span class="cat-badge cat-dl" data-abdl="${esc(r.id)}" role="button" title="${esc(t('abDlBtn'))}" aria-label="${esc(t('abDlBtn'))}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12"/><path d="m6.5 11.5 5.5 5.5 5.5-5.5"/><path d="M5 20h14"/></svg></span>`;
-      return `<div class="ab-card" data-ab-id="${esc(r.id)}"${en.colcat ? ` data-colcat="${esc(en.colcat)}"` : ''}>
+      return `<div class="ab-card${en.inFold ? ' fold-kid' : ''}" data-ab-id="${esc(r.id)}"${en.inFold ? ` data-in-fold="${esc(en.inFold)}"` : ''}${en.colcat ? ` data-colcat="${esc(en.colcat)}"` : ''}>
         <button class="ab-card-cover" data-ab="${esc(r.id)}">${url ? `<img src="${url}" alt="">` : '<span>♪</span>'}
           ${pct ? `<span class="cover-pct">${pct}%</span>` : ''}
           ${dlBadge}<span class="sel-check" aria-hidden="true"></span></button>
@@ -7861,6 +8368,13 @@ async function renderAudioShelf() {
         <div class="ab-card-author">${esc(r.author || '')}</div>
         <div class="ab-card-bar"><i style="width:${pct}%"></i></div>
         <button class="ab-del" data-abdel="${esc(r.id)}" title="${t('deleteT')}" aria-label="${t('deleteT')}">✕</button></div>`;
+    };
+    const cards = entries.map(en => {
+      // раскрытая стопка — секция во всю ширину со своей сеткой внутри
+      if (en.f) return en.open ? folderSectionHtml(en.f, en.items, true, abCardHtml)
+                               : folderCardHtml(en.f, en.items, true);
+      if (en.ph) return colCatCardHtml(en.ph);   // нескачанная запись каталога — со стрелкой
+      return abCardHtml(en.b, en);
     }).join('');
     const gridHtml = entries.length ? `<div class="ab-grid">${cards}</div>` : `<div class="shelf-empty"><p class="se-hint">${esc(t('filterNone'))}</p></div>`;
     // «Продолжить слушать» живёт в отдельном блоке НАД фильтрами — как у книг
@@ -8833,7 +9347,7 @@ function setupSwipeList(sel, del, delSel, onHold, itemSel = '.note-item') {
 const ICON_ANIM = {
   '#filter-btn': 'pop', '#info-btn': 'bob', '#shelf-settings-btn': 'tick',
   '.shelf-tab[data-tab="books"]': 'pop', '.shelf-tab[data-tab="audio"]': 'beat',
-  '#url-btn': 'twist', '#import-btn': 'pop', '#scan-btn': 'seek',
+  '#url-btn': 'twist', '#import-btn': 'pop', '#scan-btn': 'seek', '#fab-more': 'pop',
   '#shelf-btn': 'nl', '#lib-settings-btn': 'tick', '#annot-more': 'nd', '#annot-edit': 'wiggle',
   '#notes-btn': 'pop', '#bm-list-btn': 'nd', '#review-btn': 'pop',
   '#notes-add-btn': 'pop', '#notes-copy': 'pop', '#notes-del-all': 'shrink',
@@ -9899,7 +10413,7 @@ function bindUI() {
   // (#cover-input, image/*) камера нужна по делу — «сфотографировать обложку», её не трогаем.
   // импорт: кнопка, выбор файла, перетаскивание
   $('#import-btn').addEventListener('click', () => $('#file-input').click());
-  $('#url-btn').addEventListener('click', importFromUrl);
+  $('#url-btn').addEventListener('click', () => { closeFabMore(true); importFromUrl(); });
   initFabDrag();   // кластер кнопок можно перетаскивать по правому/нижнему краю (удержанием)
   $('#file-input').addEventListener('change', e => {
     doImport([...e.target.files]);
@@ -10167,6 +10681,15 @@ function bindUI() {
     if (activeCol && !activeCat) {
       const ccd = e.target.closest('[data-colcatdl]');
       if (ccd) { colCatDownload(ccd.dataset.colcatdl); return; }
+    }
+    // сборники: раскрыть стопку, переименовать, расформировать, выйти из раскрытой
+    {
+      const fe = e.target.closest('[data-foldedit]');
+      if (fe) { e.stopPropagation(); renameFolder(fe.dataset.foldedit); return; }
+      const fb = e.target.closest('[data-foldbreak]');
+      if (fb) { e.stopPropagation(); breakFolder(fb.dataset.foldbreak); return; }
+      const fo = e.target.closest('[data-folder]');
+      if (fo) { toggleFolder(fo.dataset.folder); return; }
     }
     // полка: открыть книгу / удалить книгу / продолжить чтение
     const open = e.target.closest('[data-open]');
@@ -10677,6 +11200,12 @@ function bindUI() {
   // коллекции («свои полки»)
   setupColDrawer();
   $('#fab-collect')?.addEventListener('click', () => activeCol ? removeFromActiveCol() : openColPick());
+  $('#fab-fold')?.addEventListener('click', foldSelected);   // объединить выбранное в сборник
+  $('#fab-more')?.addEventListener('click', e => { e.stopPropagation(); openFabMore(); });
+  // тап мимо кластера сворачивает «ещё» обратно в троеточие (и по касанию, и по клику)
+  for (const ev of ['pointerdown', 'click']) addEventListener(ev, e => {
+    if (fabMoreOpen() && !e.target.closest('#add-fab')) closeFabMore();
+  }, true);
   $('#col-create-cancel')?.addEventListener('click', closeColCreate);
   $('#col-create-save')?.addEventListener('click', saveNewCol);
   $('#col-name')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveNewCol(); } });

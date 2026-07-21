@@ -331,7 +331,7 @@ html.t-light .brand-logo, html.t-sepia .brand-logo {
 .flt-sort { display: flex; align-items: center; min-width: 0; flex: 1; }
 .sort-frame { flex: 0 0 auto; display: flex; align-items: center; height: 38px;
   border: 1px solid var(--border-strong); border-radius: var(--r-sm); background: var(--bg);
-  padding-right: 10px; }
+  padding-left: 12px; }   /* галочка СЛЕВА, как у «Все»; выпадашка справа */
 .sort-frame .lang-trigger, .sort-frame .flt-select .lang-trigger { border: 0; background: transparent; height: 100%; }
 .sort-cb-lbl { display: flex; align-items: center; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .sort-frame .scan-cb { width: 18px; height: 18px; }

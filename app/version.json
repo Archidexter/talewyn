@@ -1,17 +1,17 @@
 {
-  "web": "1.2.7",
-  "native": "1.1.14",
-  "bundleUrl": "https://github.com/Archidexter/talewyn/releases/download/web-1.2.7/bundle-1.2.7.zip",
-  "apkUrl": "https://github.com/Archidexter/talewyn/releases/download/apk-1.1.14/AD.Talewyn-1.1.14.apk",
+  "web": "1.2.9",
+  "native": "1.2.9",
+  "bundleUrl": "https://github.com/Archidexter/talewyn/releases/download/web-1.2.9/bundle-1.2.9.zip",
+  "apkUrl": "https://github.com/Archidexter/talewyn/releases/download/apk-1.2.9/AD.Talewyn-1.2.9.apk",
   "notes": "",
-  "apkSha256": "a2474e8e7e9f45a0e6cd75c0a77d235b16e61c06aa76bca9c5ac722f387c5b69",
-  "apkSize": 10747429,
+  "apkSha256": "165ccc76cc2b84d0ed83881664260f510d7ce3995b6b67ed76eb4d7615954650",
+  "apkSize": 10816696,
   "bundleUrls": [
-    "https://github.com/Archidexter/talewyn/releases/download/web-1.2.7/bundle-1.2.7.zip",
-    "https://huggingface.co/datasets/Archidexter/talewyn-assets/resolve/main/web/bundle-1.2.7.zip"
+    "https://github.com/Archidexter/talewyn/releases/download/web-1.2.9/bundle-1.2.9.zip",
+    "https://huggingface.co/datasets/Archidexter/talewyn-assets/resolve/main/web/bundle-1.2.9.zip"
   ],
   "apkUrls": [
-    "https://github.com/Archidexter/talewyn/releases/download/apk-1.1.14/AD.Talewyn-1.1.14.apk",
-    "https://huggingface.co/datasets/Archidexter/talewyn-assets/resolve/main/apk/AD.Talewyn-1.1.14.apk"
+    "https://github.com/Archidexter/talewyn/releases/download/apk-1.2.9/AD.Talewyn-1.2.9.apk",
+    "https://huggingface.co/datasets/Archidexter/talewyn-assets/resolve/main/apk/AD.Talewyn-1.2.9.apk"
   ]
 }

@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.2.10';
+const APP_VERSION = '1.2.11';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -2511,18 +2511,27 @@ function refreshSelChecks() {
   });
   updateSelFabs();
 }
-// кружки следуют за СОСТАВОМ выбора (коллекция и каталог): есть скачанное — есть урна,
-// есть нескачанное — есть «скачать всё»; смешанный выбор — оба разом
+// запись библиотеки, стоящая за выбранным элементом (везде: полка, коллекция, каталог).
+// null = за элементом ничего нет, то есть это нескачанная запись каталога.
+function selRecOf(key) {
+  const audio = selKind === 'audio' || selKind === 'cataudio';
+  const pool = audio ? (state.audiobooks || []) : state.books;
+  // в каталоге выбор идёт по ключам записей, в остальных местах — по id книг
+  const id = selKind.startsWith('cat') ? catBookIdOf({ key }) : key;
+  return id ? (pool.find(r => r.id === id) || null) : null;
+}
+// удалять есть что у того, что реально лежит в библиотеке;
+// скачивать — у нескачанных записей каталога И у стрим-аудиокниг (треки живут в сети)
+const selCanDelete = key => !!selRecOf(key);
+const selCanDownload = key => { const r = selRecOf(key); return !r || !!r.stream; };
+
+// кружки следуют за СОСТАВОМ выбора ВЕЗДЕ (полка, коллекция, каталог): есть скачанное —
+// есть урна, есть нескачанное — есть «скачать всё»; смешанный выбор — оба разом
 function updateSelFabs() {
   let canDel = true, canDl = false;
-  if (selMode && !selKind.startsWith('cat') && activeCol) {
-    const pool = selKind === 'audio' ? (state.audiobooks || []) : state.books;
-    const real = id => pool.some(r => r.id === id);
-    canDel = selIds.some(real);
-    canDl = selIds.some(id => !real(id));   // не книга из библиотеки = нескачанная запись каталога
-  } else if (selMode && selKind.startsWith('cat')) {
-    canDel = selIds.some(k => catBookIdOf({ key: k }));    // скачанная запись — есть что удалить
-    canDl = selIds.some(k => !catBookIdOf({ key: k }));
+  if (selMode && selIds.length) {
+    canDel = selIds.some(selCanDelete);
+    canDl = selIds.some(selCanDownload);
   }
   const b = document.body;
   const changed = b.classList.contains('sel-can-del') !== canDel
@@ -2763,14 +2772,9 @@ function pluralRu(n, one, few, many) {
 async function deleteSelected() {
   if (!selIds.length) return;
   const audio = selKind === 'audio' || selKind === 'cataudio';
-  // урна касается только СКАЧАННОГО и молча пропускает остальное: в коллекции — нескачанные
-  // записи каталога, в каталоге — записи без скачанного воплощения
-  let ids;
-  if (selKind.startsWith('cat')) ids = selIds.map(k => catBookIdOf({ key: k })).filter(Boolean);
-  else {
-    const pool = audio ? (state.audiobooks || []) : state.books;
-    ids = selIds.filter(id => pool.some(r => r.id === id));
-  }
+  // урна касается только того, что реально лежит в библиотеке, и молча пропускает
+  // нескачанные записи каталога — удалять у них нечего
+  const ids = selIds.map(k => { const r = selRecOf(k); return r ? r.id : null; }).filter(Boolean);
   if (!ids.length) return;
   const n = ids.length;
   // видимая анимация нажатия: кнопка «клюёт», крышка мусорки откидывается
@@ -3808,29 +3812,24 @@ async function catFetchImport(entry, job, ctx) {
   }
 }
 
-// ── мультивыбор: «скачать всё» одной кнопкой (каталог и коллекция) ──
-function catDownloadSelected() {
+// ── мультивыбор: «скачать всё» одной кнопкой — везде, где что-то можно скачать ──
+// Три случая под одной кнопкой: запись каталога (из витрины или из коллекции) и
+// стрим-аудиокнига, которой нужно забрать треки на устройство. Неподходящее пропускаем.
+function downloadSelected() {
   if (!selMode || !selIds.length) return;
-  if (selKind.startsWith('cat')) {   // каталог: выбор — ключи записей активной витрины
-    const cat = activeCat; if (!cat) return;
-    const keys = selIds.filter(k => !catBookIdOf({ key: k }));   // скачанные пропускаем
-    if (!keys.length) return;
-    exitSelMode();
-    for (const k of keys) {
+  const keys = selIds.filter(selCanDownload);
+  if (!keys.length) return;   // качать нечего — выбор не трогаем
+  const cat = activeCat, col = activeCol;
+  const jobs = keys.map(k => ({ k, rec: selRecOf(k) }));
+  exitSelMode();
+  for (const { k, rec } of jobs) {
+    if (rec && rec.stream) { abDownloadTracks(rec); continue; }   // треки стрим-аудиокниги — офлайн
+    if (cat) {
       const en = (cat.entries || []).find(x => x.key === k);
       if (!en) continue;
       if (cat.kind === 'audio') catDownloadAudio(en); else catDownload(en);   // очередь и дедуп уже внутри
-    }
-    return;
+    } else if (col) colCatDownload(k);
   }
-  // коллекция: выбор смешанный — качаем только нескачанные записи каталога, остальное пропускаем
-  if (!activeCol) return;
-  const c = colById(activeCol); if (!c) return;
-  const catKeys = new Set((c.items || []).filter(it => it.k === 'cat').map(it => it.id));
-  const keys = selIds.filter(id => catKeys.has(id) && !catBookIdOf({ key: id }));
-  if (!keys.length) return;   // качать нечего — выбор не трогаем
-  exitSelMode();
-  for (const k of keys) colCatDownload(k);
 }
 
 // ── книги каталога в своих коллекциях: живут там и НЕскачанными ──
@@ -8164,20 +8163,30 @@ function fmtAbRate(r) { return (Number.isInteger(r) ? r.toFixed(1) : String(r)) 
 // Треки-URL по одному вытягиваются и подменяются в audiotracks на blob'ы. Скачались все —
 // запись перестаёт быть стримом и стрелка исчезает; часть не далась — url остаются,
 // стрелка живёт для повтора.
-const abDlBusy = new Set();   // id аудиокниг, чьи треки сейчас скачиваются
-async function abDownloadTracks(rec) {
+const abDlBusy = new Set();   // id аудиокниг, чьи треки сейчас скачиваются (или ждут очереди)
+let abDlChain = Promise.resolve();   // выбрали пачку — качаем по одной, а не всё сразу в сеть
+// спиннер ставим СРАЗУ на все выбранные, работу выстраиваем в очередь
+function abDownloadTracks(rec) {
   if (!rec || !rec.stream || abDlBusy.has(rec.id)) return;
   if (!netOnline) { probeNet(); showToast(t('urlNoNet')); return; }
+  abDlBusy.add(rec.id);
+  if (!$('#shelf-view').hidden) renderAudioShelf();
+  abDlChain = abDlChain
+    .then(() => abDlRun(rec))
+    .catch(() => {})
+    .then(() => {
+      abDlBusy.delete(rec.id);
+      if (!$('#shelf-view').hidden) renderAudioShelf();
+    });
+}
+async function abDlRun(rec) {
   let rows = [];
   try { rows = (await dbAll('audiotracks', bookRange(rec.id))).filter(r => r.url && !r.blob); } catch {}
   if (!rows.length) {   // всё уже локально (например, докачали в прошлый раз) — снимаем флаг
     rec.stream = false;
     try { await dbPut('audiobooks', rec); } catch {}
-    renderAudioShelf();
     return;
   }
-  abDlBusy.add(rec.id);
-  renderAudioShelf();   // стрелка становится спиннером
   const job = dlAdd('audio', rec.title, rows.length);
   job.status = 'active'; renderDlList();
   const ctrl = new AbortController(); job.abort = () => ctrl.abort();
@@ -8203,7 +8212,6 @@ async function abDownloadTracks(rec) {
       job.done = ok + fail; job.frac = (ok + fail) / rows.length; renderDlList();
     }
   } finally {
-    abDlBusy.delete(rec.id);
     dlRemove(job);
   }
   if (!job.cancelled) {
@@ -8213,7 +8221,6 @@ async function abDownloadTracks(rec) {
       showToast(T('abDlDone', { n: ok }));
     } else showToast(T('abDlPart', { ok, n: rows.length }));
   }
-  if (!$('#shelf-view').hidden) renderAudioShelf();   // спиннер → ничего (или стрелка при неудаче)
 }
 
 function renderAbTracklist() {
@@ -10031,7 +10038,7 @@ function bindUI() {
     });
   }
   $('#fab-del')?.addEventListener('click', deleteSelected);   // красная кнопка-мусорка в стопке FAB
-  $('#fab-dl')?.addEventListener('click', catDownloadSelected);   // «скачать выбранное» в каталоге
+  $('#fab-dl')?.addEventListener('click', downloadSelected);   // «скачать выбранное» — везде
   bindAudioUI();
   // вкладки главной панели: «Книги» и «Аудиокниги»
   $('#shelf-tabs').addEventListener('click', e => {

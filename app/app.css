@@ -2216,13 +2216,18 @@ body.tts-on #sel-toolbar { bottom: calc(228px + max(env(safe-area-inset-bottom, 
 }
 #sel-erase:active { transform: scale(.9); }
 @media (hover: hover) { #sel-erase:hover { color: var(--accent); border-color: var(--accent); } }
+/* действия панели — В РАМКАХ и без заливки: акцентный фон был стилем «нажатой» кнопки,
+   и они постоянно выглядели вдавленными. Семейство одно с ластиком: рамка + нейтраль */
 #sel-tr, #sel-note, #sel-speak {
   display: inline-flex; align-items: center; justify-content: center; flex: none;
   width: 34px; height: 34px; border-radius: 11px;
-  color: var(--accent); background: var(--accent-soft);
+  color: var(--dim); border: 1px solid var(--border-strong);
+  background: color-mix(in srgb, var(--bg) 45%, transparent);
+  transition: color .15s, border-color .15s, transform .12s;
 }
-html.t-dark #sel-tr, html.t-dark #sel-note, html.t-dark #sel-speak { color: var(--accent-hi); }
-#sel-tr:active, #sel-note:active, #sel-speak:active { transform: scale(.94); }
+#sel-tr:active, #sel-note:active, #sel-speak:active {
+  transform: scale(.94); color: var(--accent); border-color: var(--accent);
+}
 
 /* лист заметки и лист отзыва */
 /* цитата-фрагмент — по центру, курсив-сериф, БЕЗ полосы/подложки (в тон окон ссылки/оценки) */

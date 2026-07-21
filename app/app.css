@@ -1534,6 +1534,9 @@ body.col-open #col-tab svg { transform: rotate(180deg); }
 /* результаты: строка фильтра (кастомная выпадашка + чекбокс «Все») + список найденного */
 .scan-ctl { display: flex; align-items: center; gap: 9px; }
 .fmt-pick { flex: 1; min-width: 0; }
+/* все три контрола строки — формат, сортировка, «Все» — в ОДНОМ оформлении
+   (рамка border-strong + фон var(--bg)), как рамка сортировки */
+.scan-ctl .fmt-pick .lang-trigger { border-color: var(--border-strong); }
 .scan-ctl .lang-trigger { min-width: 0; }
 .scan-ctl .lang-cur { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* сортировка — только иконка активного режима: компактная кнопка по содержимому */
@@ -1543,6 +1546,7 @@ body.col-open #col-tab svg { transform: rotate(180deg); }
 .scan-ctl .scan-sort .lang-cur svg { display: block; }
 .scan-all-lbl { display: flex; align-items: center; gap: 9px; height: 38px; font-size: 13px; font-weight: 700; color: var(--dim);
   cursor: pointer; border: 1px solid var(--border-strong); border-radius: var(--r-sm); padding: 0 14px;
+  background: var(--bg);   /* фон как у рамки сортировки — три контрола одинаковые */
   white-space: nowrap; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
 .scan-cb { appearance: none; -webkit-appearance: none; flex: none; width: 21px; height: 21px;
   border: 1.5px solid var(--border-strong); border-radius: 6px; background: var(--elev2);

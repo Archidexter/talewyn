@@ -1367,16 +1367,18 @@ body.sel-mode #add-fab .fab-collect { display: grid; animation: fab-del-in .3s c
 /* внутри коллекции стрелка разворачивается — «убрать из коллекции» */
 body.col-viewing #add-fab .fab-collect svg { transform: scaleX(-1); }
 
-/* ═══ мультивыбор в КАТАЛОГЕ: вместо мусорки — «скачать выбранное» (золотая стрелка) ═══ */
+/* ═══ мультивыбор в КАТАЛОГЕ: кружки следуют за составом выбора, как в коллекции.
+   Нескачанные в выборе → «скачать всё» (золотая стрелка), скачанные → урна, смесь → обе ═══ */
 #add-fab .fab-dl { display: none; color: var(--gild); }
-body.sel-mode.sel-cat #add-fab .fab-dl { display: grid; animation: fab-del-in .3s cubic-bezier(.2, .8, .3, 1); }
-body.sel-exiting.sel-cat #add-fab .fab-dl { display: grid; pointer-events: none; animation: fab-del-out .28s cubic-bezier(.4, 0, .2, 1) forwards; }
+body.sel-mode.sel-cat.sel-can-dl #add-fab .fab-dl { display: grid; animation: fab-del-in .3s cubic-bezier(.2, .8, .3, 1); }
+body.sel-exiting.sel-cat.sel-can-dl #add-fab .fab-dl { display: grid; pointer-events: none; animation: fab-del-out .28s cubic-bezier(.4, 0, .2, 1) forwards; }
 /* нижняя рельса: вылет/уход СНИЗУ, как у мусорки и коллекции. Отдельные правила обязательны:
-   animation-шортхенд выше специфичнее общих .fab-dock-bottom-правил (лишний класс .sel-cat)
+   animation-шортхенд выше специфичнее общих .fab-dock-bottom-правил (лишние классы)
    и молча перебивал бы вертикальный вариант */
-body.sel-mode.sel-cat #add-fab.fab-dock-bottom .fab-dl { animation-name: fab-del-in-v; }
-body.sel-exiting.sel-cat #add-fab.fab-dock-bottom .fab-dl { animation-name: fab-del-out-v; }
-body.sel-cat #add-fab .fab-del { display: none !important; }   /* удалять в каталоге нечего */
+body.sel-mode.sel-cat.sel-can-dl #add-fab.fab-dock-bottom .fab-dl { animation-name: fab-del-in-v; }
+body.sel-exiting.sel-cat.sel-can-dl #add-fab.fab-dock-bottom .fab-dl { animation-name: fab-del-out-v; }
+body.sel-cat.sel-mode:not(.sel-can-del) #add-fab .fab-del,
+body.sel-cat.sel-exiting:not(.sel-can-del) #add-fab .fab-del { display: none !important; }
 /* пока выбираем — стрелки-скачать на обложках прячутся (и каталожные, и у стрим-аудиокниг):
    как крестики удаления; скачивает большой кружок */
 body.sel-mode .cat-badge, body.sel-exiting .cat-badge { display: none; }

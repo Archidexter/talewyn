@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.2.17';
+const APP_VERSION = '1.2.19';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -2686,7 +2686,7 @@ function beginCardDrag(x, y) {
     bounds.x1 = Math.max(bounds.x1, ro.right + scrollX);
     bounds.y1 = Math.max(bounds.y1, ro.bottom + scrollY);
   }
-  cardDrag = { card, grid, items, rects, bounds, from, to: from, sec,
+  cardDrag = { card, grid, items, rects, bounds, from, to: from, sec, sc: 1.06, pull: 0, magnetR: null,
                x0: x + scrollX, y0: y + scrollY, cx: x, cy: y, raf: 0,
                scrollMin: Math.max(0, bounds.y0 - 96),
                scrollMax: Math.max(0, bounds.y1 + 24 - innerHeight) };
@@ -2721,9 +2721,9 @@ function magnetTargetAt(d, cx, cy) {
     const fid = el.dataset.foldId;
     const f = folderById(fid);
     if (!f || f.kind !== kind || (f.items || []).includes(id)) continue;
-    const r = el.classList.contains('fold-sec')
-      ? el.querySelector('.fold-sec-head').getBoundingClientRect()   // у раскрытой цель — шапка
-      : el.getBoundingClientRect();
+    if (el.contains(d.card)) continue;          // книгу из этого же сборника не «добавляем» повторно
+    // у раскрытого сборника цель — ВСЯ его секция (шапка и поле с книгами), а не одна шапка
+    const r = el.getBoundingClientRect();
     const x = cx - scrollX, y = cy - scrollY;
     if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom)
       return { el, id: fid, r };
@@ -2731,7 +2731,8 @@ function magnetTargetAt(d, cx, cy) {
   return null;
 }
 function setMagnet(d, m) {
-  if ((d.magnet && d.magnet.id) === (m && m.id)) { d.magnet = m; return; }
+  if (m) d.magnetR = m.r;                       // цель помним и после ухода — чтобы плавно отпустить
+  if ((d.magnet && d.magnet.id) === (m && m.id)) { d.magnet = m || d.magnet; return; }
   if (d.magnet) d.magnet.el.classList.remove('fold-magnet');
   d.magnet = m;
   if (m) {
@@ -2762,14 +2763,19 @@ function cardDragMove() {
     if (out) { d.card.style.transform = `translate(${dx}px, ${dy}px) scale(1.02)`; return; }
   }
   setMagnet(d, magnetTargetAt(d, fx + scrollX, fy + scrollY));
-  if (d.magnet) {   // притяжение: треть пути к центру сборника и лёгкое уменьшение
-    const tx = d.magnet.r.left + scrollX + d.magnet.r.width / 2;
-    const ty = d.magnet.r.top + scrollY + d.magnet.r.height / 2;
-    dx += (tx - cx) * 0.34; dy += (ty - cy) * 0.34;
-    d.card.style.transform = `translate(${dx}px, ${dy}px) scale(.82)`;
-    return;                                    // соседи не разъезжаются — книга уходит в сборник
+  // Ни масштаб, ни притяжение не переключаются рывком: каждый кадр подтягиваем их к цели
+  // (кадры идут постоянно — см. cardDragTick), поэтому книга плавно съёживается над
+  // сборником и так же плавно возвращается, если увести её в сторону.
+  const wantSc = d.magnet ? 0.8 : 1.06, wantPull = d.magnet ? 1 : 0;
+  d.sc += (wantSc - d.sc) * 0.16;
+  d.pull += (wantPull - d.pull) * 0.16;
+  if (d.pull > 0.002 && d.magnetR) {           // тянем к центру сборника — доля пути растёт плавно
+    const tx = d.magnetR.left + scrollX + d.magnetR.width / 2;
+    const ty = d.magnetR.top + scrollY + d.magnetR.height / 2;
+    dx += (tx - cx) * 0.42 * d.pull; dy += (ty - cy) * 0.42 * d.pull;
   }
-  d.card.style.transform = `translate(${dx}px, ${dy}px) scale(1.06)`;
+  d.card.style.transform = `translate(${dx}px, ${dy}px) scale(${d.sc.toFixed(3)})`;
+  if (d.magnet) return;                        // соседи не разъезжаются — книга уходит в сборник
   // куда встанет — ближайший слот к центру перетаскиваемой карточки (сетка двумерная,
   // поэтому не «номер строки», а честное расстояние до центров)
   cx = r0.x + r0.w / 2 + dx; cy = r0.y + r0.h / 2 + dy;
@@ -2794,8 +2800,9 @@ function cardDragTick() {
     // дальше последней книги не крутим: ниже неё пусто, и уезжать туда незачем
     const before = scrollY;
     const want = Math.max(d.scrollMin, Math.min(d.scrollMax, before + v));
-    if (want !== before) { scrollTo(0, want); cardDragMove(); }
+    if (want !== before) scrollTo(0, want);
   }
+  cardDragMove();   // каждый кадр: даже с неподвижным пальцем масштаб и притяжение доезжают плавно
   d.raf = requestAnimationFrame(cardDragTick);
 }
 
@@ -3004,11 +3011,15 @@ function foldEntries(entries, kind) {
     const f = folderOfItem(kind, en.b.id);
     if (!f) { out.push(en); continue; }
     if (used.has(f.id)) continue;                      // эта стопка уже стоит выше
-    used.add(f.id);
     // в стопке — только те книги, что реально видны здесь (в коллекции их может быть часть)
     const items = entries.filter(x => x.b && (f.items || []).includes(x.b.id)).map(x => x.b);
     if (items.length < 2) { out.push({ b: en.b }); continue; }   // одна книга — показываем её саму
-    // раскрытая стопка занимает секцию во всю ширину — книги живут внутри неё, а не в потоке
+    // Стопка стоит на СВОЁМ месте — там, где родилась (якорь f.anchor), и не переезжает,
+    // когда в неё добавляют книгу с другого конца полки. Якоря нет или его книгу вынесли —
+    // держимся первой книги сборника.
+    const anchorHere = items.some(b => b.id === f.anchor);
+    if (anchorHere && en.b.id !== f.anchor) continue;   // ждём место якоря
+    used.add(f.id);
     out.push({ f, items, open: activeFolder === f.id });
   }
   return out;
@@ -3045,7 +3056,6 @@ function folderCardHtml(f, items, audio, open) {
   const cover = `<button class="${audio ? 'ab-card-cover' : 'cover'} fold-cover" data-folder="${esc(f.id)}">
       <span class="fold-stack">${faces}</span>
       <span class="fold-n">${items.length}</span>
-      <span class="sel-check" aria-hidden="true"></span>
     </button>`;
   const acts = `<button class="fold-edit" data-foldedit="${esc(f.id)}" title="${esc(t('foldRename'))}" aria-label="${esc(t('foldRename'))}">`
     + `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>`
@@ -3090,7 +3100,7 @@ async function foldSelected() {
   }
   if (target) target.items = [...new Set([...(target.items || []), ...ids])];
   else {
-    target = { id: newId('fold'), name, kind, items: ids, auto, createdAt: Date.now() };
+    target = { id: newId('fold'), name, kind, items: ids, auto, anchor: ids[0], createdAt: Date.now() };
     state.folders.push(target);
   }
   // сборка без беготни по экрану: выбранные книги втягиваются САМИ В СЕБЯ на своих местах
@@ -3127,6 +3137,7 @@ async function takeOutOfFolder(folderId, id) {
   const f = folderById(folderId);
   if (!f || !(f.items || []).includes(id)) return;
   f.items = f.items.filter(x => x !== id);
+  if (f.anchor === id) f.anchor = f.items[0];   // вынесли якорную книгу — держимся следующей
   const audio = f.kind === 'audio';
   if (f.items.length < 2) {   // сборник из одной книги смысла не имеет — распускаем
     state.folders = (state.folders || []).filter(x => x !== f);
@@ -3138,23 +3149,51 @@ async function takeOutOfFolder(folderId, id) {
 
 // ── раскрытие стопки ПРЯМО В СЕТКЕ: книги встают следом за ней и раздвигают полку;
 //    повторный тап по стопке — сворачивает обратно ──
+let foldBusy = false;
 async function toggleFolder(id) {
-  const f = folderById(id); if (!f) return;
+  const f = folderById(id); if (!f || foldBusy) return;
   const audio = f.kind === 'audio';
   const grid = audio ? $('#audio-content') : $('#shelf-grid');
-  const before = cardRects(grid);
-  activeFolder = activeFolder === id ? null : id;
-  if (audio) await renderAudioShelf(); else await renderShelf();
-  // новые книги наплывают слева направо, соседи разъезжаются на свои новые места
-  flipCards(grid, before);
-  if (activeFolder === id) {
-    const kids = [...grid.querySelectorAll(`[data-in-fold="${CSS.escape(id)}"]`)];
-    kids.forEach((el, i) => {
-      el.style.setProperty('--fold-i', String(i));
-      el.classList.add('fold-in');
-      el.addEventListener('animationend', () => el.classList.remove('fold-in'), { once: true });
-    });
-  }
+  const opening = activeFolder !== id;
+  foldBusy = true;
+  try {
+    // Закрываем: секция схлопывается по высоте, и полка под ней едет вверх сама, в потоке —
+    // никаких прыжков и никакого «хлопанья» книг внутри, они просто уезжают вместе с ней.
+    if (!opening) {
+      const sec = grid.querySelector(`.fold-sec[data-fold-id="${CSS.escape(id)}"]`);
+      if (sec) {
+        sec.style.height = sec.getBoundingClientRect().height + 'px';
+        sec.style.overflow = 'hidden';
+        void sec.offsetWidth;
+        sec.style.transition = 'height .3s cubic-bezier(.4, 0, .2, 1), opacity .3s ease, margin .3s ease';
+        sec.style.height = '0px'; sec.style.opacity = '0'; sec.style.margin = '0';
+        await new Promise(r => setTimeout(r, 310));
+      }
+    }
+    const before = cardRects(grid);
+    activeFolder = opening ? id : null;
+    if (audio) await renderAudioShelf(); else await renderShelf();
+    // Открываем: секция растёт от нуля до своей высоты, а книги полки едут переездом —
+    // оба движения идут одновременно и одинаково долго, поэтому картинка цельная.
+    const sec = opening ? grid.querySelector(`.fold-sec[data-fold-id="${CSS.escape(id)}"]`) : null;
+    if (sec) {
+      const h = sec.getBoundingClientRect().height;
+      sec.style.height = '0px'; sec.style.overflow = 'hidden'; sec.style.opacity = '0';
+      // секция только что вставлена в DOM: с одним кадром браузер считает нулевую высоту
+      // первым состоянием и переход не играет — стартуем со второго кадра, как везде в проекте
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        sec.style.transition = 'height .34s cubic-bezier(.2, .8, .3, 1), opacity .26s ease';
+        sec.style.height = h + 'px'; sec.style.opacity = '1';
+        setTimeout(() => { sec.style.height = ''; sec.style.overflow = ''; sec.style.transition = ''; sec.style.opacity = ''; }, 360);
+      }));
+    }
+    flipCards(grid, before);
+    if (!opening) {   // стопка возвращается на место — тем же рождением, что при сборке
+      const card = grid.querySelector(`[data-fold-id="${CSS.escape(id)}"]`);
+      if (card) { card.classList.add('fold-born'); card.addEventListener('animationend', () => card.classList.remove('fold-born'), { once: true }); }
+    }
+    await new Promise(r => setTimeout(r, 360));
+  } finally { foldBusy = false; }
 }
 function closeFolder() { if (activeFolder) toggleFolder(activeFolder); }
 // снимок позиций карточек — для FLIP-переезда после перерисовки
@@ -3170,21 +3209,28 @@ function cardRects(grid) {
 }
 function flipCards(grid, before) {
   if (!grid || !before.size) return;
+  const moved = [];
   for (const el of grid.querySelectorAll('[data-book], [data-ab-id], [data-fold-id]')) {
     const k = el.dataset.foldId ? 'f:' + el.dataset.foldId
       : (el.dataset.inFold ? 'i:' + el.dataset.inFold + ':' : '') + (el.dataset.book || el.dataset.abId);
     const prev = before.get(k); if (!prev) continue;
     const now = el.getBoundingClientRect();
     const dx = prev.left - now.left, dy = prev.top - now.top;
-    if (!dx && !dy) continue;
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
     el.style.transition = 'none';
     el.style.transform = `translate(${dx}px, ${dy}px)`;
-    requestAnimationFrame(() => {
+    el.classList.remove('book-in');   // анимация появления держала бы transform: none и гасила переезд
+    moved.push(el);
+  }
+  if (!moved.length) return;
+  void grid.offsetWidth;              // отдаём браузеру стартовые позиции, иначе он схлопнет переезд
+  requestAnimationFrame(() => {
+    for (const el of moved) {
       el.style.transition = 'transform .34s cubic-bezier(.4, 0, .2, 1)';
       el.style.transform = '';
-      setTimeout(() => { el.style.transition = ''; }, 360);
-    });
-  }
+    }
+    setTimeout(() => { for (const el of moved) { el.style.transition = ''; el.style.transform = ''; } }, 360);
+  });
 }
 async function renameFolder(id) {
   const f = folderById(id); if (!f) return;
@@ -10472,6 +10518,9 @@ function bindUI() {
     // карточки каталога выбираются в каталоге И в коллекции (нескачанные плейсхолдеры),
     // но никогда не таскаются: их порядок задаёт источник/хвост сетки
     const catCard = card => card.classList.contains('cat-card');
+    // стопка сборника не выбирается (галочке и номеру там взяться неоткуда) — её удержание
+    // сразу готовит перетаскивание, чтобы двигать сборник по полке
+    const foldCard = card => card.classList.contains('fold-card');
     const selectable = card => card && (!catCard(card) || activeCat || activeCol);
     addEventListener('touchstart', e => {
       if (!shelfShown() || uiOverlayOpen() || e.touches.length !== 1) return;
@@ -10482,7 +10531,7 @@ function bindUI() {
       lpStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
       lpTimer = setTimeout(() => {
         lpTimer = null;
-        if (!already) {
+        if (!already && !foldCard(card)) {
           lpFiredAt = performance.now();
           enterSelMode(cardKindOf(card), cardIdOf(card));
         }
@@ -10524,7 +10573,7 @@ function bindUI() {
       lpStart = { x: e.clientX, y: e.clientY };
       lpTimer = setTimeout(() => {
         lpTimer = null;
-        if (!already) {
+        if (!already && !card.classList.contains('fold-card')) {
           lpFiredAt = performance.now();
           enterSelMode(cardKindOf(card), cardIdOf(card));
         }
@@ -10545,7 +10594,7 @@ function bindUI() {
     addEventListener('contextmenu', e => {
       if (!shelfShown() || selMode || uiOverlayOpen()) return;
       const card = e.target.closest('.book-card, .ab-card');
-      if (!selectable(card)) return;
+      if (!selectable(card) || card.classList.contains('fold-card')) return;
       e.preventDefault();
       lpFiredAt = performance.now();
       enterSelMode(cardKindOf(card), cardIdOf(card));

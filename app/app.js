@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.2.3';
+const APP_VERSION = '1.2.4';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -1758,7 +1758,14 @@ const menuOptionsHtml = (options, cur) => options.map(o =>
   `<button class="lang-opt${String(o.v) === String(cur) ? ' sel' : ''}" type="button" role="option" data-v="${esc(String(o.v))}">${esc(o.label)}</button>`).join('');
 
 const appMenus = [];   // все меню-порталы, живущие в body
-function closeAppMenus() { for (const m of appMenus) m.classList.remove('open'); }
+function closeAppMenus() {
+  for (const m of appMenus) {
+    m.classList.remove('open');
+    // подсветка рамки триггера живёт на aria-expanded — без сброса она «залипала»
+    // после закрытия меню тапом мимо
+    if (m._trigger) m._trigger.setAttribute('aria-expanded', 'false');
+  }
+}
 // anchor — элемент, по которому равняется меню (левая грань и ширина); по умолчанию
 // сам триггер. Нужен, когда триггер живёт внутри рамки-контейнера (сортировка с
 // галочкой): меню обязано вставать по грани РАМКИ, а не уезжать под триггер.

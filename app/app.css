@@ -1367,31 +1367,23 @@ body.sel-mode #add-fab .fab-collect { display: grid; animation: fab-del-in .3s c
 /* внутри коллекции стрелка разворачивается — «убрать из коллекции» */
 body.col-viewing #add-fab .fab-collect svg { transform: scaleX(-1); }
 
-/* ═══ мультивыбор в КАТАЛОГЕ: кружки следуют за составом выбора, как в коллекции.
-   Нескачанные в выборе → «скачать всё» (золотая стрелка), скачанные → урна, смесь → обе ═══ */
+/* ═══ умные кружки мультивыбора — ВЕЗДЕ (полка, коллекция, каталог). Классы ставит
+   updateSelFabs по составу выбора: можно скачать (нескачанная запись каталога или
+   стрим-аудиокнига) → золотая стрелка; можно удалить → урна; и то и другое → обе ═══ */
 #add-fab .fab-dl { display: none; color: var(--gild); }
-body.sel-mode.sel-cat.sel-can-dl #add-fab .fab-dl { display: grid; animation: fab-del-in .3s cubic-bezier(.2, .8, .3, 1); }
-body.sel-exiting.sel-cat.sel-can-dl #add-fab .fab-dl { display: grid; pointer-events: none; animation: fab-del-out .28s cubic-bezier(.4, 0, .2, 1) forwards; }
+body.sel-mode.sel-can-dl #add-fab .fab-dl { display: grid; animation: fab-del-in .3s cubic-bezier(.2, .8, .3, 1); }
+body.sel-exiting.sel-can-dl #add-fab .fab-dl { display: grid; pointer-events: none; animation: fab-del-out .28s cubic-bezier(.4, 0, .2, 1) forwards; }
 /* нижняя рельса: вылет/уход СНИЗУ, как у мусорки и коллекции. Отдельные правила обязательны:
-   animation-шортхенд выше специфичнее общих .fab-dock-bottom-правил (лишние классы)
+   animation-шортхенд выше специфичнее общих .fab-dock-bottom-правил (лишний класс)
    и молча перебивал бы вертикальный вариант */
-body.sel-mode.sel-cat.sel-can-dl #add-fab.fab-dock-bottom .fab-dl { animation-name: fab-del-in-v; }
-body.sel-exiting.sel-cat.sel-can-dl #add-fab.fab-dock-bottom .fab-dl { animation-name: fab-del-out-v; }
-body.sel-cat.sel-mode:not(.sel-can-del) #add-fab .fab-del,
-body.sel-cat.sel-exiting:not(.sel-can-del) #add-fab .fab-del { display: none !important; }
+body.sel-mode.sel-can-dl #add-fab.fab-dock-bottom .fab-dl { animation-name: fab-del-in-v; }
+body.sel-exiting.sel-can-dl #add-fab.fab-dock-bottom .fab-dl { animation-name: fab-del-out-v; }
+body.sel-mode:not(.sel-can-del) #add-fab .fab-del,
+body.sel-exiting:not(.sel-can-del) #add-fab .fab-del { display: none !important; }
 /* пока выбираем — стрелки-скачать на обложках прячутся (и каталожные, и у стрим-аудиокниг):
    как крестики удаления; скачивает большой кружок */
 body.sel-mode .cat-badge, body.sel-exiting .cat-badge { display: none; }
 
-/* ═══ мультивыбор в КОЛЛЕКЦИИ: кружки следуют за СОСТАВОМ выбора (классы ставит
-   updateSelFabs). Выбраны только нескачанные — «скачать всё» без урны; только книги —
-   урна без «скачать всё»; смешанный выбор — оба разом ═══ */
-body.sel-mode.col-viewing.sel-can-dl #add-fab .fab-dl { display: grid; animation: fab-del-in .3s cubic-bezier(.2, .8, .3, 1); }
-body.sel-exiting.col-viewing.sel-can-dl #add-fab .fab-dl { display: grid; pointer-events: none; animation: fab-del-out .28s cubic-bezier(.4, 0, .2, 1) forwards; }
-body.sel-mode.col-viewing.sel-can-dl #add-fab.fab-dock-bottom .fab-dl { animation-name: fab-del-in-v; }
-body.sel-exiting.col-viewing.sel-can-dl #add-fab.fab-dock-bottom .fab-dl { animation-name: fab-del-out-v; }
-body.col-viewing.sel-mode:not(.sel-can-del) #add-fab .fab-del,
-body.col-viewing.sel-exiting:not(.sel-can-del) #add-fab .fab-del { display: none !important; }
 
 /* ══════════ коллекции («свои полки») ══════════ */
 #col-scrim { position: fixed; inset: 0; z-index: 64; background: rgb(9 11 6 / .4); opacity: 0; transition: opacity .3s ease; }

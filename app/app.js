@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.2.1';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -3700,8 +3700,10 @@ function buildCatFiltersPanel(panelSel) {
       </div></div>
     <div class="flt-row"><span class="flt-lbl">${t('fltSort')}</span>
       <div class="flt-sort">
-        <div class="flt-select cflt-sort-dd"></div>
-        <input type="checkbox" class="scan-cb cflt-sort-on"${catSort.on ? ' checked' : ''} title="${t('sortOnT')}" aria-label="${t('sortOnT')}">
+        <div class="sort-frame" title="${t('sortOnT')}">
+          <div class="flt-select cflt-sort-dd"></div>
+          <label class="sort-cb-lbl"><input type="checkbox" class="scan-cb cflt-sort-on"${catSort.on ? ' checked' : ''} aria-label="${t('sortOnT')}"></label>
+        </div>
       </div></div>
     <button class="ghost-btn slim cflt-reset"${filtersCatActive() || activeCat.searchQ ? '' : ' hidden'}>${t('filterReset')}</button></div>`;
 
@@ -3855,8 +3857,10 @@ function buildFiltersPanel() {
         `<button class="chip flt-g${g === f.genre ? ' active' : ''}" data-g="${esc(g)}">${esc(g)}</button>`).join('')}</div></div>` : ''}
     <div class="flt-row"><span class="flt-lbl">${t('fltSort')}</span>
       <div class="flt-sort">
-        <div class="flt-select" id="flt-sort-dd"></div>
-        <input type="checkbox" id="flt-sort-on" class="scan-cb"${shelfSort.on ? ' checked' : ''} title="${t('sortOnT')}" aria-label="${t('sortOnT')}">
+        <div class="sort-frame" title="${t('sortOnT')}">
+          <div class="flt-select" id="flt-sort-dd"></div>
+          <label class="sort-cb-lbl"><input type="checkbox" id="flt-sort-on" class="scan-cb"${shelfSort.on ? ' checked' : ''} aria-label="${t('sortOnT')}"></label>
+        </div>
       </div></div>
     <button id="flt-reset" class="ghost-btn slim"${filtersActive() ? '' : ' hidden'}>${t('filterReset')}</button></div>`;
 

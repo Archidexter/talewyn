@@ -326,9 +326,18 @@ html.t-light .brand-logo, html.t-sepia .brand-logo {
 #shelf-filters.open, #audio-filters.open { opacity: 1; clip-path: inset(0 0 0 0); }
 /* полка едет следом за раскрытием — сдвигом, без перекладки */
 .flt-shift { transition: transform .3s cubic-bezier(.32, .72, 0, 1); will-change: transform; }
-/* ряд «Сортировка»: выпадашка + галочка вкл/выкл рядом (как в автопоиске) */
-.flt-sort { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
-.flt-sort .flt-select { flex: 1; min-width: 0; }
+/* ряд «Сортировка»: выпадашка и галочка вкл/выкл живут В ОДНОЙ рамке —
+   единый контрол, как поле «Все» в автопоиске по стилю рамки */
+.flt-sort { display: flex; align-items: center; min-width: 0; flex: 1; }
+.sort-frame { flex: 0 0 auto; display: flex; align-items: center; height: 38px;
+  border: 1px solid var(--border-strong); border-radius: var(--r-sm); background: var(--bg);
+  padding-right: 10px; }
+.sort-frame .lang-trigger, .sort-frame .flt-select .lang-trigger { border: 0; background: transparent; height: 100%; }
+.sort-cb-lbl { display: flex; align-items: center; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.sort-frame .scan-cb { width: 18px; height: 18px; }
+/* в панелях фильтров рамка тянется на всю строку и ростом с остальные поля */
+.flt-sort .sort-frame { flex: 1; min-width: 0; height: 46px; border-radius: var(--r-md); }
+.flt-sort .sort-frame .flt-select { flex: 1; min-width: 0; }
 @media (prefers-reduced-motion: reduce) {
   #shelf-filters, #audio-filters { transition: opacity .15s ease; clip-path: none; }
   .flt-shift { transition: none; }

@@ -1409,31 +1409,26 @@ body.sel-mode .fold-edit, body.sel-mode .fold-x { display: none; }
    вкладки и не открывая ящик коллекций. */
 .fold-carousel {
   display: flex; gap: 10px; align-items: flex-start;
-  /* фиксированная высота — закрытый контейнер (карусель + шапка + отступы ≈ 215px) заведомо
-     ниже книжной ячейки на любом экране, поэтому НИКОГДА её не перерастает и сетку не ломает. */
-  height: 162px;
+  /* высота ровно под обложку (внутри — ТОЛЬКО обложки). Контейнер = обложка + шапка + отступы
+     ≈ 200px: заведомо ниже книжной ячейки, сетку не распирает и обложки не клипает. */
+  height: 168px;
   overflow-x: auto; scroll-snap-type: x mandatory;
   /* pan-x + pan-y: горизонтальный свайп листает карусель, ВЕРТИКАЛЬНЫЙ прокручивает полку
      (не блокируем его). От переключения вкладок карусель защищена в JS-обработчике свайпа. */
   touch-action: pan-x pan-y; overscroll-behavior-x: contain; scrollbar-width: none;
 }
 .fold-carousel::-webkit-scrollbar { display: none; }
-.fold-cbook { flex: 0 0 auto; scroll-snap-align: start; display: flex; flex-direction: column; align-items: center; }
-/* ⛔ КОНТЕЙНЕР НЕ РАЗДУВАЕТСЯ по высоте НИ ОТ ЧЕГО. Высота книжки в карусели ФИКСИРОВАНА:
-   обложка задана по ВЫСОТЕ (не по ширине контейнера — иначе на широком контейнере она
-   разбухала); название ровно одна строка; звёзды/прогресс/процент убраны. Что бы ни лежало
-   внутри — высота одна и та же. Книжки уменьшены (~⅔ обычной), чтобы закрытый контейнер
-   держался в габаритах книжной ячейки и не толкал сетку вниз. */
-.fold-cbook .book-card { width: 100px; max-width: 100%; gap: 6px; }
-.fold-cbook .ab-card { width: 138px; max-width: 100%; gap: 6px; }
-.fold-cbook .cover { height: 150px; width: 100px; flex: none; aspect-ratio: auto; }
-.fold-cbook .ab-card-cover { height: 138px; width: 138px; flex: none; aspect-ratio: auto; }
+.fold-cbook { flex: 0 0 auto; scroll-snap-align: start; }
+/* Внутри сборника — ТОЛЬКО уменьшенные обложки (≈⅔ обычной), заданные по высоте. Ни названий,
+   ни автора, ни крестика удаления, ни чекбоксов/бейджей — превью чистое, сам сборник подписан
+   в шапке, книги открываются тапом. Высота фиксирована → контейнер не раздувается. */
+.fold-cbook .book-card, .fold-cbook .ab-card { width: auto; gap: 0; }
+.fold-cbook .cover { height: 168px; width: 112px; flex: none; aspect-ratio: auto; }
+.fold-cbook .ab-card-cover { height: 150px; width: 150px; flex: none; aspect-ratio: auto; margin-top: 9px; }
 .fold-cbook .cover-img, .fold-cbook .ab-card-cover img { width: 100%; height: 100%; object-fit: cover; }
-.fold-cbook .book-meta { width: 100px; }
-.fold-cbook .book-title, .fold-cbook .ab-card-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* автора внутри сборника не показываем — экономим высоту, чтобы закрытый контейнер точно
-   умещался в книжную ячейку; название остаётся */
+.fold-cbook .book-meta, .fold-cbook .book-title, .fold-cbook .ab-card-title,
 .fold-cbook .book-author, .fold-cbook .ab-card-author,
+.fold-cbook .book-del, .fold-cbook .ab-del, .fold-cbook .sel-check, .fold-cbook .cat-badge,
 .fold-cbook .book-stars, .fold-cbook .cover-track, .fold-cbook .cover-pct, .fold-cbook .ab-card-bar { display: none; }
 /* раскрытие меняет ТОЛЬКО ширину контейнера (на всю строку) — высота та же, книжки те же;
    при большей ширине просто видно больше книжек. Никаких скачков размера. */
@@ -1450,6 +1445,11 @@ body.sel-mode .fold-edit, body.sel-mode .fold-x { display: none; }
 .fold-card.fold-magnet { border-color: var(--gild); background: color-mix(in srgb, var(--gild) 14%, var(--elev)); }
 .fold-losing { border-color: color-mix(in srgb, var(--dim) 40%, transparent); }
 .card-eject .cover, .card-eject .ab-card-cover { outline: 2px dashed color-mix(in srgb, var(--gild) 60%, transparent); outline-offset: 2px; }
+/* ВЫНОС книжки: пока тащим из карусели, контейнер и карусель НЕ обрезают её — она всплывает
+   НАД сборником (иначе «уходит внутрь оболочки»). Сам контейнер поднимаем над соседями. */
+.fold-card.fold-extracting { overflow: visible; z-index: 5; }
+.fold-card.fold-extracting .fold-carousel { overflow: visible; }
+.fold-cbook .card-drag { z-index: 61; }
 
 /* ═══ Мультивыбор на полке (долгое нажатие) ═══ */
 .book-card .cover, .ab-card .ab-card-cover { position: relative; }

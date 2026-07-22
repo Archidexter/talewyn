@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.2.33';
+const APP_VERSION = '1.2.34';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -2680,9 +2680,6 @@ function beginCardDrag(x, y) {
   // при включённой сортировке ручной порядок не действует — перетаскивание молча бы
   // перезаписало порядок по отсортированной сетке и испортило ручной
   if (shelfSort.on && grid.id === 'shelf-grid') return;
-  // пока сборник РАСКРЫТ, полку не переставляем: раскрытый контейнер держит соседей «под собой»
-  // (foldGaps), и перестановка сбила бы и раскладку, и ord. Сначала свернуть, потом двигать.
-  if (activeFolder) return;
   // Сам контейнер-сборник (.fold-card) ТОЖЕ таскается — его можно переставить как книгу.
   // Когда тащат книгу — контейнеры из списка исключаем: они стоят на месте как цель-магнит и
   // не «удирают» из-под пальца. Когда тащат сам контейнер — в списке участвуют все ячейки.
@@ -3171,20 +3168,96 @@ async function takeOutOfFolder(folderId, id) {
 // Порядок книг (ord) при этом НЕ трогается — раскрытие ничего не сохраняет, поэтому ручная
 // расстановка полки не сбивается. Одновременно раскрыт только один сборник.
 let foldBusy = false;
-// Раскрытие/сворачивание: меняем activeFolder и ПЕРЕРИСОВЫВАЕМ полку (DOM всегда пересобирается
-// из ord — раскладка и порядок консистентны), затем плавно доводим FLIP-ом: соседи разъезжаются,
-// сам контейнер растёт/сжимается по ширине. Ничего не сохраняется — ручная расстановка цела.
+const foldSleep = ms => new Promise(r => setTimeout(r, ms));
+// FLIP соседей, сдвинутых раскрытием: снимок был ДО сдвига (wasRects) → плавно едем в новые места
+function flipMoved(grid, wasRects, dur) {
+  const moved = [];
+  for (const el of grid.querySelectorAll('.book-card, .ab-card')) {
+    const was = wasRects.get(el); if (!was) continue;
+    const now = el.getBoundingClientRect();
+    const dx = was.left - now.left, dy = was.top - now.top;
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
+    el.classList.remove('book-in');
+    el.style.transition = 'none'; el.style.transform = `translate(${dx}px, ${dy}px)`;
+    moved.push(el);
+  }
+  if (!moved.length) return moved;
+  void grid.offsetWidth;
+  for (const el of moved) { el.style.transition = `transform ${dur || 280}ms cubic-bezier(.25,.1,.25,1)`; el.style.transform = ''; }
+  return moved;
+}
+function clearFlip(moved) { for (const el of moved) { el.style.transition = ''; el.style.transform = ''; } }
+
+// Раскрытие/сворачивание — ДВА ЭТАПА, чтобы не было рывка: сперва соседний ряд спокойно
+// опускается (FLIP), и ТОЛЬКО ПОТОМ контейнер разъезжается вбок до полной ширины (или наоборот
+// при сворачивании). Порядок (ord) не трогается. Одновременно раскрыт только один сборник.
 async function toggleFolder(id) {
   const f = folderById(id); if (!f || foldBusy) return;
   foldBusy = true;
   try {
-    const before = cardRects(foldGridOf(f.kind));
-    activeFolder = activeFolder === id ? null : id;
-    if (f.kind === 'audio') await renderAudioShelf(); else await renderShelf();
-    flipCards(foldGridOf(f.kind), before);
+    let grid = foldGridOf(f.kind);
+    if (activeFolder && activeFolder !== id) {   // открыт другой — свернуть его перерисовкой
+      activeFolder = null;
+      const b0 = cardRects(grid);
+      if (f.kind === 'audio') await renderAudioShelf(); else await renderShelf();
+      grid = foldGridOf(f.kind);
+      flipCards(grid, b0); await foldSleep(360);
+    }
+    const box = grid.querySelector(`.fold-card[data-fold-id="${CSS.escape(id)}"]`);
+    if (!box) { activeFolder = activeFolder === id ? null : id; if (f.kind === 'audio') await renderAudioShelf(); else await renderShelf(); return; }
+    if (activeFolder === id) { activeFolder = null; await foldCloseInPlace(grid, box, f); }
+    else { activeFolder = id; await foldOpenInPlace(grid, box, f); }
   } finally { foldBusy = false; }
 }
 function closeFolder() { if (activeFolder) toggleFolder(activeFolder); }
+
+// РАСКРЫТИЕ на месте, два этапа. Контейнер во всю строку (grid-column:1/-1), но пока шириной
+// ячейки и на своей стороне (justify-self), соседи по строке уходят под него (foldGaps). Этап 1
+// плавно опускает соседей; этап 2 — разжимает контейнер вбок до 100%. Высота фиксирована (var).
+async function foldOpenInPlace(grid, box, f) {
+  const rc = box.getBoundingClientRect(), gr = grid.getBoundingClientRect();
+  const rightHalf = (rc.left + rc.width / 2 - gr.left) > gr.width / 2;
+  const wClosed = rc.width;
+  // высота раскрытого = высоте закрытого (= высоте ячейки), замеряем СЕЙЧАС по тапу — раскладка
+  // устоялась, число верное. Меняется только ширина.
+  grid.style.setProperty('--fold-open-h', Math.round(rc.height) + 'px');
+  const was = new Map([...grid.querySelectorAll('.book-card, .ab-card')].filter(el => el !== box)
+    .map(el => [el, el.getBoundingClientRect()]));
+  box.classList.add('fold-open');
+  box.style.gridColumn = '1 / -1';
+  box.style.justifySelf = rightHalf ? 'end' : 'start';
+  box.style.width = wClosed + 'px';
+  foldGaps(grid);
+  cardMarquee(grid);
+  const moved = flipMoved(grid, was, 280);        // этап 1: соседи опускаются, контейнер узкий
+  await foldSleep(moved.length ? 300 : 40);
+  clearFlip(moved);
+  void box.offsetWidth;
+  box.style.transition = 'width .3s cubic-bezier(.25,.1,.25,1)';   // этап 2: контейнер вбок
+  box.style.width = '100%';
+  await foldSleep(320);
+  box.style.transition = ''; box.style.width = ''; box.style.justifySelf = ''; box.style.gridColumn = '';
+}
+// СВОРАЧИВАНИЕ: этап 1 — контейнер сжимается к ячейке (на своей стороне); этап 2 — перерисовка
+// возвращает соседей на места, FLIP плавно поднимает их обратно.
+async function foldCloseInPlace(grid, box, f) {
+  const gr = grid.getBoundingClientRect(), rs = box.getBoundingClientRect();
+  const rightHalf = (rs.left + rs.width / 2 - gr.left) > gr.width / 2;
+  const sample = [...grid.children].find(el => el.matches('.book-card:not(.fold-card), .ab-card:not(.fold-card)'));
+  const wClosed = sample ? sample.getBoundingClientRect().width : rs.width;
+  box.style.gridColumn = '1 / -1';
+  box.style.justifySelf = rightHalf ? 'end' : 'start';
+  box.style.width = rs.width + 'px';
+  void box.offsetWidth;
+  box.style.transition = 'width .28s cubic-bezier(.25,.1,.25,1)';   // этап 1: контейнер к ячейке
+  box.style.width = wClosed + 'px';
+  await foldSleep(300);
+  const was = cardRects(grid);                    // снимок до ре-рендера (соседи ещё внизу)
+  box.classList.remove('fold-open');
+  box.style.transition = ''; box.style.width = ''; box.style.justifySelf = ''; box.style.gridColumn = '';
+  if (f.kind === 'audio') await renderAudioShelf(); else await renderShelf();
+  flipCards(foldGridOf(f.kind), was);             // этап 2: соседи плавно поднимаются на места
+}
 
 // Раскрытый сборник занимает ВСЮ свою строку. Книги, что были с ним в одной строке слева,
 // уходят СТРОГО ВНИЗ под него (перенос под контейнер), на месте контейнера — пустая ячейка.

@@ -1409,8 +1409,8 @@ body.sel-mode .fold-edit, body.sel-mode .fold-x { display: none; }
    вкладки и не открывая ящик коллекций. */
 .fold-carousel {
   display: flex; gap: 10px; align-items: center;
-  /* НАТУРАЛЬНАЯ высота (flex:none) — не flex:1, иначе в авто-строке грида круговая зависимость и
-     контейнер раздувается. Обложки идут под шапкой; лишняя высота растянутого контейнера — воздух снизу. */
+  /* НАТУРАЛЬНАЯ высота (flex:none) — как в версии, где высота на телефоне встала верно. Книжки
+     по центру по вертикали, вокруг воздух. */
   flex: none;
   overflow-x: auto; scroll-snap-type: x mandatory;
   /* pan-x + pan-y: горизонтальный свайп листает карусель, ВЕРТИКАЛЬНЫЙ прокручивает полку
@@ -1418,18 +1418,17 @@ body.sel-mode .fold-edit, body.sel-mode .fold-x { display: none; }
   touch-action: pan-x pan-y; overscroll-behavior-x: contain; scrollbar-width: none;
 }
 .fold-carousel::-webkit-scrollbar { display: none; }
-.fold-cbook { flex: 0 0 auto; scroll-snap-align: start; display: flex; flex-direction: column; align-items: center; }
-/* Внутри сборника — уменьшенные обложки ФИКСИРОВАННОГО размера (задан по высоте, ширина по 2/3;
-   БЕЗ aspect-ratio+% — иначе распирает контейнер) + НАЗВАНИЕ книги под ними. Контейнер тянется
-   на высоту ячейки (align-self:stretch), обложки по центру, вокруг воздух. Автор/крестик/бейджи —
-   убраны (чисто). */
-.fold-cbook .book-card, .fold-cbook .ab-card { width: auto; gap: 5px; align-items: center; }
-.fold-cbook .cover { height: 160px; width: 107px; flex: none; aspect-ratio: auto; }
-.fold-cbook .ab-card-cover { height: 145px; width: 145px; flex: none; aspect-ratio: auto; }
+/* Книжка = ширине ЯЧЕЙКИ (--fold-cw), но max-width:100% страхует от завышенного замера — тогда
+   обложка просто упирается в края контейнера, а не вылезает. Высота обложки ФИКСИРОВАННАЯ (не
+   flex:1 и не от --fold-cw) — контейнер гарантированно не раздувается. Под обложкой — НАЗВАНИЕ. */
+.fold-cbook { flex: 0 0 auto; scroll-snap-align: start; width: calc(var(--fold-cw, 150px) - 14px); max-width: 100%; display: flex; flex-direction: column; align-items: center; }
+.fold-cbook .book-card, .fold-cbook .ab-card { width: 100%; gap: 5px; align-items: center; }
+.fold-cbook .cover { width: 100%; height: 180px; flex: none; aspect-ratio: auto; }
+.fold-cbook .ab-card-cover { width: 100%; height: 150px; flex: none; aspect-ratio: auto; }
 .fold-cbook .cover-img, .fold-cbook .ab-card-cover img { width: 100%; height: 100%; object-fit: cover; }
-.fold-cbook .book-meta { min-width: 0; max-width: 100%; }
+.fold-cbook .book-meta { min-width: 0; width: 100%; }
 .fold-cbook .book-title, .fold-cbook .ab-card-title {
-  display: block; max-width: 107px; font-size: 11.5px; text-align: center;
+  display: block; width: 100%; font-size: 11.5px; text-align: center;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .fold-cbook .book-author, .fold-cbook .ab-card-author,

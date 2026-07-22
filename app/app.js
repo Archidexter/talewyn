@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.2.36';
+const APP_VERSION = '1.2.37';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -3196,13 +3196,14 @@ async function toggleFolder(id) {
   const f = folderById(id); if (!f || foldBusy) return;
   foldBusy = true;
   try {
-    let grid = foldGridOf(f.kind);
-    if (activeFolder && activeFolder !== id) {   // открыт другой — свернуть его перерисовкой
+    const grid = foldGridOf(f.kind);
+    // СТРОГАЯ ЦЕПОЧКА при переключении: если открыт ДРУГОЙ сборник — сперва ПОЛНОСТЬЮ его свернуть
+    // тем же чистым сворачиванием (его соседи вернутся на места), и только ПОТОМ открывать новый.
+    if (activeFolder && activeFolder !== id) {
+      const prevBox = grid.querySelector('.fold-card.fold-open');
+      const prevF = folderById(activeFolder);
       activeFolder = null;
-      const b0 = cardRects(grid);
-      if (f.kind === 'audio') await renderAudioShelf(); else await renderShelf();
-      grid = foldGridOf(f.kind);
-      flipCards(grid, b0); await foldSleep(360);
+      if (prevBox && prevF) await foldCloseInPlace(grid, prevBox, prevF);
     }
     const box = grid.querySelector(`.fold-card[data-fold-id="${CSS.escape(id)}"]`);
     if (!box) { activeFolder = activeFolder === id ? null : id; if (f.kind === 'audio') await renderAudioShelf(); else await renderShelf(); return; }

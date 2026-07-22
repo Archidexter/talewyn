@@ -1360,87 +1360,94 @@ body.reader-comic .chapter-body img { margin: 0 auto; border-radius: 4px; }
 .fabnav-btn:disabled { opacity: 0; pointer-events: none; }   /* нет соседней главы — кнопки нет */
 @media (hover: hover) { .fabnav-btn:hover { color: var(--accent); border-color: var(--accent); } }
 
-/* ═══ Сборники: стопка книг одной карточкой ═══ */
-.fold-cover { position: relative; overflow: visible !important; }
-.fold-stack { position: absolute; inset: 0; display: block; }
-/* веер: две нижние обложки выглядывают из-под верхней */
-.fold-face { position: absolute; inset: 0; border-radius: inherit; overflow: hidden;
-  background: var(--elev2); box-shadow: 0 6px 16px rgb(0 0 0 / .4); }
-.fold-face .cover-img, .fold-face .cover-blank { width: 100%; height: 100%; }
-.fold-face-1 { transform: translate(5px, -4px) scale(.965); filter: brightness(.72); z-index: 1; }
-.fold-face-2 { transform: translate(10px, -8px) scale(.93); filter: brightness(.55); z-index: 0; }
-.fold-face-0 { z-index: 2; }
-.fold-card .fold-face-0 { border: 1px solid var(--border-strong); }
-/* счётчик книг в стопке — в том же углу, что бейдж каталога */
-.fold-n {
-  position: absolute; left: 6px; bottom: 6px; z-index: 5;
-  min-width: 27px; height: 27px; padding: 0 7px; border-radius: 14px;
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: 13px; font-weight: 700; color: var(--gild);
-  background: color-mix(in srgb, var(--bg) 78%, transparent);
-  border: 1px solid color-mix(in srgb, var(--gild) 45%, transparent);
-  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+/* ═══ Сборники: ЕДИНЫЙ контейнер — одинаковый закрытым и раскрытым (шапка + карусель).
+   Разница ТОЛЬКО в ширине: .fold-open через grid-column растягивает карточку на всю строку,
+   и в карусели видно больше книжек. Высота НЕ меняется (контент один и тот же). Закрытый —
+   размером с обычную книжную ячейку, книжки внутри уменьшены. ═══ */
+:root { --fold-border: color-mix(in srgb, var(--gild) 28%, var(--border-strong)); --fold-bg: color-mix(in srgb, var(--gild) 8%, var(--elev)); }
+.fold-card {
+  position: relative; box-sizing: border-box; overflow: hidden;
+  /* своя раскладка (не наследуем flex-gap книжной карточки — иначе высота «плыла») */
+  display: flex; flex-direction: column; gap: 0;
+  /* align-self:start — высота по СОДЕРЖИМОМУ (шапка + фикс-карусель ≈ 212px), а не растянутая
+     на строку. Это заведомо НИЖЕ книжной ячейки, поэтому контейнер сетку не распирает. */
+  align-self: start;
+  padding: 8px 8px 10px;
+  border: 1px solid var(--fold-border); border-radius: var(--r-md);
+  background: var(--fold-bg); box-shadow: none;
 }
-/* карандаш — левый верхний угол карточки (крестик «расформировать» живёт в правом) */
-.fold-edit {
-  position: absolute; left: 6px; top: 6px; z-index: 6;
-  width: 26px; height: 26px; border-radius: 50%;
-  display: grid; place-items: center;
-  color: var(--dim); background: color-mix(in srgb, var(--bg) 72%, transparent);
-  border: 1px solid var(--border-strong);
-  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+.fold-card::before { display: none; }   /* без книжного «корешка» */
+/* шапка-кнопка (раскрывает/сворачивает): иконка-папка + имя + счётчик. Отступы по краям —
+   под угловые кнопки правки/роспуска, чтобы имя их не задевало. */
+.fold-head {
+  display: flex; align-items: center; gap: 6px; width: 100%; min-height: 24px;
+  margin: 0 0 6px; padding: 0 30px; box-sizing: border-box;
+  background: none; border: 0; color: var(--text); text-align: left;
 }
-.fold-edit:active { color: var(--gild); border-color: var(--gild); transform: scale(.92); }
-body.sel-mode .fold-edit { display: none; }   /* в режиме выбора — как крестики */
-
-/* Раскрытый сборник — СЕКЦИЯ ВО ВСЮ ШИРИНУ полки, вставленная между рядами: своя подложка,
-   шапка с именем и собственная сетка книг. Полка ниже разъезжается FLIP-переездом
-   (см. flipCards), книги внутри наплывают слева направо. */
-.fold-sec {
-  grid-column: 1 / -1;
-  margin: 2px 0 6px; padding: 12px 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--gild) 26%, var(--border-strong));
-  border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--elev) 60%, transparent);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--gild) 12%, transparent);
-  /* раскрытие и закрытие — рост и схлопывание по ВЫСОТЕ (см. toggleFolder): полка под
-     секцией едет вместе с ней в потоке, без прыжков */
-}
-.fold-sec-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-.fold-sec-toggle {
-  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
-  background: none; border: 0; padding: 0; color: var(--text); text-align: left;
-}
-.fold-sec-ic { display: inline-flex; color: var(--gild); flex: none; }
-.fold-sec-name { flex: 1; min-width: 0; font-weight: 700; font-size: 14.5px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fold-sec-n {
-  flex: none; min-width: 22px; height: 22px; padding: 0 7px; border-radius: 11px;
+.fold-head-ic { display: inline-flex; color: var(--gild); flex: none; }
+.fold-head-name { flex: 1; min-width: 0; font-weight: 700; font-size: 14px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.fold-head-n {
+  flex: none; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 12px; font-weight: 700; color: var(--gild);
   border: 1px solid color-mix(in srgb, var(--gild) 40%, transparent);
 }
-.fold-sec .fold-edit { position: static; flex: none; }
-.fold-sec-x {
-  flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
-  color: var(--dim); font-size: 13px; background: transparent; border: 1px solid var(--border-strong);
+/* правка (слева вверху) и роспуск (справа вверху) — в углах, одинаково закрытым и раскрытым */
+.fold-edit, .fold-x {
+  position: absolute; top: 6px; z-index: 4; width: 24px; height: 24px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 12px; padding: 0;
+  color: var(--dim); background: color-mix(in srgb, var(--elev) 80%, transparent);
+  border: 1px solid var(--border-strong);
   transition: color .15s, border-color .15s, transform .12s;
 }
-.fold-sec-x:active { color: #ff8080; border-color: #ff8080; transform: scale(.92); }
-/* сетка внутри секции — той же меры, что полка (колонки совпадают, книги не «плывут») */
-.fold-sec-grid.shelf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 24px 18px; }
-@media (max-width: 480px) { .fold-sec-grid.shelf-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-/* сборка: книги втягиваются САМИ В СЕБЯ на своих местах и гаснут — по экрану ничего не бегает */
+.fold-edit { left: 6px; }
+.fold-x { right: 6px; }
+.fold-edit:active { color: var(--gild); border-color: var(--gild); transform: scale(.92); }
+.fold-x:active { color: #ff8080; border-color: #ff8080; transform: scale(.92); }
+body.sel-mode .fold-edit, body.sel-mode .fold-x { display: none; }
+/* карусель книжек. touch-action: pan-x — свайп по ней листает ТОЛЬКО её, не переключая
+   вкладки и не открывая ящик коллекций. */
+.fold-carousel {
+  display: flex; gap: 10px; align-items: flex-start;
+  /* фиксированная высота — закрытый контейнер (карусель + шапка + отступы ≈ 215px) заведомо
+     ниже книжной ячейки на любом экране, поэтому НИКОГДА её не перерастает и сетку не ломает. */
+  height: 162px;
+  overflow-x: auto; scroll-snap-type: x mandatory;
+  /* pan-x + pan-y: горизонтальный свайп листает карусель, ВЕРТИКАЛЬНЫЙ прокручивает полку
+     (не блокируем его). От переключения вкладок карусель защищена в JS-обработчике свайпа. */
+  touch-action: pan-x pan-y; overscroll-behavior-x: contain; scrollbar-width: none;
+}
+.fold-carousel::-webkit-scrollbar { display: none; }
+.fold-cbook { flex: 0 0 auto; scroll-snap-align: start; display: flex; flex-direction: column; align-items: center; }
+/* ⛔ КОНТЕЙНЕР НЕ РАЗДУВАЕТСЯ по высоте НИ ОТ ЧЕГО. Высота книжки в карусели ФИКСИРОВАНА:
+   обложка задана по ВЫСОТЕ (не по ширине контейнера — иначе на широком контейнере она
+   разбухала); название ровно одна строка; звёзды/прогресс/процент убраны. Что бы ни лежало
+   внутри — высота одна и та же. Книжки уменьшены (~⅔ обычной), чтобы закрытый контейнер
+   держался в габаритах книжной ячейки и не толкал сетку вниз. */
+.fold-cbook .book-card { width: 100px; max-width: 100%; gap: 6px; }
+.fold-cbook .ab-card { width: 138px; max-width: 100%; gap: 6px; }
+.fold-cbook .cover { height: 150px; width: 100px; flex: none; aspect-ratio: auto; }
+.fold-cbook .ab-card-cover { height: 138px; width: 138px; flex: none; aspect-ratio: auto; }
+.fold-cbook .cover-img, .fold-cbook .ab-card-cover img { width: 100%; height: 100%; object-fit: cover; }
+.fold-cbook .book-meta { width: 100px; }
+.fold-cbook .book-title, .fold-cbook .ab-card-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* автора внутри сборника не показываем — экономим высоту, чтобы закрытый контейнер точно
+   умещался в книжную ячейку; название остаётся */
+.fold-cbook .book-author, .fold-cbook .ab-card-author,
+.fold-cbook .book-stars, .fold-cbook .cover-track, .fold-cbook .cover-pct, .fold-cbook .ab-card-bar { display: none; }
+/* раскрытие меняет ТОЛЬКО ширину контейнера (на всю строку) — высота та же, книжки те же;
+   при большей ширине просто видно больше книжек. Никаких скачков размера. */
+.fold-card.fold-open { grid-column: 1 / -1; }
+/* невидимая ячейка-добивка вокруг раскрытого контейнера (foldGaps): держит место, чтобы
+   соседний ряд ушёл строго вниз, а книги под контейнером не меняли столбцы. */
+.fold-gap { visibility: hidden; pointer-events: none; }
+/* сборка: книги втягиваются в себя на местах и гаснут — по экрану ничего не бегает */
 @keyframes fold-suck { from { transform: scale(1); opacity: 1; } to { transform: scale(.18); opacity: 0; } }
 .fold-suck { animation: fold-suck .26s cubic-bezier(.4, 0, .6, 1) forwards; pointer-events: none; }
-/* …а на месте самой первой из них рождается стопка */
-@keyframes fold-born { 0% { transform: scale(.5); opacity: 0; } 60% { transform: scale(1.06); opacity: 1; } 100% { transform: scale(1); } }
-.fold-born { animation: fold-born .38s cubic-bezier(.2, .8, .3, 1); }
-/* книгу тянут на сборник: цель мягко подсвечивается и чуть подрастает */
-.fold-magnet { outline: 2px solid var(--gild); outline-offset: 2px; border-radius: var(--r-md); }
-.fold-card.fold-magnet .fold-face-0 { border-color: var(--gild); }
-.fold-sec.fold-magnet { background: color-mix(in srgb, var(--gild) 10%, var(--elev)); }
-/* книгу вытаскивают ИЗ сборника — рамка секции гаснет, карточка теряет подсветку */
+@keyframes fold-born { from { transform: scale(.82); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.fold-born { animation: fold-born .26s cubic-bezier(.25, .1, .25, 1); }
+/* книгу тянут на сборник: контейнер-цель подсвечивается */
+.fold-card.fold-magnet { border-color: var(--gild); background: color-mix(in srgb, var(--gild) 14%, var(--elev)); }
 .fold-losing { border-color: color-mix(in srgb, var(--dim) 40%, transparent); }
 .card-eject .cover, .card-eject .ab-card-cover { outline: 2px dashed color-mix(in srgb, var(--gild) 60%, transparent); outline-offset: 2px; }
 

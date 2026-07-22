@@ -1367,11 +1367,11 @@ body.reader-comic .chapter-body img { margin: 0 auto; border-radius: 4px; }
 :root { --fold-border: color-mix(in srgb, var(--gild) 28%, var(--border-strong)); --fold-bg: color-mix(in srgb, var(--gild) 8%, var(--elev)); }
 .fold-card {
   position: relative; box-sizing: border-box; overflow: hidden;
-  /* своя раскладка (не наследуем flex-gap книжной карточки — иначе высота «плыла») */
   display: flex; flex-direction: column; gap: 0;
-  /* align-self:start — высота по СОДЕРЖИМОМУ (шапка + фикс-карусель ≈ 212px), а не растянутая
-     на строку. Это заведомо НИЖЕ книжной ячейки, поэтому контейнер сетку не распирает. */
-  align-self: start;
+  /* ЗАКРЫТЫЙ контейнер тянется на высоту СТРОКИ (её задаёт соседняя книжная ячейка) — так он
+     сам получает РОВНО её высоту, без замеров. Внутри — обложки фикс-размера и воздух; карусель
+     НЕ flex:1 (иначе в авто-строке грида круговая зависимость и раздувание). */
+  align-self: stretch;
   padding: 8px 8px 10px;
   border: 1px solid var(--fold-border); border-radius: var(--r-md);
   background: var(--fold-bg); box-shadow: none;
@@ -1408,31 +1408,37 @@ body.sel-mode .fold-edit, body.sel-mode .fold-x { display: none; }
 /* карусель книжек. touch-action: pan-x — свайп по ней листает ТОЛЬКО её, не переключая
    вкладки и не открывая ящик коллекций. */
 .fold-carousel {
-  display: flex; gap: 10px; align-items: flex-start;
-  /* высота ровно под обложку (внутри — ТОЛЬКО обложки). Контейнер = обложка + шапка + отступы
-     ≈ 200px: заведомо ниже книжной ячейки, сетку не распирает и обложки не клипает. */
-  height: 168px;
+  display: flex; gap: 10px; align-items: center;
+  /* НАТУРАЛЬНАЯ высота (flex:none) — не flex:1, иначе в авто-строке грида круговая зависимость и
+     контейнер раздувается. Обложки идут под шапкой; лишняя высота растянутого контейнера — воздух снизу. */
+  flex: none;
   overflow-x: auto; scroll-snap-type: x mandatory;
   /* pan-x + pan-y: горизонтальный свайп листает карусель, ВЕРТИКАЛЬНЫЙ прокручивает полку
      (не блокируем его). От переключения вкладок карусель защищена в JS-обработчике свайпа. */
   touch-action: pan-x pan-y; overscroll-behavior-x: contain; scrollbar-width: none;
 }
 .fold-carousel::-webkit-scrollbar { display: none; }
-.fold-cbook { flex: 0 0 auto; scroll-snap-align: start; }
-/* Внутри сборника — ТОЛЬКО уменьшенные обложки (≈⅔ обычной), заданные по высоте. Ни названий,
-   ни автора, ни крестика удаления, ни чекбоксов/бейджей — превью чистое, сам сборник подписан
-   в шапке, книги открываются тапом. Высота фиксирована → контейнер не раздувается. */
-.fold-cbook .book-card, .fold-cbook .ab-card { width: auto; gap: 0; }
-.fold-cbook .cover { height: 168px; width: 112px; flex: none; aspect-ratio: auto; }
-.fold-cbook .ab-card-cover { height: 150px; width: 150px; flex: none; aspect-ratio: auto; margin-top: 9px; }
+.fold-cbook { flex: 0 0 auto; scroll-snap-align: start; display: flex; flex-direction: column; align-items: center; }
+/* Внутри сборника — уменьшенные обложки ФИКСИРОВАННОГО размера (задан по высоте, ширина по 2/3;
+   БЕЗ aspect-ratio+% — иначе распирает контейнер) + НАЗВАНИЕ книги под ними. Контейнер тянется
+   на высоту ячейки (align-self:stretch), обложки по центру, вокруг воздух. Автор/крестик/бейджи —
+   убраны (чисто). */
+.fold-cbook .book-card, .fold-cbook .ab-card { width: auto; gap: 5px; align-items: center; }
+.fold-cbook .cover { height: 160px; width: 107px; flex: none; aspect-ratio: auto; }
+.fold-cbook .ab-card-cover { height: 145px; width: 145px; flex: none; aspect-ratio: auto; }
 .fold-cbook .cover-img, .fold-cbook .ab-card-cover img { width: 100%; height: 100%; object-fit: cover; }
-.fold-cbook .book-meta, .fold-cbook .book-title, .fold-cbook .ab-card-title,
+.fold-cbook .book-meta { min-width: 0; max-width: 100%; }
+.fold-cbook .book-title, .fold-cbook .ab-card-title {
+  display: block; max-width: 107px; font-size: 11.5px; text-align: center;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .fold-cbook .book-author, .fold-cbook .ab-card-author,
 .fold-cbook .book-del, .fold-cbook .ab-del, .fold-cbook .sel-check, .fold-cbook .cat-badge,
 .fold-cbook .book-stars, .fold-cbook .cover-track, .fold-cbook .cover-pct, .fold-cbook .ab-card-bar { display: none; }
-/* раскрытие меняет ТОЛЬКО ширину контейнера (на всю строку) — высота та же, книжки те же;
-   при большей ширине просто видно больше книжек. Никаких скачков размера. */
-.fold-card.fold-open { grid-column: 1 / -1; }
+/* РАСКРЫТЫЙ контейнер — во всю строку (grid-column). Он один в своей строке, растягиваться не на
+   что, поэтому высоту фиксируем явно (замерена по тапу при раскрытии = высоте закрытого). Меняется
+   только ШИРИНА, высота та же. */
+.fold-card.fold-open { grid-column: 1 / -1; align-self: start; height: var(--fold-open-h, 260px); }
 /* невидимая ячейка-добивка вокруг раскрытого контейнера (foldGaps): держит место, чтобы
    соседний ряд ушёл строго вниз, а книги под контейнером не меняли столбцы. */
 .fold-gap { visibility: hidden; pointer-events: none; }

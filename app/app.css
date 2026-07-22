@@ -256,6 +256,9 @@ body.bg-live:has(#shelf-view:not([hidden])) #shelf-bg { display: block; }
   padding-top: max(env(safe-area-inset-top, 0px), var(--sat, 0px));
   padding-left: max(20px, max(env(safe-area-inset-left, 0px), var(--sal, 0px)));
   padding-right: max(20px, max(env(safe-area-inset-right, 0px), var(--sar, 0px)));
+  /* шапка ниже: подложка обрезается у самой полосы-разделителя, а не с отступом под ней —
+     контент уезжает под шапку ровно на линии ромба */
+  padding-bottom: 2px;
   transition: background-color .28s ease, box-shadow .28s ease;
 }
 .shelf-head.stuck {

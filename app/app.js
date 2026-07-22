@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.2.45';
+const APP_VERSION = '1.2.46';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -5194,6 +5194,7 @@ function showShelf() {
   $('#readbar').hidden = true;
   $('#readbar').classList.remove('loading');
   $('#shelf-view').hidden = false;
+  nativeScrollbar(false);   // на полке нативную полосу прячем
   syncAddFab();
   updateTitle();
   renderShelf();
@@ -5216,6 +5217,14 @@ function syncShelfStuck() {
   else if (on && scrollY < 4) h.classList.remove('stuck');
 }
 addEventListener('scroll', () => { if (!$('#shelf-view').hidden) syncShelfStuck(); }, { passive: true });
+
+// Нативная полоса прокрутки WebView. Оверлейную полосу главного окна CSS не берёт, поэтому
+// переключаем её нативным мостом: в чтении оставляем (индикатор прочитанного), на полке, экране
+// книги, аудио и в остальном интерфейсе — прячем. Мост есть только в свежем APK; на старом —
+// тихо ничего не делает (полоса остаётся как была).
+function nativeScrollbar(on) {
+  try { window.AndroidScroll && window.AndroidScroll.set(!!on); } catch {}
+}
 
 // ══════════════════ импорт файлов ══════════════════
 // Тяжёлые модули (разбор книг, чтение тегов аудио) грузятся ПРИ ПЕРВОМ импорте, а не при
@@ -6494,6 +6503,7 @@ async function showLibrary(id) {
   $('#readbar').hidden = true;
   $('#readbar').classList.remove('loading');
   $('#library-view').hidden = false;
+  nativeScrollbar(false);   // экран книги — без нативной полосы
   $('#reader-header').classList.remove('hidden');
   $('#book-title').textContent = state.book.title;
   $('#book-author').textContent = state.book.author || '';
@@ -6764,6 +6774,7 @@ async function openChapter(bookId, idx) {
   syncAddFab();
   $('#audio-view').hidden = true;
   $('#reader-view').hidden = false;
+  nativeScrollbar(true);   // в чтении нативную полосу ОСТАВЛЯЕМ — индикатор прочитанного
   $('#readbar').classList.remove('loading');
   if (!wasInReader) {   // при ВХОДЕ в читалку показываем шапку/стрелки; при листании — НЕ трогаем,
     $('#reader-header').classList.remove('hidden');   // иначе они принудительно выезжают и «скачут»
@@ -8682,6 +8693,7 @@ function abViewShow() {
   syncAddFab();
   $('#readbar').hidden = true;
   $('#audio-view').hidden = false;
+  nativeScrollbar(false);   // экран аудио — без нативной полосы
   scrollTo(0, 0);
 }
 // описание аудиокниги на плеере: свёрнуто в 3 строки, тап — развернуть

@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.2.37';
+const APP_VERSION = '1.2.38';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -2929,11 +2929,21 @@ async function saveColOrder(grid) {
   // идентичность элемента: запись каталога — по ключу (data-catkey у нескачанной,
   // data-colcat у скачанной ею книги), иначе — сама книга по id
   const keyOf = it => it.k === 'cat' ? 'cat:' + it.id : it.k + ':' + it.id;
-  const domKeys = [...grid.children].filter(el => el.matches('.book-card, .ab-card')).map(el =>
-    el.dataset.catkey ? 'cat:' + el.dataset.catkey
-    : el.dataset.colcat ? 'cat:' + el.dataset.colcat
-    : kind + ':' + (kind === 'audio' ? el.dataset.abId : el.dataset.book));
   const mine = it => it.k === kind || (it.k === 'cat' && (it.ck || 'book') === kind);
+  const inCol = new Set((c.items || []).filter(mine).map(keyOf));   // ключи, реально лежащие в коллекции
+  // Порядок из DOM. Контейнер-сборник РАЗВОРАЧИВАЕМ в его книги (в порядке items, но только те, что
+  // есть в ЭТОЙ коллекции) на его месте — так перетаскивание сборника переносит его целиком. .fold-card
+  // сам по себе в порядок не идёт (у него нет id — иначе сбил бы сопоставление, как было на полке).
+  const domKeys = [];
+  for (const el of grid.children) {
+    if (!el.matches('.book-card, .ab-card')) continue;
+    if (el.classList.contains('fold-card')) {
+      const fld = folderById(el.dataset.foldId);
+      if (fld && fld.kind === kind) for (const mid of (fld.items || [])) { const k = kind + ':' + mid; if (inCol.has(k)) domKeys.push(k); }
+    } else domKeys.push(el.dataset.catkey ? 'cat:' + el.dataset.catkey
+      : el.dataset.colcat ? 'cat:' + el.dataset.colcat
+      : kind + ':' + (kind === 'audio' ? el.dataset.abId : el.dataset.book));
+  }
   const pool = new Map((c.items || []).filter(mine).map(it => [keyOf(it), it]));
   const shown = new Set(domKeys);
   const slots = [];

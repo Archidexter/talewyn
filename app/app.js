@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.2.42';
+const APP_VERSION = '1.2.43';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -2199,7 +2199,7 @@ function marqWatch(el, off) {
 }
 function cardMarquee(root) {
   if (!root) return;
-  const els = [...root.querySelectorAll('.book-title, .ab-card-title')];
+  const els = [...root.querySelectorAll('.book-title, .ab-card-title, .fold-head-name')];
   if (!els.length) return;
   const slow = matchMedia('(prefers-reduced-motion: reduce)').matches;
   requestAnimationFrame(() => {
@@ -2572,14 +2572,62 @@ function updateSelFabs() {
     canDl = selIds.some(selCanDownload);
     canFold = !selKind.startsWith('cat') && !activeFolder && foldTargets().length >= 2;
   }
-  const b = document.body;
-  const changed = b.classList.contains('sel-can-del') !== canDel
-    || b.classList.contains('sel-can-dl') !== canDl
-    || b.classList.contains('sel-can-fold') !== canFold;
-  b.classList.toggle('sel-can-del', canDel);
-  b.classList.toggle('sel-can-dl', canDl);
-  b.classList.toggle('sel-can-fold', canFold);
-  if (changed && selMode) applyFabDock();   // кружков стало больше/меньше — пере-клампим кластер
+  setSelFab('del', '#fab-del', canDel);
+  setSelFab('dl', '#fab-dl', canDl);
+  setSelFab('fold', '#fab-fold', canFold);
+}
+// Появление/исчезновение ситуативного кружка — плавное в ОБЕ стороны. Появление: класс
+// возвращается сразу, кружок въезжает (fab-del-in). Исчезновение — строго в ДВА ТАКТА, иначе
+// ряд «падает» мгновенно: такт 1 — кружок уезжает за экран (слот держится, соседи стоят);
+// такт 2 (когда его уже не видно) — слот схлопывается, а соседи опускаются FLIP-ом.
+const SEL_FAB_IDS = ['#fab-dl', '#fab-collect', '#fab-fold', '#fab-del'];
+function setSelFab(name, sel, want) {
+  const btn = $(sel); if (!btn) return;
+  const cls = 'sel-can-' + name, body = document.body;
+  const on = body.classList.contains(cls);
+  if (want) {                                    // появляется (или отменяем начатый уезд)
+    let changed = false;
+    if (btn._outT) { clearTimeout(btn._outT); btn._outT = 0; btn.classList.remove('fab-out'); btn.classList.add('fab-in'); changed = true; }
+    if (!on) { body.classList.add(cls); changed = true; }
+    if (changed && selMode) applyFabDock();
+    return;
+  }
+  if (!on || btn._outT) return;                  // уже скрыт или уже уезжает
+  btn.classList.remove('fab-in');
+  btn.classList.add('fab-out');                  // такт 1: уезжает за экран, слот ещё держится
+  btn._outT = setTimeout(() => {
+    btn._outT = 0;
+    const others = SEL_FAB_IDS.map(s => $(s))
+      .filter(b => b && b !== btn && !b.classList.contains('fab-out') && getComputedStyle(b).display !== 'none');
+    const before = others.map(b => b.getBoundingClientRect());
+    btn.classList.remove('fab-out');
+    body.classList.remove(cls);                  // такт 2: слот схлопывается…
+    if (selMode) applyFabDock();
+    for (let i = 0; i < others.length; i++) {    // …и соседи опускаются FLIP-ом, а не рывком
+      const a = others[i].getBoundingClientRect(), p = before[i];
+      const dx = p.left - a.left, dy = p.top - a.top;
+      if (!dx && !dy) continue;
+      others[i].style.transition = 'none';
+      others[i].style.transform = `translate(${dx}px, ${dy}px)`;
+    }
+    requestAnimationFrame(() => {
+      for (const b of others) {
+        if (!b.style.transform) continue;
+        b.style.transition = 'transform .24s cubic-bezier(.2, .8, .3, 1)';
+        b.style.transform = '';
+      }
+      setTimeout(() => { for (const b of others) { b.style.transition = ''; b.style.transform = ''; } }, 260);
+    });
+  }, 280);
+}
+// сбросить незавершённые анимации кружков (уезд/въезд/FLIP) — на входе и выходе из режима
+function clearSelFabAnim() {
+  for (const s of SEL_FAB_IDS) {
+    const b = $(s); if (!b) continue;
+    clearTimeout(b._outT); b._outT = 0;
+    b.classList.remove('fab-out', 'fab-in');
+    b.style.transition = ''; b.style.transform = '';
+  }
 }
 // что реально попадёт в сборник: свои книги и уже готовые стопки (их содержимое вливается).
 // Нескачанные записи каталога собирать нечего — их пропускаем.
@@ -2597,6 +2645,7 @@ function foldTargets() {
 let selExitTimer = null;
 function enterSelMode(kind, firstId) {
   closeFabMore(true);   // в выборе кластеру не до «ещё» — там свои кружки
+  clearSelFabAnim();    // на всякий случай — вдруг остался незавершённый уезд кружка
   selMode = true; selKind = kind; selIds.length = 0;
   if (firstId) selIds.push(firstId);
   clearTimeout(selExitTimer);
@@ -2609,6 +2658,7 @@ function enterSelMode(kind, firstId) {
 }
 function exitSelMode() {
   if (!selMode) return;
+  clearSelFabAnim();   // снять недоигранные одиночные уезды — дальше уводит общий .sel-exiting
   selMode = false; selIds.length = 0;
   // чекбоксы карточек убираем сразу, а кружки (корзина/коллекция) плавно уезжают за экран:
   // держим их на .sel-exiting, пока играет fab-del-out, потом окончательно прячем
@@ -3002,7 +3052,12 @@ async function deleteSelected() {
   const n = ids.length;
   // видимая анимация нажатия: кнопка «клюёт», крышка мусорки откидывается
   const fab = $('#fab-del');
-  if (fab) { fab.classList.remove('pressing'); void fab.offsetWidth; fab.classList.add('pressing'); }
+  // .pressing ОБЯЗАТЕЛЬНО снять по завершении анимации (крышка .44s): иначе класс висит
+  // на кнопке, и при следующем появлении урны (вход в выбор) крышка переигрывается сама
+  if (fab) {
+    fab.classList.remove('pressing'); void fab.offsetWidth; fab.classList.add('pressing');
+    setTimeout(() => fab.classList.remove('pressing'), 470);
+  }
   await new Promise(r => setTimeout(r, 230));
   const noun = uiLang() === 'ru'
     ? (audio ? pluralRu(n, 'аудиокнигу', 'аудиокниги', 'аудиокниг') : pluralRu(n, 'книгу', 'книги', 'книг'))
@@ -3103,7 +3158,7 @@ function folderCardHtml(f, items, audio, open, cardFn) {
     <button class="fold-x" data-foldbreak="${esc(f.id)}" aria-label="${esc(t('foldBreak'))}">✕</button>
     <button class="fold-head" data-folder="${esc(f.id)}">
       <span class="fold-head-ic" aria-hidden="true">${FOLD_ICON}</span>
-      <span class="fold-head-name">${esc(f.name)}</span>
+      <span class="fold-head-name"><span class="marq">${esc(f.name)}</span></span>
       <span class="fold-head-n">${items.length}</span>
     </button>
     <div class="fold-carousel">${books}</div>
@@ -5146,8 +5201,21 @@ function showShelf() {
   enterView($('#shelf-view'));
   updateWakeLock();
   syncSettingsUI();
-  requestAnimationFrame(() => scrollTo(0, state.shelfScroll));
+  requestAnimationFrame(() => { scrollTo(0, state.shelfScroll); syncShelfStuck(); });
 }
+
+// Липкая шапка полки: пока полка прокручена, у шапки появляется подложка (тон темы +
+// размытие), чтобы контент уезжал под неё чисто. В самом верху — подложки нет.
+function syncShelfStuck() {
+  const h = document.querySelector('.shelf-head');
+  if (!h) return;
+  // гистерезис: включаем подложку выше 8px, снимаем ниже 4px — у самого края,
+  // где полка дрожит на ±1px, она не мигает туда-сюда
+  const on = h.classList.contains('stuck');
+  if (!on && scrollY > 8) h.classList.add('stuck');
+  else if (on && scrollY < 4) h.classList.remove('stuck');
+}
+addEventListener('scroll', () => { if (!$('#shelf-view').hidden) syncShelfStuck(); }, { passive: true });
 
 // ══════════════════ импорт файлов ══════════════════
 // Тяжёлые модули (разбор книг, чтение тегов аудио) грузятся ПРИ ПЕРВОМ импорте, а не при

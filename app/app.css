@@ -219,6 +219,10 @@ img, svg { -webkit-user-drag: none; }
   background:
     radial-gradient(720px 340px at 50% -140px, color-mix(in srgb, var(--accent) 7%, transparent), transparent 70%);
   background-repeat: no-repeat;
+  /* safe-area (вырез камеры/статус-бар) убран из верхнего отступа полки и перенесён
+     в саму липкую шапку — только так её подложка накрывает полоску под вырезом,
+     когда контент уезжает под прикреплённую шапку */
+  padding-top: 4px;
 }
 
 /* ══════════ Живой фон полки: Патина ══════════
@@ -242,7 +246,21 @@ body.bg-live:has(#shelf-view:not([hidden])) #shelf-bg { display: block; }
 /* у шапки полки вместо простой линии — орнамент-разделитель (золотые линии + ромб),
    как в автопоиске и окнах заметок/перевода */
 /* полоса на полке — базовый .confirm-orn, ровно как в «Автопоиске» и «Вставить по ссылке» */
-.shelf-head { border-bottom: none; }
+/* Шапка полки прилипает к верху экрана: при прокрутке остаётся на месте, а библиотека
+   уезжает под неё. Подложку (тон темы + размытие + мягкая тень) включает класс .stuck,
+   который вешает JS, как только полка немного прокручена. В покое подложки нет — Патина
+   под логотипом остаётся крепкой и нетронутой. Верхний отступ = safe-area (см. #shelf-view). */
+.shelf-head {
+  border-bottom: none;
+  position: sticky; top: 0; z-index: 5;
+  padding-top: max(env(safe-area-inset-top, 0px), var(--sat, 0px));
+  transition: background-color .28s ease, box-shadow .28s ease;
+}
+.shelf-head.stuck {
+  background: color-mix(in srgb, var(--bg) 86%, transparent);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 8px 20px -12px rgb(0 0 0 / .5);
+}
 .shelf-head .confirm-orn { margin: 9px 0 0; }
 /* экран книги: полоса ровно как в «Автопоиске» и «Вставить по ссылке» —
    базовый .confirm-orn, без утолщения шапки полки */
@@ -603,6 +621,15 @@ body.sel-exiting #add-fab.fab-dock-bottom .fab-extra { animation-name: fab-del-o
 #add-fab .fab-hop-in { animation: fab-del-in .3s cubic-bezier(.2, .8, .3, 1) !important; }
 #add-fab.fab-dock-bottom .fab-hop-out { animation-name: fab-del-out-v !important; }
 #add-fab.fab-dock-bottom .fab-hop-in { animation-name: fab-del-in-v !important; }
+/* Одиночный уезд кружка, когда он перестал быть нужен, но выбор ещё идёт (напр. осталась
+   одна книга — «объединить» больше нельзя). ДВА ТАКТА, чтобы ряд не падал рывком: класс .fab-out
+   держит слот и увозит кружок за экран (fab-del-out !important — иначе fab-del-in выше по весу и
+   он бы «въезжал»), а слот схлопывается и соседи опускаются FLIP-ом уже потом, из JS. */
+#add-fab .fab-extra.fab-out { pointer-events: none;
+  animation: fab-del-out .28s cubic-bezier(.4, 0, .2, 1) forwards !important; }
+#add-fab.fab-dock-bottom .fab-extra.fab-out { animation-name: fab-del-out-v !important; }
+#add-fab .fab-extra.fab-in { animation: fab-del-in .3s cubic-bezier(.2, .8, .3, 1) !important; }
+#add-fab.fab-dock-bottom .fab-extra.fab-in { animation-name: fab-del-in-v !important; }
 
 /* ── «ещё»: троеточие под главной, вместо постоянных лупы и ссылки ──
    Тап — троеточие схлопывается в точку, а на его место теми же родными анимациями
@@ -749,14 +776,14 @@ html.t-dark .cover-img { opacity: .93; }
 .book-title.marquee, .ab-card-title.marquee { text-align: left; }
 /* Названия карточек едут на CSS-анимации (та же, что у «Продолжить слушать»):
    без таймера на каждую карточку — сотня книг больше не держит сотню таймеров. */
-.book-title .marq, .ab-card-title .marq { display: inline-block; white-space: nowrap; will-change: transform; }
-.book-title.is-marquee, .ab-card-title.is-marquee { text-align: left; }
+.book-title .marq, .ab-card-title .marq, .fold-head-name .marq { display: inline-block; white-space: nowrap; will-change: transform; }
+.book-title.is-marquee, .ab-card-title.is-marquee, .fold-head-name.is-marquee { text-align: left; }
 /* едут только видимые карточки — за экраном анимация не нужна никому */
-.book-title.is-marquee.marq-live .marq, .ab-card-title.is-marquee.marq-live .marq {
+.book-title.is-marquee.marq-live .marq, .ab-card-title.is-marquee.marq-live .marq, .fold-head-name.is-marquee.marq-live .marq {
   animation: cont-marq var(--marq-dur, 8s) ease-in-out infinite alternate;
 }
 @media (prefers-reduced-motion: reduce) {
-  .book-title.is-marquee .marq, .ab-card-title.is-marquee .marq { animation: none; }
+  .book-title.is-marquee .marq, .ab-card-title.is-marquee .marq, .fold-head-name.is-marquee .marq { animation: none; }
 }
 .book-author {
   font-size: 11.5px; color: var(--faint); margin-top: 3px;
@@ -1385,7 +1412,8 @@ body.reader-comic .chapter-body img { margin: 0 auto; border-radius: 4px; }
   background: none; border: 0; color: var(--text); text-align: left;
 }
 .fold-head-ic { display: inline-flex; color: var(--gild); flex: none; }
-.fold-head-name { flex: 1; min-width: 0; font-weight: 700; font-size: 14px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* имя сборника — бегущей строкой (как названия книг): если не влезает, проезжает целиком */
+.fold-head-name { flex: 1; min-width: 0; font-weight: 700; font-size: 14px; overflow: hidden; white-space: nowrap; }
 .fold-head-n {
   flex: none; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
   display: inline-flex; align-items: center; justify-content: center;

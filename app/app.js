@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.2.35';
+const APP_VERSION = '1.2.36';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -3256,10 +3256,11 @@ async function foldCloseInPlace(grid, box, f) {
   const col = (beforeN + hang.length) % cols;      // столбец контейнера ЗАКРЫТЫМ (повисшие встанут ПЕРЕД ним)
   const rightHalf = col >= cols / 2;
   const sample = [...grid.children].find(el => el.matches('.book-card:not(.fold-card), .ab-card:not(.fold-card)'));
-  const wClosed = sample ? sample.getBoundingClientRect().width : box.getBoundingClientRect().width;
+  const curW = box.getBoundingClientRect().width;   // ЗАМЕР ДО смены justify-self — иначе контейнер
+  const wClosed = sample ? sample.getBoundingClientRect().width : curW;   // на миг растянется до контента (за экран)
   box.style.gridColumn = '1 / -1';
   box.style.justifySelf = rightHalf ? 'end' : 'start';   // сжимаемся В СВОЙ столбец
-  box.style.width = box.getBoundingClientRect().width + 'px';
+  box.style.width = curW + 'px';                     // сразу пришпилили к текущей ширине — рывка нет
   void box.offsetWidth;
   box.style.transition = 'width .27s cubic-bezier(.25,.1,.25,1)';   // этап 1: контейнер к ячейке
   box.style.width = wClosed + 'px';
@@ -3298,12 +3299,14 @@ function foldGaps(grid) {
   gap.className = 'fold-gap'; gap.setAttribute('aria-hidden', 'true');
   grid.insertBefore(gap, after);
 }
-// Ширина книжки внутри сборника = ширине ЯЧЕЙКИ полки: тогда закрытым видно одну обложку во всю
-// ширину, раскрытым — две. Замеряем соседнюю книгу через offsetWidth (чистая ширина раскладки).
+// Габариты книжки внутри сборника = габаритам ЯЧЕЙКИ полки: обложка заполняет контейнер и по
+// ширине, и по высоте (не плавает в пустоте). Мерим соседнюю книгу через offset* (чистая
+// раскладка, без искажений transform-анимации). На телефоне это верные числа.
 function setFoldCellW(grid) {
   if (!grid || !grid.querySelector('.fold-card')) return;
   const cell = grid.querySelector('.book-card:not(.fold-card), .ab-card:not(.fold-card)');
   if (cell && cell.offsetWidth) grid.style.setProperty('--fold-cw', cell.offsetWidth + 'px');
+  if (cell && cell.offsetHeight) grid.style.setProperty('--fold-cell-h', cell.offsetHeight + 'px');
 }
 // снимок позиций карточек — для FLIP-переезда после перерисовки
 function cardRects(grid) {

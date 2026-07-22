@@ -1413,9 +1413,10 @@ body.sel-mode .fold-edit, body.sel-mode .fold-x { display: none; }
      по центру по вертикали, вокруг воздух. */
   flex: none;
   overflow-x: auto; scroll-snap-type: x mandatory;
-  /* pan-x + pan-y: горизонтальный свайп листает карусель, ВЕРТИКАЛЬНЫЙ прокручивает полку
-     (не блокируем его). От переключения вкладок карусель защищена в JS-обработчике свайпа. */
-  touch-action: pan-x pan-y; overscroll-behavior-x: contain; scrollbar-width: none;
+  /* ТОЛЬКО pan-x: горизонтальный свайп листает карусель. Вертикаль НЕ отдаём браузеру — иначе при
+     ВЫНОСЕ книжки (тянешь её вверх из сборника) страница начинала прокручиваться на компоновщике
+     раньше preventDefault, и книжка улетала из-под пальца. Теперь вертикаль ведёт JS (вынос). */
+  touch-action: pan-x; overscroll-behavior-x: contain; scrollbar-width: none;
 }
 .fold-carousel::-webkit-scrollbar { display: none; }
 /* Книжка = ширине ЯЧЕЙКИ (--fold-cw), но max-width:100% страхует от завышенного замера — тогда
@@ -1455,7 +1456,7 @@ body.sel-mode .fold-edit, body.sel-mode .fold-x { display: none; }
 /* ВЫНОС книжки: пока тащим из карусели, контейнер и карусель НЕ обрезают её — она всплывает
    НАД сборником (иначе «уходит внутрь оболочки»). Сам контейнер поднимаем над соседями. */
 .fold-card.fold-extracting { overflow: visible; z-index: 5; }
-.fold-card.fold-extracting .fold-carousel { overflow: visible; }
+.fold-card.fold-extracting .fold-carousel { overflow: visible; touch-action: none; }
 .fold-cbook .card-drag { z-index: 61; }
 
 /* ═══ Мультивыбор на полке (долгое нажатие) ═══ */

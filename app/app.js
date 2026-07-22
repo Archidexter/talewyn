@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.2.39';
+const APP_VERSION = '1.2.40';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -2395,6 +2395,9 @@ async function renderShelf() {
   cardMarquee(grid);   // названия — одной бегущей строкой (проезжает, если не влезает)
   foldGaps(grid);      // добивки вокруг раскрытого сборника — соседний ряд строго вниз, без перескоков
   setFoldCellW(grid);  // ширина книжки в сборнике = ширине ячейки
+  // FLIP СИНХРОННО, прямо здесь (до асинхронного «продолжить чтение» ниже) — иначе браузер успеет
+  // нарисовать новую раскладку, и соседи дёрнутся на место ещё до анимации. См. addToFolder.
+  if (foldFlipBefore) { flipCards(grid, foldFlipBefore); foldFlipBefore = null; }
   // плавное появление — только у книг, впервые попавших в библиотеку (не при фильтрации/первом рендере)
   if (seenBookIds) {
     grid.querySelectorAll('.book-card').forEach(c => {
@@ -3015,6 +3018,7 @@ async function deleteSelected() {
 // коллекции (там — теми книгами, что в этой коллекции есть). Книга состоит максимум в одном
 // сборнике. Расформирование убирает только стопку — книги остаются на месте.
 let activeFolder = null;   // id раскрытого сборника (лист снизу)
+let foldFlipBefore = null; // снимок позиций перед ре-рендером — FLIP применяется СИНХРОННО в рендере
 async function loadFolders() {
   try { state.folders = (await dbAll('folders')).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)); }
   catch { state.folders = []; }
@@ -3155,10 +3159,8 @@ async function addToFolder(folderId, id) {
   }
   f.items = [...(f.items || []), id];
   try { await saveFolder(f); } catch {}
-  const grid = foldGridOf(f.kind);
-  const before = cardRects(grid);
+  foldFlipBefore = cardRects(foldGridOf(f.kind));   // FLIP применится СИНХРОННО внутри рендера — без рывка соседей
   if (f.kind === 'audio') await renderAudioShelf(); else await renderShelf();
-  flipCards(foldGridOf(f.kind), before);
 }
 async function takeOutOfFolder(folderId, id) {
   const f = folderById(folderId);
@@ -3170,10 +3172,8 @@ async function takeOutOfFolder(folderId, id) {
     if (activeFolder === f.id) activeFolder = null;
     try { await dbDel('folders', f.id); } catch {}
   } else { try { await saveFolder(f); } catch {} }
-  const grid = foldGridOf(f.kind);
-  const before = cardRects(grid);
+  foldFlipBefore = cardRects(foldGridOf(f.kind));   // FLIP синхронно внутри рендера — соседи не дёргаются
   if (audio) await renderAudioShelf(); else await renderShelf();
-  flipCards(foldGridOf(f.kind), before);
 }
 
 // ── раскрытие/сворачивание сборника ПРЯМО В СЕТКЕ ──
@@ -8586,6 +8586,7 @@ async function renderAudioShelf() {
     cardMarquee(box);   // одна бегущая строка
     foldGaps(box.querySelector('.ab-grid'));   // добивки вокруг раскрытого сборника
     setFoldCellW(box.querySelector('.ab-grid'));   // ширина книжки в сборнике = ширине ячейки
+    if (foldFlipBefore) { flipCards(box.querySelector('.ab-grid'), foldFlipBefore); foldFlipBefore = null; }   // FLIP синхронно
     if (selMode && selKind === 'audio' && activeCol) refreshSelChecks();   // выбор переживает перерисовку
     // счётчик — как у книг: сколько РЕАЛЬНО видно (с фильтрами и внутри коллекции)
     if (foot) foot.innerHTML = `<p>${T('audioN', { n: shown.length })}</p>`;

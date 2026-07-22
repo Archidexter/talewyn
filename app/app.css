@@ -256,9 +256,9 @@ body.bg-live:has(#shelf-view:not([hidden])) #shelf-bg { display: block; }
   padding-top: max(env(safe-area-inset-top, 0px), var(--sat, 0px));
   padding-left: max(20px, max(env(safe-area-inset-left, 0px), var(--sal, 0px)));
   padding-right: max(20px, max(env(safe-area-inset-right, 0px), var(--sar, 0px)));
-  /* шапка ниже: подложка обрезается у самой полосы-разделителя, а не с отступом под ней —
-     контент уезжает под шапку ровно на линии ромба */
-  padding-bottom: 2px;
+  /* шапка кончается сразу под строкой с логотипом — разделитель-ромб живёт НИЖЕ, вне шапки
+     (см. .shelf-orn), поэтому подложка обрезается ВЫШЕ него, а ромб уходит под неё при прокрутке */
+  padding-bottom: 8px;
   transition: background-color .28s ease, box-shadow .28s ease;
 }
 .shelf-head.stuck {
@@ -266,7 +266,8 @@ body.bg-live:has(#shelf-view:not([hidden])) #shelf-bg { display: block; }
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
   box-shadow: 0 8px 20px -12px rgb(0 0 0 / .5);
 }
-.shelf-head .confirm-orn { margin: 9px 0 0; }
+/* разделитель под шапкой (уже вне неё): прокручивается вместе с полкой и уходит под липкую шапку */
+.shelf-orn { margin: 2px 0 14px; }
 /* экран книги: полоса ровно как в «Автопоиске» и «Вставить по ссылке» —
    базовый .confirm-orn, без утолщения шапки полки */
 .lib-header { border-bottom: none; }

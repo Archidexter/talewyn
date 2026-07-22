@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.2.40';
+const APP_VERSION = '1.2.41';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -2666,16 +2666,19 @@ function beginCardDrag(x, y) {
   const fromFold = card.closest('.fold-card.fold-open');
   if (fromFold) {
     const r = card.getBoundingClientRect();
-    // снимаем overflow-обрезку с контейнера и карусели — иначе выносимая книжка «уходит внутрь
-    // оболочки» (клипается рамкой), а нам нужно, чтобы она всплыла НАД контейнером
-    fromFold.classList.add('fold-extracting');
-    cardDrag = { card, grid, items: [card], from: 0, to: 0, sec: fromFold,
-                 rects: [{ x: r.left + scrollX, y: r.top + scrollY, w: r.width, h: r.height }],
+    // ВЫНОС: книжку на время делаем position:fixed на её текущем месте (координаты ЭКРАНА). Так она
+    // сама выходит за обрезку карусели (fixed не клипается overflow) — не надо ломать overflow и
+    // показывать прочие обложки; и прокрутка страницы её не тянет — не надо трогать touch-action.
+    card.style.position = 'fixed';
+    card.style.left = r.left + 'px'; card.style.top = r.top + 'px';
+    card.style.width = r.width + 'px'; card.style.height = r.height + 'px';
+    card.style.margin = '0'; card.style.zIndex = '90';
+    cardDrag = { card, grid, items: [card], from: 0, to: 0, sec: fromFold, fixed: true,
+                 rects: [{ x: r.left, y: r.top, w: r.width, h: r.height }],   // координаты ЭКРАНА (fixed)
                  bounds: { x0: -1e5, y0: -1e5, x1: 1e5, y1: 1e5 },
-                 sc: 1.06, pull: 0, magnetR: null, x0: x + scrollX, y0: y + scrollY, cx: x, cy: y, raf: 0,
-                 scrollMin: 0, scrollMax: Math.max(0, document.body.scrollHeight - innerHeight) };
+                 sc: 1.06, pull: 0, magnetR: null, x0: x, y0: y, cx: x, cy: y, raf: 0,
+                 scrollMin: 0, scrollMax: 0 };   // при выносе страницу не крутим (книжка fixed)
     card.classList.add('card-drag');
-    grid.style.touchAction = 'none';
     if (navigator.vibrate) { try { navigator.vibrate(12); } catch {} }
     cardDragMove();
     cardDrag.raf = requestAnimationFrame(cardDragTick);
@@ -2781,9 +2784,11 @@ function setMagnet(d, m) {
 function cardDragMove() {
   const d = cardDrag; if (!d) return;
   const r0 = d.rects[d.from], b = d.bounds;
+  // выносимая книжка position:fixed — считаем в координатах ЭКРАНА (без scroll); обычная — в документе
+  const sx = d.fixed ? 0 : scrollX, sy = d.fixed ? 0 : scrollY;
   // держим карточку внутри рамки книг: за последней книгой пустое место — уводить её туда незачем
-  let dx = Math.max(b.x0 - r0.x, Math.min(b.x1 - r0.w - r0.x, d.cx + scrollX - d.x0));
-  let dy = Math.max(b.y0 - r0.y, Math.min(b.y1 - r0.h - r0.y, d.cy + scrollY - d.y0));
+  let dx = Math.max(b.x0 - r0.x, Math.min(b.x1 - r0.w - r0.x, d.cx + sx - d.x0));
+  let dy = Math.max(b.y0 - r0.y, Math.min(b.y1 - r0.h - r0.y, d.cy + sy - d.y0));
   let cx = r0.x + r0.w / 2 + dx, cy = r0.y + r0.h / 2 + dy;
   // Куда кладут — решает ПАЛЕЦ, а не центр карточки: карточка высокая и упирается в рамку
   // перетаскивания, её центр физически не достаёт до верхних целей.
@@ -2798,6 +2803,9 @@ function cardDragMove() {
       d.sec.classList.toggle('fold-losing', out);
       if (out && navigator.vibrate) { try { navigator.vibrate(8); } catch {} }
     }
+    // fixed-книжка выноса просто следует за пальцем (внутри рамки — крупнее, снаружи — чуть меньше);
+    // магнит/слоты для неё не считаем
+    if (d.fixed) { d.card.style.transform = `translate(${dx}px, ${dy}px) scale(${out ? 1.02 : 1.06})`; return; }
     if (out) { d.card.style.transform = `translate(${dx}px, ${dy}px) scale(1.02)`; return; }
   }
   setMagnet(d, magnetTargetAt(d, fx + scrollX, fy + scrollY));
@@ -2849,8 +2857,23 @@ async function endCardDrag() {
   cardDrag = null;
   cancelAnimationFrame(d.raf);
   cardDragEndedAt = performance.now();
-  if (d.sec) d.sec.classList.remove('fold-extracting');   // вернуть обрезку контейнеру
   const { card, grid, items, rects, from, to } = d;
+  // ── ВЫНОС (fixed-книжка): за рамкой — покидает сборник; в рамке — плавно возвращается на место ──
+  if (d.fixed) {
+    card.classList.remove('card-eject');
+    if (d.sec) d.sec.classList.remove('fold-losing');
+    if (d.eject && d.sec) {   // вынесли — takeOutOfFolder перерисует полку, эта fixed-карточка уйдёт
+      await takeOutOfFolder(d.sec.dataset.foldId, cardIdOf(card));
+      return;
+    }
+    // вернулась в рамку — доводим к месту в карусели и снимаем fixed
+    card.style.transition = 'transform .2s cubic-bezier(.4, 0, .2, 1)';
+    card.style.transform = 'translate(0, 0) scale(1)';
+    await new Promise(r => setTimeout(r, 205));
+    card.classList.remove('card-drag');
+    for (const pr of ['position', 'left', 'top', 'width', 'height', 'margin', 'zIndex', 'transition', 'transform']) card.style[pr] = '';
+    return;
+  }
   // бросили на сборник — книга всасывается в него; вынесли за рамку — покидает сборник
   if (d.magnet) {
     const fid = d.magnet.id;
@@ -2866,16 +2889,6 @@ async function endCardDrag() {
     grid.classList.remove('grid-dragging');
     grid.style.touchAction = '';
     await addToFolder(fid, cardIdOf(card));
-    return;
-  }
-  if (d.eject && d.sec) {
-    card.classList.remove('card-eject');
-    d.sec.classList.remove('fold-losing');
-    for (const el of items) { el.style.transition = ''; el.style.transform = ''; }
-    card.classList.remove('card-drag');
-    grid.classList.remove('grid-dragging');
-    grid.style.touchAction = '';
-    await takeOutOfFolder(d.sec.dataset.foldId, cardIdOf(card));
     return;
   }
   // доводим карточку до слота (заодно сходит увеличение), и только потом трогаем DOM —

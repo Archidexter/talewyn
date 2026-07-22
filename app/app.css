@@ -1413,10 +1413,10 @@ body.sel-mode .fold-edit, body.sel-mode .fold-x { display: none; }
      по центру по вертикали, вокруг воздух. */
   flex: none;
   overflow-x: auto; scroll-snap-type: x mandatory;
-  /* ТОЛЬКО pan-x: горизонтальный свайп листает карусель. Вертикаль НЕ отдаём браузеру — иначе при
-     ВЫНОСЕ книжки (тянешь её вверх из сборника) страница начинала прокручиваться на компоновщике
-     раньше preventDefault, и книжка улетала из-под пальца. Теперь вертикаль ведёт JS (вынос). */
-  touch-action: pan-x; overscroll-behavior-x: contain; scrollbar-width: none;
+  /* pan-x + pan-y: горизонтальный свайп листает карусель, вертикальный прокручивает полку.
+     Вынос книжки не конфликтует с прокруткой: выносимая книжка на время делается position:fixed
+     (в JS) — прокрутка страницы её не двигает, поэтому вертикаль карусели можно не блокировать. */
+  touch-action: pan-x pan-y; overscroll-behavior-x: contain; scrollbar-width: none;
 }
 .fold-carousel::-webkit-scrollbar { display: none; }
 /* Книжка = ширине ЯЧЕЙКИ (--fold-cw), но max-width:100% страхует от завышенного замера — тогда
@@ -1453,11 +1453,8 @@ body.sel-mode .fold-edit, body.sel-mode .fold-x { display: none; }
 .fold-card.fold-magnet { border-color: var(--gild); background: color-mix(in srgb, var(--gild) 14%, var(--elev)); }
 .fold-losing { border-color: color-mix(in srgb, var(--dim) 40%, transparent); }
 .card-eject .cover, .card-eject .ab-card-cover { outline: 2px dashed color-mix(in srgb, var(--gild) 60%, transparent); outline-offset: 2px; }
-/* ВЫНОС книжки: пока тащим из карусели, контейнер и карусель НЕ обрезают её — она всплывает
-   НАД сборником (иначе «уходит внутрь оболочки»). Сам контейнер поднимаем над соседями. */
-.fold-card.fold-extracting { overflow: visible; z-index: 5; }
-.fold-card.fold-extracting .fold-carousel { overflow: visible; touch-action: none; }
-.fold-cbook .card-drag { z-index: 61; }
+/* ВЫНОС книжки: на время делается position:fixed (в JS) — сама выходит за обрезку карусели и
+   плавает над сборником, overflow контейнера трогать не надо. */
 
 /* ═══ Мультивыбор на полке (долгое нажатие) ═══ */
 .book-card .cover, .ab-card .ab-card-cover { position: relative; }

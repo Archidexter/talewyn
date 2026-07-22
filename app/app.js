@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.2.32';
+const APP_VERSION = '1.2.33';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -2662,6 +2662,9 @@ function beginCardDrag(x, y) {
   const fromFold = card.closest('.fold-card.fold-open');
   if (fromFold) {
     const r = card.getBoundingClientRect();
+    // снимаем overflow-обрезку с контейнера и карусели — иначе выносимая книжка «уходит внутрь
+    // оболочки» (клипается рамкой), а нам нужно, чтобы она всплыла НАД контейнером
+    fromFold.classList.add('fold-extracting');
     cardDrag = { card, grid, items: [card], from: 0, to: 0, sec: fromFold,
                  rects: [{ x: r.left + scrollX, y: r.top + scrollY, w: r.width, h: r.height }],
                  bounds: { x0: -1e5, y0: -1e5, x1: 1e5, y1: 1e5 },
@@ -2677,10 +2680,15 @@ function beginCardDrag(x, y) {
   // при включённой сортировке ручной порядок не действует — перетаскивание молча бы
   // перезаписало порядок по отсортированной сетке и испортило ручной
   if (shelfSort.on && grid.id === 'shelf-grid') return;
-  // в коллекции таскается ВСЁ вперемешку: и книги, и нескачанные записи каталога.
-  // Контейнеры-сборники (.fold-card) НЕ разъезжаются — стоят на месте, пока несёшь книгу к ним
-  // (иначе сборник «удирает» из-под пальца, и в него не попасть).
-  const items = [...grid.children].filter(el => el.matches('.book-card, .ab-card') && !el.classList.contains('fold-card'));
+  // пока сборник РАСКРЫТ, полку не переставляем: раскрытый контейнер держит соседей «под собой»
+  // (foldGaps), и перестановка сбила бы и раскладку, и ord. Сначала свернуть, потом двигать.
+  if (activeFolder) return;
+  // Сам контейнер-сборник (.fold-card) ТОЖЕ таскается — его можно переставить как книгу.
+  // Когда тащат книгу — контейнеры из списка исключаем: они стоят на месте как цель-магнит и
+  // не «удирают» из-под пальца. Когда тащат сам контейнер — в списке участвуют все ячейки.
+  const draggingFold = card.classList.contains('fold-card');
+  const items = [...grid.children].filter(el => el.matches('.book-card, .ab-card')
+    && (draggingFold || !el.classList.contains('fold-card')));
   const from = items.indexOf(card);
   if (from < 0 || items.length < 1) return;
   // анимация появления новой книги (fill: both) держит transform: none и по правилам CSS
@@ -2837,6 +2845,7 @@ async function endCardDrag() {
   cardDrag = null;
   cancelAnimationFrame(d.raf);
   cardDragEndedAt = performance.now();
+  if (d.sec) d.sec.classList.remove('fold-extracting');   // вернуть обрезку контейнеру
   const { card, grid, items, rects, from, to } = d;
   // бросили на сборник — книга всасывается в него; вынесли за рамку — покидает сборник
   if (d.magnet) {
@@ -2890,12 +2899,20 @@ async function saveShelfOrder(grid) {
   const audio = grid.classList.contains('ab-grid');
   const store = audio ? 'audiobooks' : 'books';
   const arr = audio ? state.audiobooks : state.books;
-  // .fold-card ИСКЛЮЧАЕМ: у контейнера-сборника нет id книги, и попади он в список — сбил бы
-  // сопоставление слотов и перезаписал бы ord другим книгам (ручная расстановка ломалась).
-  const ids = [...grid.children].filter(el => el.matches('.book-card, .ab-card')
-    && !el.classList.contains('cat-card') && !el.classList.contains('fold-card')).map(cardIdOf);
-  const shown = new Set(ids);
+  // Порядок из DOM. Контейнер-сборник РАЗВОРАЧИВАЕМ в его книги (в порядке items) на его месте —
+  // так перетаскивание сборника переносит его целиком: книги встают подряд там, куда его бросили,
+  // и он снова показывается на этом месте. Обычные карточки — по своему id.
+  const kind = audio ? 'audio' : 'book';
   const byId = new Map(arr.map(r => [r.id, r]));
+  const ids = [];
+  for (const el of grid.children) {
+    if (!el.matches('.book-card, .ab-card') || el.classList.contains('cat-card')) continue;
+    if (el.classList.contains('fold-card')) {
+      const f = folderById(el.dataset.foldId);
+      if (f && f.kind === kind) for (const mid of (f.items || [])) if (byId.has(mid)) ids.push(mid);
+    } else ids.push(cardIdOf(el));
+  }
+  const shown = new Set(ids);
   const slots = [];
   arr.forEach((r, i) => { if (shown.has(r.id)) slots.push(i); });
   slots.forEach((slot, k) => { const r = byId.get(ids[k]); if (r) arr[slot] = r; });
@@ -3154,97 +3171,45 @@ async function takeOutOfFolder(folderId, id) {
 // Порядок книг (ord) при этом НЕ трогается — раскрытие ничего не сохраняет, поэтому ручная
 // расстановка полки не сбивается. Одновременно раскрыт только один сборник.
 let foldBusy = false;
-const foldSleep = ms => new Promise(r => setTimeout(r, ms));
-const FOLD_DUR = 320;
+// Раскрытие/сворачивание: меняем activeFolder и ПЕРЕРИСОВЫВАЕМ полку (DOM всегда пересобирается
+// из ord — раскладка и порядок консистентны), затем плавно доводим FLIP-ом: соседи разъезжаются,
+// сам контейнер растёт/сжимается по ширине. Ничего не сохраняется — ручная расстановка цела.
 async function toggleFolder(id) {
   const f = folderById(id); if (!f || foldBusy) return;
-  const grid = foldGridOf(f.kind);
-  const box = grid && grid.querySelector(`.fold-card[data-fold-id="${CSS.escape(id)}"]`);
-  if (!box) {                                          // карточки нет в DOM — просто перерисовать
-    activeFolder = activeFolder === id ? null : id;
-    if (f.kind === 'audio') await renderAudioShelf(); else await renderShelf();
-    return;
-  }
   foldBusy = true;
   try {
-    if (activeFolder === id) {                          // свернуть текущий
-      activeFolder = null;
-      await animateFold(grid, box, false);
-    } else {
-      if (activeFolder) {                               // сперва плавно свернуть ранее открытый
-        const prev = grid.querySelector('.fold-card.fold-open');
-        activeFolder = null;
-        if (prev && prev !== box) await animateFold(grid, prev, false);
-      }
-      activeFolder = id;
-      await animateFold(grid, box, true);
-    }
+    const before = cardRects(foldGridOf(f.kind));
+    activeFolder = activeFolder === id ? null : id;
+    if (f.kind === 'audio') await renderAudioShelf(); else await renderShelf();
+    flipCards(foldGridOf(f.kind), before);
   } finally { foldBusy = false; }
 }
 function closeFolder() { if (activeFolder) toggleFolder(activeFolder); }
 
-// Невидимые ячейки-добивки вокруг РАСКРЫТОГО сборника. Сборник во всю строку (grid-column:1/-1)
-// встаёт с начала строки; чтобы книга, что была с ним в одном ряду, осталась в СВОЁМ столбце
-// (ряд просто едет вниз, без горизонтальных перескоков), добиваем строку до сборника и после
-// него пустыми ячейками. Столбцы книг под сборником не меняются. DOM-порядок карточек и ord —
-// не трогаются (пустышки .fold-gap в saveShelfOrder не участвуют). Сборник открыт только один.
+// Раскрытый сборник занимает ВСЮ свою строку. Книги, что были с ним в одной строке слева,
+// уходят СТРОГО ВНИЗ под него (перенос под контейнер), на месте контейнера — пустая ячейка.
+// Тогда сосед по строке (и слева, и справа) съезжает на одну строку вниз в СВОЙ столбец, а
+// книги под контейнером столбцов не меняют. Перерисовка всё пересобирает из ord; .fold-gap в
+// подсчёте порядка не участвует. Сборник раскрыт только один.
 function foldGaps(grid) {
   if (!grid) return;
   for (const g of grid.querySelectorAll('.fold-gap')) g.remove();
   const open = grid.querySelector('.fold-card.fold-open');
   if (!open) return;
   const cols = getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length;
-  if (cols < 2) return;                                // одна колонка — добивать нечего
-  let n = 0;                                           // обычных карточек перед сборником
+  if (cols < 2) return;
+  let n = 0;                                           // сколько обычных карточек перед сборником
   for (let el = open.previousElementSibling; el; el = el.previousElementSibling)
     if (el.matches('.book-card, .ab-card')) n++;
-  const oc = n % cols;                                 // столбец, где сборник стоял закрытым
-  const mkGap = () => { const s = document.createElement('span'); s.className = 'fold-gap'; s.setAttribute('aria-hidden', 'true'); return s; };
-  if (oc) for (let i = 0; i < cols - oc; i++) grid.insertBefore(mkGap(), open);   // добить строку ДО сборника
-  for (let i = 0, after = (oc + 1) % cols; i < after; i++) grid.insertBefore(mkGap(), open.nextSibling);
-}
-
-// FLIP-раскрытие: показываем все карточки в позициях BEFORE, затем плавно едем в AFTER. Сама
-// карточка-сборник заодно растёт/сжимается по ШИРИНЕ (justify-self держит её у начала строки,
-// высота не меняется — контент один и тот же). При закрытии грид на время анимации остаётся
-// раскрытым, а в конце схлопывается — так финальная раскладка совпадает с концом анимации и
-// ничего не прыгает.
-function animateFold(grid, box, opening) {
-  const cards = () => [...grid.querySelectorAll('.book-card, .ab-card')];
-  const snap = () => { const m = new Map(); cards().forEach(el => m.set(el, el.getBoundingClientRect())); return m; };
-  const before = snap();
-  let after, gridAtAfter;
-  if (opening) {
-    box.classList.add('fold-open'); foldGaps(grid);
-    after = snap(); gridAtAfter = true;                // грид уже в раскрытой раскладке
-  } else {
-    box.classList.remove('fold-open'); foldGaps(grid);
-    after = snap();                                     // замерили свёрнутую…
-    box.classList.add('fold-open'); foldGaps(grid);     // …и вернули раскрытую на время анимации
-    gridAtAfter = false;                               // грид пока в раскрытой (before) раскладке
-  }
-  const cur = gridAtAfter ? after : before;            // текущая реальная раскладка грида
-  const moved = [];
-  for (const el of cards()) {
-    const a = before.get(el), b = after.get(el), c = cur.get(el);
-    if (!a || !b || !c) continue;
-    const isFold = el.classList.contains('fold-card');
-    el.style.transition = 'none';
-    if (isFold) { el.style.justifySelf = 'start'; el.style.width = a.width + 'px'; }
-    el.style.transform = `translate(${a.left - c.left}px, ${a.top - c.top}px)`;
-    moved.push({ el, b, c, isFold });
-  }
-  void grid.offsetWidth;                               // отдать браузеру стартовые позиции
-  const ease = 'cubic-bezier(.25,.1,.25,1)';
-  for (const m of moved) {
-    m.el.style.transition = `transform ${FOLD_DUR}ms ${ease}, width ${FOLD_DUR}ms ${ease}`;
-    m.el.style.transform = `translate(${m.b.left - m.c.left}px, ${m.b.top - m.c.top}px)`;
-    if (m.isFold) m.el.style.width = m.b.width + 'px';
-  }
-  return foldSleep(FOLD_DUR + 20).then(() => {
-    if (!opening) { box.classList.remove('fold-open'); foldGaps(grid); }   // финал = свёрнутая раскладка
-    for (const m of moved) { m.el.style.transition = ''; m.el.style.transform = ''; m.el.style.width = ''; m.el.style.justifySelf = ''; }
-  });
+  const oc = n % cols;                                 // столбец контейнера (0 = начало строки)
+  const after = open.nextSibling;                      // граница: сразу за контейнером
+  const hang = [];                                     // левые соседи по строке контейнера
+  let el = open.previousElementSibling;
+  for (let i = 0; i < oc && el; el = el.previousElementSibling) { if (el.matches('.book-card, .ab-card')) { hang.unshift(el); i++; } }
+  for (const c of hang) grid.insertBefore(c, after);   // соседей — строго ПОД контейнер
+  const gap = document.createElement('span');          // на месте самого контейнера — пустая ячейка
+  gap.className = 'fold-gap'; gap.setAttribute('aria-hidden', 'true');
+  grid.insertBefore(gap, after);
 }
 // снимок позиций карточек — для FLIP-переезда после перерисовки
 function cardRects(grid) {
@@ -3257,6 +3222,8 @@ function cardRects(grid) {
   }
   return m;
 }
+// FLIP после перерисовки: карточки едут из старых позиций (before) в новые. Контейнер-сборник
+// заодно плавно меняет ШИРИНУ (раскрылся/свернулся) — justify-self держит его у начала строки.
 function flipCards(grid, before) {
   if (!grid || !before.size) return;
   const moved = [];
@@ -3266,20 +3233,26 @@ function flipCards(grid, before) {
     const prev = before.get(k); if (!prev) continue;
     const now = el.getBoundingClientRect();
     const dx = prev.left - now.left, dy = prev.top - now.top;
-    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
+    const dw = el.classList.contains('fold-card') ? (prev.width - now.width) : 0;
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5 && Math.abs(dw) < 0.5) continue;
     el.style.transition = 'none';
-    el.style.transform = `translate(${dx}px, ${dy}px)`;
     el.classList.remove('book-in');   // анимация появления держала бы transform: none и гасила переезд
-    moved.push(el);
+    const wide = Math.abs(dw) >= 0.5;
+    if (wide) { el.style.justifySelf = 'start'; el.style.width = prev.width + 'px'; }
+    el.style.transform = `translate(${dx}px, ${dy}px)`;
+    moved.push({ el, wide, w: now.width });
   }
   if (!moved.length) return;
   void grid.offsetWidth;              // отдаём браузеру стартовые позиции, иначе он схлопнет переезд
   requestAnimationFrame(() => {
-    for (const el of moved) {
-      el.style.transition = 'transform .34s cubic-bezier(.4, 0, .2, 1)';
-      el.style.transform = '';
+    for (const m of moved) {
+      m.el.style.transition = m.wide
+        ? 'transform .34s cubic-bezier(.4,0,.2,1), width .34s cubic-bezier(.4,0,.2,1)'
+        : 'transform .34s cubic-bezier(.4,0,.2,1)';
+      m.el.style.transform = '';
+      if (m.wide) m.el.style.width = m.w + 'px';
     }
-    setTimeout(() => { for (const el of moved) { el.style.transition = ''; el.style.transform = ''; } }, 360);
+    setTimeout(() => { for (const m of moved) { m.el.style.transition = ''; m.el.style.transform = ''; m.el.style.width = ''; m.el.style.justifySelf = ''; } }, 360);
   });
 }
 async function renameFolder(id) {

@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.2.38';
+const APP_VERSION = '1.2.39';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -2681,6 +2681,9 @@ function beginCardDrag(x, y) {
   // при включённой сортировке ручной порядок не действует — перетаскивание молча бы
   // перезаписало порядок по отсортированной сетке и испортило ручной
   if (shelfSort.on && grid.id === 'shelf-grid') return;
+  // пока сборник РАСКРЫТ, полку не переставляем: раскрытый контейнер держит книги «по рельсам»
+  // (порядок в DOM переставлен), и сохранение сбило бы и раскладку, и ord. Сначала свернуть.
+  if (activeFolder) return;
   // Сам контейнер-сборник (.fold-card) ТОЖЕ таскается — его можно переставить как книгу.
   // Когда тащат книгу — контейнеры из списка исключаем: они стоят на месте как цель-магнит и
   // не «удирают» из-под пальца. Когда тащат сам контейнер — в списке участвуют все ячейки.
@@ -3257,14 +3260,9 @@ async function foldOpenInPlace(grid, box, f) {
 // пустышку и класс) и FLIP-ом поднимаем соседей на места. Ре-рендера нет — прыжка нет.
 async function foldCloseInPlace(grid, box, f) {
   const cols = getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length || 2;
-  const gap = grid.querySelector('.fold-gap');
-  const hang = [];                                 // повисшие книги: между контейнером и пустышкой
-  for (let el = box.nextElementSibling; el && el !== gap; el = el.nextElementSibling)
-    if (el.matches('.book-card, .ab-card')) hang.push(el);
-  let beforeN = 0;                                 // сколько книг перед контейнером сейчас
-  for (let el = box.previousElementSibling; el; el = el.previousElementSibling)
-    if (el.matches('.book-card, .ab-card')) beforeN++;
-  const col = (beforeN + hang.length) % cols;      // столбец контейнера ЗАКРЫТЫМ (повисшие встанут ПЕРЕД ним)
+  const closed = grid.__foldClosed || [...grid.children].filter(el => el.matches('.book-card, .ab-card'));
+  const idx = closed.indexOf(box);
+  const col = idx >= 0 ? (idx % cols) : 0;          // столбец контейнера в ЗАКРЫТОЙ раскладке
   const rightHalf = col >= cols / 2;
   const sample = [...grid.children].find(el => el.matches('.book-card:not(.fold-card), .ab-card:not(.fold-card)'));
   const curW = box.getBoundingClientRect().width;   // ЗАМЕР ДО смены justify-self — иначе контейнер
@@ -3276,12 +3274,12 @@ async function foldCloseInPlace(grid, box, f) {
   box.style.transition = 'width .27s cubic-bezier(.25,.1,.25,1)';   // этап 1: контейнер к ячейке
   box.style.width = wClosed + 'px';
   await foldSleep(285);
-  const was = cardRects(grid);                     // соседи ещё внизу, контейнер уже сжат в свой столбец
-  for (const el of hang) grid.insertBefore(el, box);   // повисших — назад ПЕРЕД контейнер
-  if (gap) gap.remove();
+  const was = cardRects(grid);                     // рельсовая раскладка, контейнер уже сжат в свой столбец
+  for (const g of grid.querySelectorAll('.fold-gap')) g.remove();
+  for (const el of closed) if (el.isConnected) grid.appendChild(el);   // синхронно вернуть ЗАКРЫТЫЙ порядок
   box.classList.remove('fold-open');
   box.style.transition = ''; box.style.width = ''; box.style.justifySelf = ''; box.style.gridColumn = '';
-  flipCards(grid, was);                            // этап 2: соседи синхронно поднимаются на места — без прыжка
+  flipCards(grid, was);                            // этап 2: сдвинутый столбец синхронно едет обратно — без прыжка
   await foldSleep(360);
 }
 
@@ -3294,28 +3292,56 @@ function foldGaps(grid) {
   if (!grid) return;
   for (const g of grid.querySelectorAll('.fold-gap')) g.remove();
   const open = grid.querySelector('.fold-card.fold-open');
-  if (!open) return;
+  if (!open) { grid.__foldClosed = null; return; }
   const cols = getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length;
   if (cols < 2) return;
-  let n = 0;                                           // сколько обычных карточек перед сборником
-  for (let el = open.previousElementSibling; el; el = el.previousElementSibling)
-    if (el.matches('.book-card, .ab-card')) n++;
-  const oc = n % cols;                                 // столбец контейнера (0 = начало строки)
-  const after = open.nextSibling;                      // граница: сразу за контейнером
-  const hang = [];                                     // левые соседи по строке контейнера
-  let el = open.previousElementSibling;
-  for (let i = 0; i < oc && el; el = el.previousElementSibling) { if (el.matches('.book-card, .ab-card')) { hang.unshift(el); i++; } }
-  for (const c of hang) grid.insertBefore(c, after);   // соседей — строго ПОД контейнер
-  const gap = document.createElement('span');          // на месте самого контейнера — пустая ячейка
-  gap.className = 'fold-gap'; gap.setAttribute('aria-hidden', 'true');
-  grid.insertBefore(gap, after);
+  const mkGap = () => { const s = document.createElement('span'); s.className = 'fold-gap'; s.setAttribute('aria-hidden', 'true'); return s; };
+  // Порядок карточек СЕЙЧАС = закрытый (грид только что собран из ord/коллекции). Запоминаем его —
+  // при сворачивании вернём синхронно этим списком, без ре-рендера (значит без прыжка).
+  const cards = [...grid.children].filter(el => el.matches('.book-card, .ab-card'));
+  grid.__foldClosed = cards.slice();
+  const P = cards.indexOf(open);
+  const oc = P % cols;                                 // столбец контейнера
+
+  if (cols !== 2) {                                    // не 2 колонки — прежнее: соседей слева под контейнер + пустышка
+    const after0 = open.nextSibling;
+    const hang0 = [];
+    for (let i = 0, el = open.previousElementSibling; i < oc && el; el = el.previousElementSibling)
+      if (el.matches('.book-card, .ab-card')) { hang0.unshift(el); i++; }
+    for (const cnode of hang0) grid.insertBefore(cnode, after0);
+    grid.insertBefore(mkGap(), after0);
+    return;
+  }
+
+  // ═══ 2 колонки: РЕЛЬСЫ — вниз едет ТОЛЬКО столбец, куда врезается раскрытие; другой стоит. ═══
+  // Контейнер во всю строку. Вытесненная соседка (справа у левого контейнера / слева у правого)
+  // встаёт наверх «своего» столбца и толкает его вниз; противоположный столбец не двигается.
+  const before = cards.slice(0, P), after = cards.slice(P + 1);
+  let displaced, below, stayCol0;
+  if (oc === 0) { displaced = after[0] || null; below = after.slice(1); stayCol0 = true; }   // левый: едет правый столбец
+  else { displaced = before[before.length - 1] || null; below = after; stayCol0 = false; }    // правый: едет левый столбец
+  const stay = [], shift = [];                         // книги ниже идут по столбцам [c0,c1,c0,c1,...]
+  below.forEach((el, i) => { const c0 = (i % 2) === 0; ((stayCol0 ? c0 : !c0) ? stay : shift).push(el); });
+  const shiftCol = displaced ? [displaced, ...shift] : shift;   // смещённый столбец: вытесненная книга сверху
+  let ref = open;                                      // раскладываем построчно сразу за контейнером
+  const rows = Math.max(stay.length, shiftCol.length);
+  for (let i = 0; i < rows; i++) {
+    const s = stay[i], f = shiftCol[i];
+    const c0 = (stayCol0 ? s : f) || mkGap(), c1 = (stayCol0 ? f : s) || mkGap();   // [col0, col1]
+    grid.insertBefore(c0, ref.nextSibling); ref = c0;
+    grid.insertBefore(c1, ref.nextSibling); ref = c1;
+  }
 }
 // Габариты книжки внутри сборника = габаритам ЯЧЕЙКИ полки: обложка заполняет контейнер и по
 // ширине, и по высоте (не плавает в пустоте). Мерим соседнюю книгу через offset* (чистая
 // раскладка, без искажений transform-анимации). На телефоне это верные числа.
 function setFoldCellW(grid) {
   if (!grid || !grid.querySelector('.fold-card')) return;
-  const cell = grid.querySelector('.book-card:not(.fold-card), .ab-card:not(.fold-card)');
+  // ТОЛЬКО верхнеуровневая ячейка полки (grid.children), НЕ книжка из карусели сборника — иначе
+  // при библиотеке из одних сборников замеряли бы обложку, размер которой сам зависит от --fold-cw,
+  // и на каждом рендере контейнеры схлопывались бы (обратная связь). Нет своих книг — переменную
+  // не трогаем, остаётся дефолт.
+  const cell = [...grid.children].find(el => el.matches('.book-card:not(.fold-card), .ab-card:not(.fold-card)'));
   if (cell && cell.offsetWidth) grid.style.setProperty('--fold-cw', cell.offsetWidth + 'px');
   if (cell && cell.offsetHeight) grid.style.setProperty('--fold-cell-h', cell.offsetHeight + 'px');
 }

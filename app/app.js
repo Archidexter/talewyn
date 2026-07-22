@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.2.34';
+const APP_VERSION = '1.2.35';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -2394,6 +2394,7 @@ async function renderShelf() {
   }).join('');
   cardMarquee(grid);   // названия — одной бегущей строкой (проезжает, если не влезает)
   foldGaps(grid);      // добивки вокруг раскрытого сборника — соседний ряд строго вниз, без перескоков
+  setFoldCellW(grid);  // ширина книжки в сборнике = ширине ячейки
   // плавное появление — только у книг, впервые попавших в библиотеку (не при фильтрации/первом рендере)
   if (seenBookIds) {
     grid.querySelectorAll('.book-card').forEach(c => {
@@ -3238,25 +3239,38 @@ async function foldOpenInPlace(grid, box, f) {
   await foldSleep(320);
   box.style.transition = ''; box.style.width = ''; box.style.justifySelf = ''; box.style.gridColumn = '';
 }
-// СВОРАЧИВАНИЕ: этап 1 — контейнер сжимается к ячейке (на своей стороне); этап 2 — перерисовка
-// возвращает соседей на места, FLIP плавно поднимает их обратно.
+// СВОРАЧИВАНИЕ, два этапа, БЕЗ ре-рендера (иначе браузер рисует финал до FLIP — прыжок).
+// Этап 1 — контейнер сжимается к своей ЯЧЕЙКЕ в СВОЮ сторону (столбец считаем по тому, куда он
+// вернётся, а не «по центру раскрытого» — иначе правый контейнер сжимался влево и прыгал вправо).
+// Этап 2 — СИНХРОННО возвращаем раскладку (повисшие книги — назад перед контейнером, убираем
+// пустышку и класс) и FLIP-ом поднимаем соседей на места. Ре-рендера нет — прыжка нет.
 async function foldCloseInPlace(grid, box, f) {
-  const gr = grid.getBoundingClientRect(), rs = box.getBoundingClientRect();
-  const rightHalf = (rs.left + rs.width / 2 - gr.left) > gr.width / 2;
+  const cols = getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length || 2;
+  const gap = grid.querySelector('.fold-gap');
+  const hang = [];                                 // повисшие книги: между контейнером и пустышкой
+  for (let el = box.nextElementSibling; el && el !== gap; el = el.nextElementSibling)
+    if (el.matches('.book-card, .ab-card')) hang.push(el);
+  let beforeN = 0;                                 // сколько книг перед контейнером сейчас
+  for (let el = box.previousElementSibling; el; el = el.previousElementSibling)
+    if (el.matches('.book-card, .ab-card')) beforeN++;
+  const col = (beforeN + hang.length) % cols;      // столбец контейнера ЗАКРЫТЫМ (повисшие встанут ПЕРЕД ним)
+  const rightHalf = col >= cols / 2;
   const sample = [...grid.children].find(el => el.matches('.book-card:not(.fold-card), .ab-card:not(.fold-card)'));
-  const wClosed = sample ? sample.getBoundingClientRect().width : rs.width;
+  const wClosed = sample ? sample.getBoundingClientRect().width : box.getBoundingClientRect().width;
   box.style.gridColumn = '1 / -1';
-  box.style.justifySelf = rightHalf ? 'end' : 'start';
-  box.style.width = rs.width + 'px';
+  box.style.justifySelf = rightHalf ? 'end' : 'start';   // сжимаемся В СВОЙ столбец
+  box.style.width = box.getBoundingClientRect().width + 'px';
   void box.offsetWidth;
-  box.style.transition = 'width .28s cubic-bezier(.25,.1,.25,1)';   // этап 1: контейнер к ячейке
+  box.style.transition = 'width .27s cubic-bezier(.25,.1,.25,1)';   // этап 1: контейнер к ячейке
   box.style.width = wClosed + 'px';
-  await foldSleep(300);
-  const was = cardRects(grid);                    // снимок до ре-рендера (соседи ещё внизу)
+  await foldSleep(285);
+  const was = cardRects(grid);                     // соседи ещё внизу, контейнер уже сжат в свой столбец
+  for (const el of hang) grid.insertBefore(el, box);   // повисших — назад ПЕРЕД контейнер
+  if (gap) gap.remove();
   box.classList.remove('fold-open');
   box.style.transition = ''; box.style.width = ''; box.style.justifySelf = ''; box.style.gridColumn = '';
-  if (f.kind === 'audio') await renderAudioShelf(); else await renderShelf();
-  flipCards(foldGridOf(f.kind), was);             // этап 2: соседи плавно поднимаются на места
+  flipCards(grid, was);                            // этап 2: соседи синхронно поднимаются на места — без прыжка
+  await foldSleep(360);
 }
 
 // Раскрытый сборник занимает ВСЮ свою строку. Книги, что были с ним в одной строке слева,
@@ -3283,6 +3297,13 @@ function foldGaps(grid) {
   const gap = document.createElement('span');          // на месте самого контейнера — пустая ячейка
   gap.className = 'fold-gap'; gap.setAttribute('aria-hidden', 'true');
   grid.insertBefore(gap, after);
+}
+// Ширина книжки внутри сборника = ширине ЯЧЕЙКИ полки: тогда закрытым видно одну обложку во всю
+// ширину, раскрытым — две. Замеряем соседнюю книгу через offsetWidth (чистая ширина раскладки).
+function setFoldCellW(grid) {
+  if (!grid || !grid.querySelector('.fold-card')) return;
+  const cell = grid.querySelector('.book-card:not(.fold-card), .ab-card:not(.fold-card)');
+  if (cell && cell.offsetWidth) grid.style.setProperty('--fold-cw', cell.offsetWidth + 'px');
 }
 // снимок позиций карточек — для FLIP-переезда после перерисовки
 function cardRects(grid) {
@@ -8524,6 +8545,7 @@ async function renderAudioShelf() {
     box.innerHTML = `${gridHtml}${addBtn}`;
     cardMarquee(box);   // одна бегущая строка
     foldGaps(box.querySelector('.ab-grid'));   // добивки вокруг раскрытого сборника
+    setFoldCellW(box.querySelector('.ab-grid'));   // ширина книжки в сборнике = ширине ячейки
     if (selMode && selKind === 'audio' && activeCol) refreshSelChecks();   // выбор переживает перерисовку
     // счётчик — как у книг: сколько РЕАЛЬНО видно (с фильтрами и внутри коллекции)
     if (foot) foot.innerHTML = `<p>${T('audioN', { n: shown.length })}</p>`;

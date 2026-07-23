@@ -1593,8 +1593,8 @@ body.sel-mode .cat-badge, body.sel-exiting .cat-badge { display: none; }
 }
 .col-item.active { border-color: var(--gild); background: color-mix(in srgb, var(--gild) 12%, var(--bg)); }
 .col-item.dragging { opacity: .92; border-color: var(--gild); box-shadow: 0 8px 22px rgb(0 0 0 / .4); position: relative; z-index: 2; }
-.col-grip { flex: none; width: 16px; height: 24px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3.5px; cursor: grab; touch-action: none; }
-.col-grip i { width: 4px; height: 4px; border-radius: 50%; background: var(--faint); }
+/* слева у коллекции — иконка книги в стиле иконок каталога (.cat-ic); она же ручка перетаскивания */
+.col-grip { flex: none; display: grid; place-items: center; color: var(--gild); padding-left: 6px; cursor: grab; touch-action: none; }
 .col-item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 600; font-size: 14px; }
 .col-item-count { flex: none; font-size: 11.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
 .col-item-del { flex: none; width: 24px; height: 24px; border-radius: 50%; border: 0; background: transparent; color: var(--faint); font-size: 12.5px; cursor: pointer; display: grid; place-items: center; -webkit-tap-highlight-color: transparent; transition: transform .12s, color .15s; }
@@ -2801,6 +2801,12 @@ body.tts-on #sel-toolbar { bottom: calc(228px + max(env(safe-area-inset-bottom, 
 #confirm-msg { text-align: center; }
 .confirm-actions { display: flex; gap: 10px; }
 .confirm-actions > * { flex: 1; min-height: 46px; }
+/* три варианта (напр. крестик сборника: Расформировать / Удалить всё / Отмена) — в столбик */
+.confirm-actions.threeway { flex-direction: column; }
+.confirm-actions.threeway > * { flex: none; }
+.confirm-actions.threeway #confirm-mid { order: 1; }
+.confirm-actions.threeway #confirm-yes { order: 2; }
+.confirm-actions.threeway #confirm-no { order: 3; }
 /* отдача на нажатие кнопок диалога */
 /* Отдача на нажатие. Раньше было scale(.96) + brightness: у «Скачать» это едва заметно,
    а у прозрачной «Отмены» яркость не меняла ничего вовсе — нажатие выглядело мёртвым. */

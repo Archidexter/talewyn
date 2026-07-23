@@ -1,0 +1,226 @@
+// ══════════════════ карточка-цитата ══════════════════
+// Рисует выделенную цитату красивой картинкой в стиле «Читального зала»: цвет текущей темы,
+// золото, Spectral, вордмарк AD.Talewyn. Ленивый модуль (как catalog.js): грузится при первом
+// открытии окна цитаты. Один источник и для приложения, и для тестового харнеса.
+// Экспорт: window.drawQuoteCard(canvas, {text, author, title, variant}) → Promise (ждёт шрифты).
+// variant: 'frame' (рамка), 'rule' (боковая линейка), 'air' (воздух), 'plate' (экслибрис), 'mark' (водяная кавычка).
+(function () {
+  'use strict';
+  const W = 1080, H = 1350;
+
+  function rgba(col, a) {
+    col = (col || '').trim();
+    if (col.startsWith('#')) {
+      let h = col.slice(1);
+      if (h.length === 3) h = h.split('').map(c => c + c).join('');
+      const n = parseInt(h, 16);
+      return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+    }
+    const m = col.match(/\d+(\.\d+)?/g);
+    if (m && m.length >= 3) return `rgba(${m[0]}, ${m[1]}, ${m[2]}, ${a})`;
+    return col;
+  }
+
+  function wrap(ctx, text, maxW) {
+    const words = text.replace(/\s+/g, ' ').trim().split(' ');
+    const lines = []; let line = '';
+    for (const w of words) {
+      const test = line ? line + ' ' + w : w;
+      if (ctx.measureText(test).width > maxW && line) { lines.push(line); line = w; }
+      else line = test;
+    }
+    if (line) lines.push(line);
+    return lines;
+  }
+
+  // подобрать кегль, чтобы цитата влезла по ширине и высоте
+  function fitQuote(ctx, text, maxW, availH, startFs, minFs, weight) {
+    let fs = startFs, lines = [];
+    for (; fs >= minFs; fs -= 2) {
+      ctx.font = `${weight} ${fs}px 'Spectral'`;
+      lines = wrap(ctx, text, maxW);
+      if (lines.length * fs * 1.42 <= availH) break;
+    }
+    return { fs, lines, lh: fs * 1.42 };
+  }
+
+  function divider(ctx, cx, y, gild, half) {
+    const gap = 26;
+    ctx.strokeStyle = rgba(gild, 0.6); ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(cx - half, y); ctx.lineTo(cx - gap, y);
+    ctx.moveTo(cx + gap, y); ctx.lineTo(cx + half, y);
+    ctx.stroke();
+    ctx.save(); ctx.translate(cx, y); ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = rgba(gild, 0.85); const d = 9; ctx.fillRect(-d, -d, 2 * d, 2 * d);
+    ctx.restore();
+  }
+
+  function wordmark(ctx, cx, y, gild, textC, align) {
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = "700 20px 'Spectral'"; const adW = ctx.measureText('AD.').width;
+    ctx.font = "600 30px 'Spectral'"; const twW = ctx.measureText('Talewyn').width;
+    const total = adW + 8 + twW;
+    let x = align === 'left' ? cx : cx - total / 2;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = rgba(gild, 0.9); ctx.font = "700 20px 'Spectral'"; ctx.fillText('AD.', x, y);
+    x += adW + 8;
+    ctx.fillStyle = rgba(textC, 0.9); ctx.font = "600 30px 'Spectral'"; ctx.fillText('Talewyn', x, y);
+  }
+
+  function attribCentered(ctx, cx, y, author, title, gild, dim, maxW) {
+    ctx.textAlign = 'center';
+    if (author) {
+      ctx.fillStyle = rgba(gild, 0.95); ctx.font = "600 34px 'Spectral'";
+      try { ctx.letterSpacing = '4px'; } catch (e) {}
+      ctx.fillText(author.toUpperCase(), cx, y);
+      try { ctx.letterSpacing = '0px'; } catch (e) {}
+      y += 52;
+    }
+    if (title) {
+      ctx.fillStyle = rgba(dim, 0.95); ctx.font = "italic 400 30px 'Spectral'";
+      let tt = '«' + title + '»', t = title;
+      while (ctx.measureText(tt).width > maxW && t.length > 8) { t = t.slice(0, -1); tt = '«' + t + '…»'; }
+      ctx.fillText(tt, cx, y);
+    }
+  }
+
+  function bgFill(ctx, bg) {
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+    const vg = ctx.createRadialGradient(W / 2, H * 0.42, H * 0.18, W / 2, H * 0.5, H * 0.72);
+    vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.16)');
+    ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+  }
+
+  // ── ВАРИАНТЫ ──
+  function vFrame(ctx, o) {
+    const { bg, textC, dim, gild, text, author, title } = o;
+    bgFill(ctx, bg);
+    const m = 74;
+    ctx.strokeStyle = rgba(gild, 0.5); ctx.lineWidth = 2; ctx.strokeRect(m, m, W - 2 * m, H - 2 * m);
+    ctx.strokeStyle = rgba(gild, 0.26); ctx.lineWidth = 1; ctx.strokeRect(m + 11, m + 11, W - 2 * m - 22, H - 2 * m - 22);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = rgba(gild, 0.42); ctx.font = "italic 600 210px 'Spectral'"; ctx.textBaseline = 'alphabetic';
+    ctx.fillText('“', W / 2, m + 250);
+    const areaW = W - 2 * (m + 76), topY = m + 300, botY = H - 430;
+    const { fs, lines, lh } = fitQuote(ctx, text, areaW, botY - topY, 58, 30, 500);
+    let y = topY + (botY - topY - lines.length * lh) / 2 + fs;
+    ctx.fillStyle = textC; ctx.font = `500 ${fs}px 'Spectral'`;
+    for (const ln of lines) { ctx.fillText(ln, W / 2, y); y += lh; }
+    divider(ctx, W / 2, botY + 70, gild, 150);
+    attribCentered(ctx, W / 2, botY + 148, author, title, gild, dim, areaW);
+    wordmark(ctx, W / 2, H - m - 44, gild, textC);
+  }
+
+  function vRule(ctx, o) {
+    const { bg, textC, dim, gild, text, author, title } = o;
+    bgFill(ctx, bg);
+    const padL = 172, padR = 132, areaW = W - padL - padR;
+    const topY = 430, botY = H - 360;
+    const { fs, lines, lh } = fitQuote(ctx, text, areaW, botY - topY, 60, 30, 500);
+    const blockH = lines.length * lh;
+    let y = topY + (botY - topY - blockH) / 2 + fs;
+    const barTop = y - fs, barBot = y - fs + blockH + 120;
+    ctx.fillStyle = rgba(gild, 0.85); ctx.fillRect(padL - 42, barTop, 7, barBot - barTop);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = textC; ctx.font = `500 ${fs}px 'Spectral'`;
+    for (const ln of lines) { ctx.fillText(ln, padL, y); y += lh; }
+    y += 34;
+    if (author) {
+      ctx.fillStyle = rgba(gild, 0.95); ctx.font = "600 34px 'Spectral'";
+      try { ctx.letterSpacing = '3px'; } catch (e) {}
+      ctx.fillText(author.toUpperCase(), padL, y);
+      try { ctx.letterSpacing = '0px'; } catch (e) {}
+      y += 48;
+    }
+    if (title) { ctx.fillStyle = rgba(dim, 0.95); ctx.font = "italic 400 30px 'Spectral'"; ctx.fillText('«' + title + '»', padL, y); }
+    wordmark(ctx, W - padR - (ctx.font = "600 30px 'Spectral'", ctx.measureText('Talewyn').width) - 44, H - 96, gild, textC, 'left');
+  }
+
+  function vAir(ctx, o) {
+    const { bg, textC, dim, gild, text, author, title } = o;
+    bgFill(ctx, bg);
+    const areaW = W - 2 * 132, topY = 380, botY = H - 380;
+    const { fs, lines, lh } = fitQuote(ctx, text, areaW, botY - topY - 120, 64, 32, 400);
+    const blockH = lines.length * lh;
+    let y = topY + (botY - topY - blockH - 120) / 2 + fs;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = textC; ctx.font = `400 ${fs}px 'Spectral'`;
+    for (const ln of lines) { ctx.fillText(ln, W / 2, y); y += lh; }
+    const lineY = y - fs + 60;
+    ctx.strokeStyle = rgba(gild, 0.8); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(W / 2 - 46, lineY); ctx.lineTo(W / 2 + 46, lineY); ctx.stroke();
+    attribCentered(ctx, W / 2, lineY + 64, author, title, gild, dim, areaW);
+    wordmark(ctx, W / 2, H - 96, gild, textC);
+  }
+
+  function vPlate(ctx, o) {
+    const { bg, textC, dim, gild, text, author, title } = o;
+    bgFill(ctx, bg);
+    const m = 74;
+    ctx.strokeStyle = rgba(gild, 0.5); ctx.lineWidth = 2; ctx.strokeRect(m, m, W - 2 * m, H - 2 * m);
+    ctx.strokeStyle = rgba(gild, 0.24); ctx.lineWidth = 1; ctx.strokeRect(m + 11, m + 11, W - 2 * m - 22, H - 2 * m - 22);
+    // уголки-виньетки
+    const cm = m + 11, L = 46;
+    for (const [sx, cx] of [[1, cm], [-1, W - cm]]) for (const [sy, cy] of [[1, cm], [-1, H - cm]]) {
+      ctx.strokeStyle = rgba(gild, 0.7); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(cx + sx * 16, cy + sy * L); ctx.lineTo(cx + sx * 16, cy + sy * 16); ctx.lineTo(cx + sx * L, cy + sy * 16); ctx.stroke();
+      ctx.save(); ctx.translate(cx + sx * 26, cy + sy * 26); ctx.rotate(Math.PI / 4); ctx.fillStyle = rgba(gild, 0.8); ctx.fillRect(-5, -5, 10, 10); ctx.restore();
+    }
+    // верхний эмблем: ромб в кольце
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = rgba(gild, 0.7); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(W / 2, m + 150, 34, 0, Math.PI * 2); ctx.stroke();
+    ctx.save(); ctx.translate(W / 2, m + 150); ctx.rotate(Math.PI / 4); ctx.fillStyle = rgba(gild, 0.85); ctx.fillRect(-10, -10, 20, 20); ctx.restore();
+    const areaW = W - 2 * (m + 84), topY = m + 250, botY = H - 430;
+    const { fs, lines, lh } = fitQuote(ctx, text, areaW, botY - topY, 56, 30, 500);
+    let y = topY + (botY - topY - lines.length * lh) / 2 + fs;
+    ctx.fillStyle = textC; ctx.font = `500 ${fs}px 'Spectral'`; ctx.textBaseline = 'alphabetic';
+    for (const ln of lines) { ctx.fillText(ln, W / 2, y); y += lh; }
+    divider(ctx, W / 2, botY + 74, gild, 140);
+    attribCentered(ctx, W / 2, botY + 150, author, title, gild, dim, areaW);
+    wordmark(ctx, W / 2, H - m - 42, gild, textC);
+  }
+
+  function vMark(ctx, o) {
+    const { bg, textC, dim, gild, text, author, title } = o;
+    bgFill(ctx, bg);
+    // гигантская водяная кавычка позади
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = rgba(gild, 0.10); ctx.font = "italic 700 620px 'Spectral'";
+    ctx.fillText('“', W / 2, H * 0.44);
+    const areaW = W - 2 * 122, topY = 360, botY = H - 360;
+    const { fs, lines, lh } = fitQuote(ctx, text, areaW, botY - topY - 100, 58, 32, 500);
+    let y = topY + (botY - topY - lines.length * lh - 100) / 2 + fs;
+    ctx.textBaseline = 'alphabetic'; ctx.fillStyle = textC; ctx.font = `500 ${fs}px 'Spectral'`;
+    for (const ln of lines) { ctx.fillText(ln, W / 2, y); y += lh; }
+    divider(ctx, W / 2, y - fs + 56, gild, 120);
+    attribCentered(ctx, W / 2, y - fs + 128, author, title, gild, dim, areaW);
+    wordmark(ctx, W / 2, H - 96, gild, textC);
+  }
+
+  const VARIANTS = { frame: vFrame, rule: vRule, air: vAir, plate: vPlate, mark: vMark };
+
+  async function drawQuoteCard(canvas, opts) {
+    const text = (opts.text || '').replace(/\s+/g, ' ').trim();
+    let quote = text.length > 360 ? text.slice(0, 357).replace(/\s+\S*$/, '') + '…' : text;
+    const cs = getComputedStyle(document.documentElement); const V = n => cs.getPropertyValue(n).trim();
+    const o = {
+      bg: V('--bg') || '#1c2015', textC: V('--text') || '#fff9f3',
+      dim: V('--dim') || '#cdbca0', gild: V('--gild') || '#c9a45f',
+      text: quote, author: (opts.author || '').trim(), title: (opts.title || '').trim(),
+    };
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    try {
+      await Promise.all([
+        document.fonts.load("400 56px 'Spectral'"), document.fonts.load("500 56px 'Spectral'"),
+        document.fonts.load("600 34px 'Spectral'"), document.fonts.load("700 20px 'Spectral'"),
+        document.fonts.load("italic 700 200px 'Spectral'"), document.fonts.load("italic 400 30px 'Spectral'"),
+      ]);
+    } catch (e) {}
+    (VARIANTS[opts.variant] || vFrame)(ctx, o);
+    return canvas;
+  }
+
+  window.drawQuoteCard = drawQuoteCard;
+})();

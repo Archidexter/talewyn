@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.2.51';
+const APP_VERSION = '1.2.59';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -2403,6 +2403,7 @@ async function renderShelf() {
   setFoldCellW(grid);  // ширина книжки в сборнике = ширине ячейки
   // FLIP СИНХРОННО, прямо здесь (до асинхронного «продолжить чтение» ниже) — иначе браузер успеет
   // нарисовать новую раскладку, и соседи дёрнутся на место ещё до анимации. См. addToFolder.
+  applyFoldKeepScroll(grid);   // прокрутку карусели вернуть ДО flipCards, иначе рывок после перестановки
   if (foldFlipBefore) { flipCards(grid, foldFlipBefore); foldFlipBefore = null; }
   // плавное появление — только у книг, впервые попавших в библиотеку (не при фильтрации/первом рендере)
   if (seenBookIds) {
@@ -2546,6 +2547,16 @@ const selCards = () => {
 
 function refreshSelChecks() {
   selCards().forEach(card => {
+    // стопка сборника: свой кружок на месте ✕ — «залит», когда выбраны ВСЕ книги внутри
+    if (card.classList.contains('fold-card')) {
+      const f = folderById(card.dataset.foldId);
+      const its = f ? (f.items || []) : [];
+      const all = its.length > 0 && its.every(id => selIds.includes(id));
+      card.classList.toggle('sel', all);
+      const badge = card.querySelector('.sel-check');   // свой кружок стоит первым — до книг карусели
+      if (badge) badge.textContent = all ? '✓' : '';
+      return;
+    }
     const pos = selIds.indexOf(cardIdOf(card));
     card.classList.toggle('sel', pos >= 0);
     const badge = card.querySelector('.sel-check');
@@ -2694,8 +2705,26 @@ function selClick(e) {
   if (performance.now() - lpFiredAt < 700) return true;   // это отпускание долгого нажатия — игнор
   if (performance.now() - cardDragEndedAt < 600) return true;   // отпустили после перетаскивания — не выбор
   const card = e.target.closest('.book-card, .ab-card');
-  if (card && cardKindOf(card) === selKind) toggleSel(cardIdOf(card));
+  if (!card) return true;
+  // тап по стопке — выбрать/снять ВСЕ книги внутри неё (её кружок = «выбрано всё внутри»)
+  if (card.classList.contains('fold-card')) { toggleFoldSel(card); return true; }
+  if (cardKindOf(card) === selKind) toggleSel(cardIdOf(card));
   return true;
+}
+// выбрать/снять разом все книги внутри сборника: не все выбраны → добавляем недостающие,
+// все выбраны → снимаем их. Работают обычные кружки-действия (мусорка/скачать/коллекция).
+function toggleFoldSel(card) {
+  const f = folderById(card.dataset.foldId);
+  if (!f) return;
+  const want = (selKind === 'audio' || selKind === 'cataudio') ? 'audio' : 'book';
+  if (f.kind !== want) return;
+  const its = (f.items || []);
+  if (!its.length) return;
+  const all = its.every(id => selIds.includes(id));
+  if (all) for (const id of its) { const i = selIds.indexOf(id); if (i >= 0) selIds.splice(i, 1); }
+  else for (const id of its) if (!selIds.includes(id)) selIds.push(id);
+  if (!selIds.length) { exitSelMode(); return; }
+  refreshSelChecks();
 }
 // ══════════ перетаскивание карточек: ручной порядок книг и аудиокниг ══════════
 // Жест — продолжение долгого нажатия: подержал (карточка выбралась) и, НЕ отпуская, повёл —
@@ -2722,6 +2751,16 @@ function beginCardDrag(x, y) {
   const fromFold = card.closest('.fold-card.fold-open');
   if (fromFold) {
     const r = card.getBoundingClientRect();
+    const carousel = card.closest('.fold-carousel');
+    // метрика слотов для живого расступания: центры обёрток (экран) и шаг слота
+    const slots = carousel ? [...carousel.querySelectorAll('.fold-cbook')] : [];
+    const slotBase = slots.map(el => { const b = el.getBoundingClientRect(); return b.left + b.width / 2; });
+    const slotStep = slots.length > 1 ? (slotBase[1] - slotBase[0])
+      : (slots[0] ? slots[0].getBoundingClientRect().width + 10 : 0);
+    const sFrom = Math.max(0, slots.indexOf(card.closest('.fold-cbook')));
+    // на время перетаскивания снимаем scroll-snap карусели: иначе автопрокрутку у краёв
+    // (cardDragTick) snap отщёлкивает назад к ближайшей книге и движения не видно
+    if (carousel) carousel.classList.add('fold-dnd');
     // ВЫНОС: книжку на время делаем position:fixed на её текущем месте (координаты ЭКРАНА). Так она
     // сама выходит за обрезку карусели (fixed не клипается overflow) — не надо ломать overflow и
     // показывать прочие обложки; и прокрутка страницы её не тянет — не надо трогать touch-action.
@@ -2729,7 +2768,9 @@ function beginCardDrag(x, y) {
     card.style.left = r.left + 'px'; card.style.top = r.top + 'px';
     card.style.width = r.width + 'px'; card.style.height = r.height + 'px';
     card.style.margin = '0'; card.style.zIndex = '90';
-    cardDrag = { card, grid, items: [card], from: 0, to: 0, sec: fromFold, fixed: true,
+    cardDrag = { card, grid, items: [card], from: 0, to: 0, sec: fromFold, fixed: true, carousel,
+                 slots, slotBase, slotStep, sFrom, sTo: sFrom,
+                 slotScroll0: carousel ? carousel.scrollLeft : 0,
                  rects: [{ x: r.left, y: r.top, w: r.width, h: r.height }],   // координаты ЭКРАНА (fixed)
                  bounds: { x0: -1e5, y0: -1e5, x1: 1e5, y1: 1e5 },
                  sc: 1.06, pull: 0, magnetR: null, x0: x, y0: y, cx: x, cy: y, raf: 0,
@@ -2807,6 +2848,34 @@ function layoutCardSlots(d) {
   });
 }
 
+// живое расступание книжек в раскрытом сборнике: перетаскиваемая (fixed) едет за пальцем, а
+// обёртки-соседи сдвигаются по слотам с плавным transition, открывая щель там, куда книга встанет.
+// sTo — ближайший слот к пальцу, с поправкой на автопрокрутку карусели (её крутит cardDragTick).
+function foldLiveShift(d) {
+  if (!d.slots || d.slots.length < 2 || !d.slotStep) return;
+  const scrollDelta = (d.carousel ? d.carousel.scrollLeft : 0) - d.slotScroll0;
+  let to = d.sFrom, best = Infinity;
+  for (let i = 0; i < d.slotBase.length; i++) {
+    const q = Math.abs((d.slotBase[i] - scrollDelta) - d.cx);
+    if (q < best) { best = q; to = i; }
+  }
+  if (to === d.sTo) return;
+  d.sTo = to;
+  d.slots.forEach((el, i) => {
+    if (i === d.sFrom) { el.style.transform = ''; return; }   // сама перетаскиваемая обёртка (пустая) стоит на месте
+    let j = i;
+    if (d.sFrom < to && i > d.sFrom && i <= to) j = i - 1;
+    else if (d.sFrom > to && i >= to && i < d.sFrom) j = i + 1;
+    el.style.transform = (j !== i) ? `translateX(${(j - i) * d.slotStep}px)` : '';
+  });
+}
+// увели книжку за рамку (вынос) — соседи возвращаются на места
+function foldClearShift(d) {
+  if (!d.slots || d.sTo === d.sFrom) return;
+  d.sTo = d.sFrom;
+  for (const el of d.slots) el.style.transform = '';
+}
+
 // Книгу можно бросить в сборник: под пальцем она мягко притягивается к его центру и
 // чуть съёживается. Цель — карточка-стопка или шапка раскрытой секции; сам сборник и
 // книги, уже лежащие в нём, за цель не считаются.
@@ -2861,7 +2930,11 @@ function cardDragMove() {
     }
     // fixed-книжка выноса просто следует за пальцем (внутри рамки — крупнее, снаружи — чуть меньше);
     // магнит/слоты для неё не считаем
-    if (d.fixed) { d.card.style.transform = `translate(${dx}px, ${dy}px) scale(${out ? 1.02 : 1.06})`; return; }
+    if (d.fixed) {
+      d.card.style.transform = `translate(${dx}px, ${dy}px) scale(${out ? 1.02 : 1.06})`;
+      if (out) foldClearShift(d); else foldLiveShift(d);   // в рамке — соседи расступаются, за рамкой — возвращаются
+      return;
+    }
     if (out) { d.card.style.transform = `translate(${dx}px, ${dy}px) scale(1.02)`; return; }
   }
   setMagnet(d, magnetTargetAt(d, fx + scrollX, fy + scrollY));
@@ -2894,6 +2967,18 @@ function cardDragMove() {
 // у верхнего/нижнего края полка едет сама — иначе книгу с низа не поднять наверх
 function cardDragTick() {
   const d = cardDrag; if (!d) return;
+  // раскрытый сборник: у левого/правого края карусели листаем саму ленту, чтобы дотянуть
+  // перетаскиваемую книжку до дальнего слота (иначе за экран её не донести)
+  if (d.fixed && d.sec && !d.eject) {
+    const car = d.sec.querySelector('.fold-carousel');
+    if (car && car.scrollWidth > car.clientWidth + 1) {
+      const r = car.getBoundingClientRect(), E = 68, M = 16;
+      let h = 0;
+      if (d.cx < r.left + E) h = -M * (1 - Math.max(0, d.cx - r.left) / E);
+      else if (d.cx > r.right - E) h = M * (1 - Math.max(0, r.right - d.cx) / E);
+      if (h) car.scrollLeft += h;
+    }
+  }
   const EDGE = 100, MAX = 16;
   let v = 0;
   if (d.cy < EDGE) v = -MAX * (1 - d.cy / EDGE);
@@ -2922,7 +3007,31 @@ async function endCardDrag() {
       await takeOutOfFolder(d.sec.dataset.foldId, cardIdOf(card));
       return;
     }
-    // вернулась в рамку — доводим к месту в карусели и снимаем fixed
+    // не вынесли — переставляем книгу ВНУТРИ сборника на позицию, куда расступились соседи (d.sTo).
+    // Порядок пишем в folder.items; книги карусели доезжают FLIP-ом (ключи i:fold:book) без рывка.
+    const fid = d.sec && d.sec.dataset.foldId, f = fid ? folderById(fid) : null;
+    if (f && (f.items || []).length > 1 && d.sTo != null && d.sTo !== d.sFrom) {
+      const id = cardIdOf(card);
+      const next = (f.items || []).filter(x => x !== id);
+      next.splice(Math.max(0, Math.min(d.sTo, next.length)), 0, id);
+      if (next.join(',') !== (f.items || []).join(',')) {
+        f.items = next;
+        // прокрутку карусели вернём ВНУТРИ рендера (applyFoldKeepScroll) — ДО того, как flipCards
+        // снимет новые позиции. Иначе FLIP считает при scrollLeft=0, а поздний возврат прокрутки
+        // двигает всё разом → рывок на величину прокрутки. Округляем к слоту, чтобы scroll-snap
+        // потом не доснапил и не дёрнул. Соседи уже расступились — им доезжать почти нечего.
+        let keep = d.carousel ? d.carousel.scrollLeft : 0;
+        if (d.slotStep) keep = Math.round(keep / d.slotStep) * d.slotStep;
+        foldKeepScroll = { id: f.id, left: keep };
+        foldFlipBefore = cardRects(foldGridOf(f.kind));
+        try { await saveFolder(f); } catch {}
+        if (f.kind === 'audio') await renderAudioShelf(); else await renderShelf();
+        return;
+      }
+    }
+    // вернулась в рамку без перестановки — доводим к месту в карусели и снимаем fixed
+    foldClearShift(d);                                          // сбросить остаточные сдвиги соседей
+    if (d.carousel) d.carousel.classList.remove('fold-dnd');   // вернуть scroll-snap живой карусели
     card.style.transition = 'transform .2s cubic-bezier(.4, 0, .2, 1)';
     card.style.transform = 'translate(0, 0) scale(1)';
     await new Promise(r => setTimeout(r, 205));
@@ -3093,6 +3202,7 @@ async function deleteSelected() {
 // сборнике. Расформирование убирает только стопку — книги остаются на месте.
 let activeFolder = null;   // id раскрытого сборника (лист снизу)
 let foldFlipBefore = null; // снимок позиций перед ре-рендером — FLIP применяется СИНХРОННО в рендере
+let foldKeepScroll = null; // {id,left}: прокрутку карусели вернуть в рендере ДО flipCards (см. applyFoldKeepScroll)
 async function loadFolders() {
   try { state.folders = (await dbAll('folders')).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)); }
   catch { state.folders = []; }
@@ -3137,8 +3247,13 @@ function foldEntries(entries, kind) {
     if (!f) { out.push(en); continue; }                // свободная книга — сама по себе
     if (emitted.has(f.id)) continue;                   // сборник уже стоит выше — книгу поглощаем
     // в сборнике — только те его книги, что реально видны здесь (в коллекции их может быть часть)
-    const items = entries.filter(x => x.b && folderOf.get(x.b.id) === f).map(x => x.b);
+    let items = entries.filter(x => x.b && folderOf.get(x.b.id) === f).map(x => x.b);
     if (items.length < 2) { out.push({ b: en.b }); continue; }   // видна одна книга — показываем её
+    // порядок ВНУТРИ сборника — как в f.items (даёт ручную перестановку перетаскиванием);
+    // книги, которых в списке нет (напр. добавлены мимо), уходят в хвост
+    const ord = new Map((f.items || []).map((id, i) => [id, i]));
+    items = items.slice().sort((a, b) =>
+      (ord.has(a.id) ? ord.get(a.id) : 1e9) - (ord.has(b.id) ? ord.get(b.id) : 1e9));
     emitted.add(f.id);
     out.push({ f, items, open: activeFolder === f.id });
   }
@@ -3162,6 +3277,7 @@ function folderCardHtml(f, items, audio, open, cardFn) {
   return `<div class="${cls}" data-fold-id="${esc(f.id)}">
     <button class="fold-edit" data-foldedit="${esc(f.id)}" aria-label="${esc(t('foldRename'))}">${FOLD_PEN}</button>
     <button class="fold-x" data-foldbreak="${esc(f.id)}" aria-label="${esc(t('foldBreak'))}">✕</button>
+    <span class="sel-check fold-sel" aria-hidden="true"></span>
     <button class="fold-head" data-folder="${esc(f.id)}">
       <span class="fold-head-ic" aria-hidden="true">${FOLD_ICON}</span>
       <span class="fold-head-name"><span class="marq">${esc(f.name)}</span></span>
@@ -3420,6 +3536,15 @@ function setFoldCellW(grid) {
   if (cell && cell.offsetHeight) grid.style.setProperty('--fold-cell-h', cell.offsetHeight + 'px');
 }
 // снимок позиций карточек — для FLIP-переезда после перерисовки
+// после перестановки книги в сборнике карусель пересоздаётся при рендере со scrollLeft=0.
+// Возвращаем прокрутку ДО того, как flipCards снимет новые позиции — иначе FLIP считает при
+// scrollLeft=0, а поздний возврат прокрутки двигает всё разом и даёт рывок.
+function applyFoldKeepScroll(grid) {
+  if (!foldKeepScroll || !grid) return;
+  const car = grid.querySelector(`.fold-card[data-fold-id="${CSS.escape(foldKeepScroll.id)}"] .fold-carousel`);
+  if (car) car.scrollLeft = foldKeepScroll.left;
+  foldKeepScroll = null;
+}
 function cardRects(grid) {
   const m = new Map();
   if (!grid) return m;
@@ -5479,7 +5604,11 @@ async function grabImport(url) {
     let book = (state.books || []).find(b => b.src && b.src.k === 'grab' && b.src.slug === det.slug && b.src.site === det.site);
     let bid, cover, addedAt;
     const done = new Set(book ? (book.src.done || []) : []);
-    const titles = book ? (book.titles || []).slice() : [];
+    // главы храним под СТАБИЛЬНЫМ idx = их порядковый номер в отсортированном списке (si), и картинки
+    // именуем по нему же. Список скачанного держим отсортированным по si — тогда доехавшая позже
+    // глава встаёт на СВОЁ место, а не в хвост. Читалка ходит по toc, поэтому «дырка» до дозагрузки
+    // навигацию не ломает, а как глава доедет — сама встанет на позицию.
+    let entries = book ? (book.toc || []).map(x => ({ si: x.ch, t: x.t })) : [];   // {si, t}, отсортировано по si
     if (book) { bid = book.id; cover = book.cover || null; addedAt = book.addedAt || Date.now(); }
     else {
       bid = newId('b'); cover = null; addedAt = Date.now();
@@ -5494,17 +5623,17 @@ async function grabImport(url) {
     const saveRec = async grabbing => {
       await dbPut('books', {
         id: bid, title, author, lang: '', annotation: '', year: null, genre: isManga ? 'Манга' : '',
-        addedAt, cover: cover || null, toc: titles.map((tt, k) => ({ t: tt, ch: k })),
-        count: titles.length, titles: titles.slice(), chWords: titles.map(() => 0),
+        addedAt, cover: cover || null,
+        toc: entries.map(e => ({ t: e.t, ch: e.si })),
+        count: entries.length, titles: entries.map(e => e.t), chWords: entries.map(() => 0),
         src: { k: 'grab', slug: det.slug, site: det.site, host: det.host, done: [...done] }, grabbing,
       });
     };
 
     for (let i = 0; i < chs.length && !stop(); i++) {
-      const ch = chs[i], key = chKey(ch);
-      if (done.has(key)) { job.frac = (i + 1) / total; renderDlList(); continue; }   // уже скачана — пропуск
+      const ch = chs[i], key = chKey(ch), si = i;   // si — стабильная позиция главы по номеру
+      if (done.has(key)) { job.frac = (i + 1) / total; renderDlList(); continue; }   // уже есть — пропуск
       const data = i === 0 ? first : await G.chapter(det, ch);
-      const idx = titles.length;
       let html = '';
       if (isManga) {
         const pages = data.pages || [];
@@ -5512,7 +5641,7 @@ async function grabImport(url) {
         for (let p = 0; p < pages.length && !stop(); p++) {
           try {
             const got = await dlNative(await G.pageUrl(det, pages[p]), null, { 'Referer': 'https://' + det.host + '/' });
-            const name = 'c' + idx + 'p' + p;
+            const name = 'c' + si + 'p' + p;   // имя картинки — по стабильному si, а не по позиции в списке
             imgs.push({ book: bid, name, blob: got.blob });
             parts.push('<img data-i="' + name + '" alt="">');
             if (!cover) cover = got.blob;
@@ -5525,11 +5654,14 @@ async function grabImport(url) {
       } else {
         html = typeof data.content === 'string' ? data.content : '';
       }
-      const chTitle = ((ch.volume ? 'Том ' + ch.volume + '. ' : '') + 'Глава ' + ch.number + (ch.name ? '. ' + ch.name : '')).trim() || ('Глава ' + (idx + 1));
-      await dbChunk('chapters', [{ book: bid, idx, title: chTitle, html, plain: '' }]);
-      titles.push(chTitle); done.add(key);
+      const chTitle = ((ch.volume ? 'Том ' + ch.volume + '. ' : '') + 'Глава ' + ch.number + (ch.name ? '. ' + ch.name : '')).trim() || ('Глава ' + (si + 1));
+      await dbChunk('chapters', [{ book: bid, idx: si, title: chTitle, html, plain: '' }]);
+      // вставляем в список на место ПО si (отсортированно) — порядок всегда верный, даже если доехало не по очереди
+      const at = entries.findIndex(e => e.si > si);
+      if (at < 0) entries.push({ si, t: chTitle }); else entries.splice(at, 0, { si, t: chTitle });
+      done.add(key);
       await saveRec(done.size < total);
-      if (idx === 0) { invalidateShelfData(); state.books = sortShelf(await dbAll('books')); await renderShelf(); }
+      if (entries.length === 1) { invalidateShelfData(); state.books = sortShelf(await dbAll('books')); await renderShelf(); }
       job.frac = (i + 1) / total; renderDlList(); showProgress(T('grabProg', { title, n: i + 1, t: total }), job.frac);
     }
     await saveRec(done.size < total);
@@ -8846,6 +8978,7 @@ async function renderAudioShelf() {
     cardMarquee(box);   // одна бегущая строка
     foldGaps(box.querySelector('.ab-grid'));   // добивки вокруг раскрытого сборника
     setFoldCellW(box.querySelector('.ab-grid'));   // ширина книжки в сборнике = ширине ячейки
+    applyFoldKeepScroll(box.querySelector('.ab-grid'));   // прокрутку карусели вернуть ДО flipCards
     if (foldFlipBefore) { flipCards(box.querySelector('.ab-grid'), foldFlipBefore); foldFlipBefore = null; }   // FLIP синхронно
     if (selMode && selKind === 'audio' && activeCol) refreshSelChecks();   // выбор переживает перерисовку
     // счётчик — как у книг: сколько РЕАЛЬНО видно (с фильтрами и внутри коллекции)

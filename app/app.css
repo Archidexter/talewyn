@@ -1447,6 +1447,12 @@ body.sel-mode .fold-edit, body.sel-mode .fold-x { display: none; }
      по центру по вертикали, вокруг воздух. */
   flex: none;
   overflow-x: auto; scroll-snap-type: x mandatory;
+}
+/* во время перетаскивания книжки внутри сборника — без snap, иначе автопрокрутка у краёв не идёт */
+.fold-carousel.fold-dnd { scroll-snap-type: none; }
+/* соседи расступаются плавно, пока тащишь (сдвиг обёрток задаёт foldLiveShift) */
+.fold-carousel.fold-dnd .fold-cbook { transition: transform .16s cubic-bezier(.4, 0, .2, 1); }
+.fold-carousel {
   /* pan-x + pan-y: горизонтальный свайп листает карусель, вертикальный прокручивает полку.
      Вынос книжки не конфликтует с прокруткой: выносимая книжка на время делается position:fixed
      (в JS) — прокрутка страницы её не двигает, поэтому вертикаль карусели можно не блокировать. */
@@ -1507,6 +1513,10 @@ body.sel-mode .ab-card.sel .sel-check { color: #1b1206; border-color: var(--gild
 body.sel-mode .book-del, body.sel-mode .ab-del { display: none; }   /* в режиме выбора крестики прячем */
 body.sel-mode .book-card.sel .cover,
 body.sel-mode .ab-card.sel .ab-card-cover { outline: 2.5px solid var(--gild); outline-offset: 1px; }
+/* сборник в режиме выбора: свой кружок на месте ✕ (folderCardHtml), тап = выбрать всё внутри.
+   Книжки внутри карусели показывают свои кружки одинаково — и закрытой стопкой, и раскрытой:
+   их видно и можно листать, значит и выбирать поштучно тоже. Пересиливаем скрытие из .fold-cbook. */
+body.sel-mode .fold-cbook .sel-check { display: inline-flex; }
 
 /* красная кнопка-мусорка в стопке FAB — такой же кружок, как «по ссылке», но с красноватой
    заливкой; видна только в режиме выбора. Крышка мусорки приоткрывается при нажатии. */

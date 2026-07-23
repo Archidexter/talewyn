@@ -2,7 +2,7 @@
 /* AD.Talewyn — домашняя библиотека: полка книг + читалка + озвучка.
    Все данные живут на устройстве (IndexedDB), сервер не обязателен.   */
 
-const APP_VERSION = '1.2.46';
+const APP_VERSION = '1.2.51';
 const $ = sel => document.querySelector(sel);
 
 // диагностика: ошибки видны в атрибутах <html> (для headless-проверок)
@@ -211,6 +211,8 @@ const I18N = {
     addFile: 'Добавить файл',
     urlAdd: 'По ссылке',
     urlT: 'Вставить ссылку на файл',
+    grabEmpty: 'По ссылке ничего не нашлось', grabProg: '{title} — {n} из {t}', grabDone: 'Добавлено: {title}',
+    grabPartial: 'Скачано частично: {title} — вставь ту же ссылку, чтобы докачать остальное',
     urlGo: 'Скачать', urlDl: 'Скачиваю с {h}…',
     urlStream: 'Подключаю поток с {h}…', streamAdded: 'Аудиокнига по ссылке добавлена',
     streamAddedN: 'Аудиокнига по ссылке · треков: {n}', urlNoAudio: 'на странице не нашлось аудио',
@@ -275,6 +277,7 @@ const I18N = {
     foldBreak: 'Расформировать сборник', foldNameQ: 'Название сборника',
     foldBreakQ: 'Расформировать сборник «{n}»?',
     foldBreakYes: 'Расформировать', foldMade: 'Сборник «{n}»', foldBroken: 'Сборник расформирован',
+    foldActionQ: 'Что сделать со сборником «{n}»?', foldDeleteAll: 'Удалить всё', foldDeletedAll: 'Сборник и его содержимое удалены',
     foldOut: 'Убрать из сборника',
     timeLeft: '≈ {d} до конца', hUnit: 'ч', minUnit: 'мин',
     statStreak: 'серия', statToday: 'сегодня', dayShort: 'дн', wpm: 'сл/мин',
@@ -419,6 +422,8 @@ const I18N = {
     addFile: 'Add a file',
     urlAdd: 'From link',
     urlT: 'Paste a file link',
+    grabEmpty: 'Nothing found at this link', grabProg: '{title} — {n} of {t}', grabDone: 'Added: {title}',
+    grabPartial: 'Partly downloaded: {title} — paste the same link to resume',
     urlGo: 'Download', urlDl: 'Downloading from {h}…',
     urlStream: 'Connecting stream from {h}…', streamAdded: 'Audiobook added from link',
     streamAddedN: 'Audiobook from link · tracks: {n}', urlNoAudio: 'no audio found on the page',
@@ -483,6 +488,7 @@ const I18N = {
     foldBreak: 'Break up the set', foldNameQ: 'Set name',
     foldBreakQ: 'Break up the set "{n}"?',
     foldBreakYes: 'Break up', foldMade: 'Set "{n}"', foldBroken: 'Set broken up',
+    foldActionQ: 'What to do with the set "{n}"?', foldDeleteAll: 'Delete all', foldDeletedAll: 'Set and its contents deleted',
     foldOut: 'Take out of the set',
     timeLeft: '≈ {d} left', hUnit: 'h', minUnit: 'min',
     statStreak: 'streak', statToday: 'today', dayShort: 'd', wpm: 'wpm',
@@ -3465,15 +3471,30 @@ async function renameFolder(id) {
   try { await saveFolder(f); } catch {}
   if (f.kind === 'audio') renderAudioShelf(); else await renderShelf();
 }
-// расформировать: уходит только стопка, книги остаются на полке
+// крестик сборника → выбор: расформировать (книги остаются) или удалить всё содержимое
 async function breakFolder(id) {
   const f = folderById(id); if (!f) return;
-  if (!(await uiConfirm(T('foldBreakQ', { n: f.name }), { yes: t('foldBreakYes'), danger: true }))) return;
+  const choice = await uiConfirm(T('foldActionQ', { n: f.name }),
+    { mid: t('foldBreakYes'), yes: t('foldDeleteAll'), no: t('dlgCancel'), danger: true });
+  if (choice !== 'mid' && choice !== true) return;   // отмена / тап мимо
+  const items = (f.items || []).slice();
   state.folders = (state.folders || []).filter(x => x.id !== id);
   if (activeFolder === id) activeFolder = null;
   try { await dbDel('folders', id); } catch {}
-  if (f.kind === 'audio') renderAudioShelf(); else await renderShelf();
-  showToast(t('foldBroken'));
+  if (choice === true) {   // удалить всё: и стопку, и её содержимое
+    for (const itemId of items) {
+      try {
+        if (f.kind === 'audio') { await dropAudiobookLeftovers(itemId); await purgeFromCollections('audio', itemId); }
+        else await deleteBook(itemId);
+      } catch {}
+    }
+    if (f.kind === 'audio') { await loadAudiobooks(); renderAudioShelf(); }
+    else { invalidateShelfData(); state.books = sortShelf(await dbAll('books')); await renderShelf(); }
+    showToast(t('foldDeletedAll'));
+  } else {                  // расформировать: книги остаются на полке
+    if (f.kind === 'audio') renderAudioShelf(); else await renderShelf();
+    showToast(t('foldBroken'));
+  }
 }
 
 // ══════════════════ коллекции («свои полки») ══════════════════
@@ -3561,6 +3582,8 @@ function closeColDrawer() {
 }
 function toggleColDrawer() { colDrawerOpen ? closeColDrawer() : openColDrawer(); }
 
+// иконка книги слева у коллекции — в стиле иконок каталога (16px, тонкая обводка, золото)
+const COL_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.6C10.4 5.2 7.9 4.6 4 4.6V18c3.9 0 6.4.6 8 2 1.6-1.4 4.1-2 8-2V4.6c-3.9 0-6.4.6-8 2z"/><path d="M12 6.6V20"/></svg>';
 function renderColDrawer() {
   renderCatSection();   // секция «Каталог» над коллекциями живёт в том же шкафу
   const list = $('#col-list'), dr = $('#col-drawer');
@@ -3569,7 +3592,7 @@ function renderColDrawer() {
   dr.classList.toggle('col-empty', !cols.length);
   list.innerHTML = cols.map(c =>
     `<div class="col-item${activeCol === c.id ? ' active' : ''}" data-col="${c.id}">`
-    + `<span class="col-grip" data-colgrip aria-hidden="true"><i></i><i></i><i></i></span>`
+    + `<span class="col-grip" data-colgrip aria-hidden="true">${COL_ICON}</span>`
     + `<span class="col-item-name">${esc(c.name)}</span>`
     + `<span class="col-item-count">${(c.items || []).length}</span>`
     + `<button class="col-item-del" data-coledit="${c.id}" aria-label="${esc(t('colRenameT'))}">`
@@ -4167,7 +4190,23 @@ async function catOpenNode(path) {
 }
 
 // список книг в сетку по адресу (выбор категории повторно, поиск, повтор после ошибки)
-async function catShowList(url, title) {
+// URL серверного поиска OPDS: подставляем запрос в {searchTerms}, а прочие плейсхолдеры
+// OpenSearch ({startIndex}, {count} и т.п.) вырезаем и чистим строку запроса — иначе многие
+// серверы не понимают литеральные {…} в URL и отдают пустой фид («здесь пусто»).
+function catSearchUrl(tpl, query) {
+  let url = String(tpl).replace(/\{searchTerms\}/g, encodeURIComponent(query));
+  url = url.replace(/\{[^}]*\}/g, '');                 // выкинуть незаполненные {…}
+  const qi = url.indexOf('?');
+  if (qi >= 0) {                                        // убрать параметры, ставшие пустыми
+    const params = url.slice(qi + 1).split('&').filter(p => {
+      const eq = p.indexOf('=');
+      return p && eq !== 0 && (eq < 0 || p.slice(eq + 1) !== '');
+    });
+    url = url.slice(0, qi) + (params.length ? '?' + params.join('&') : '');
+  }
+  return url;
+}
+async function catShowList(url, title, hop) {
   if (selMode && selKind.startsWith('cat')) exitSelMode();   // сменили раздел — выбор устарел
   const cat = activeCat, my = ++catSeq;
   cat.lastUrl = url;
@@ -4177,8 +4216,16 @@ async function catShowList(url, title) {
     const Cat = await catalogMod();
     const feed = await Cat.fetchFeed(url, { auth: cat.auth, cfg: cat.cfg });
     if (activeCat !== cat || catSeq !== my) return;
-    cat.loading = false;
     cat.entries = feed.entries.filter(e => e.kind === 'book');
+    // Фид вернул не книги, а навигацию (Flibusta: поиск → выбор «Поиск авторов / Поиск книг»).
+    // Сами уходим в книжную ветку, чтобы не показывать «здесь пусто». Не глубже 2 переходов.
+    if (!cat.entries.length && (hop || 0) < 2) {
+      const navs = feed.entries.filter(e => e.kind === 'nav' && e.href);
+      const toBooks = navs.find(n => /(?:searchtype|type)=books?\b/i.test(n.href) || /(?:книг|books?)\b/i.test(n.title || ''))
+                      || (navs.length === 1 ? navs[0] : null);
+      if (toBooks) { catShowList(toBooks.href, title, (hop || 0) + 1); return; }
+    }
+    cat.loading = false;
     cat.next = feed.next;
     if (title !== undefined) { cat.curUrl = url; cat.curTitle = title; }
   } catch {
@@ -4411,6 +4458,7 @@ function catDownload(entry, extCtx) {
   if (!netOnline) { probeNet(); showToast(t('urlNoNet')); return; }
   catBusyKeys.add(entry.key);
   const job = dlAdd('book', entry.title);
+  job.catKey = entry.key;   // чтобы отмена сразу сняла «загрузку» с обложки (натив-закачку не прервать)
   // снимок источника: закачка доживёт до конца, даже если из каталога уже вышли
   const ctx = extCtx || { cfg: activeCat && activeCat.cfg, auth: (activeCat && activeCat.auth) || '' };
   catDlRender();
@@ -4681,7 +4729,7 @@ function buildCatFiltersPanel(panelSel) {
       }
       activeCat.searchQ = val;
       if (activeCat.adapter) catAdapterShow({ q: val });
-      else catShowList(activeCat.searchTpl.replace('{searchTerms}', encodeURIComponent(val)));
+      else catShowList(catSearchUrl(activeCat.searchTpl, val));
     } else { f.q = val; catRender(); }   // источник без поиска — фильтруем загруженное
   };
   if (q) {
@@ -5394,12 +5442,118 @@ function cookieChallenge(html) {
 }
 
 let urlBusy = false;   // свой флаг: importBusy трогать нельзя — doImport выйдет на первой строке
+// ── захват книги/манги со страницы-читалки: главы из открытого API сайта → CBZ/EPUB → полка.
+// Ленивый модуль grab.js (детект по хосту, названий сайтов в UI нет). Манга — по главам в сборник
+// (цельный файл на 300+ глав = сотни МБ и краш телефона на распаковке), текст — одним EPUB. ──
+async function grabMod() {
+  if (!window.WebGrab) await loadLazyScript('grab.js?v=1');
+  return window.WebGrab;
+}
+// true — ссылку распознали и взяли на себя; false — пусть importFromUrl обрабатывает как обычно
+// Инкрементальный и возобновляемый захват. Книга заводится СРАЗУ (пустой) и после КАЖДОЙ
+// скачанной главы обновляется — что скачано, то уже читается и не теряется при сворачивании/крахе.
+// Скачанные главы помечаются в src.done; повторная вставка той же ссылки находит книгу по slug
+// и докачивает только недостающее (заодно подхватит новые главы, если тайтл продолжился).
+// Манга (картинки → страницы-комикс) и ранобэ (текст глав) — единой трубой, прямо в книгу.
+async function grabImport(url) {
+  const G = await grabMod();
+  const det = G.detect(url);
+  if (!det) return false;
+  if (!netOnline) { probeNet(); showToast(t('urlNoNet')); return true; }
+  urlBusy = true;
+  const job = dlAdd('url', det.host); job.status = 'active'; renderDlList();
+  const stop = () => job.cancelled;
+  const chKey = ch => (ch.volume ?? '') + '/' + (ch.number ?? '');
+  try {
+    const meta = await G.info(det).catch(() => ({}));
+    const title = ((meta.rus_name || meta.name || meta.eng_name || det.slug.replace(/^\d+--/, '')) + '').trim() || det.slug;
+    const author = ((meta.authors || []).map(a => (a && a.name) || a).filter(Boolean).join(', ')) || '';
+    let chs = await G.chapters(det);
+    if (!chs.length) throw new Error(t('grabEmpty'));
+    chs = chs.slice().sort((a, b) => (parseFloat(a.volume) - parseFloat(b.volume)) || (parseFloat(a.number) - parseFloat(b.number)));
+    const total = chs.length;
+    const first = await G.chapter(det, chs[0]);
+    const isManga = Array.isArray(first.pages) && first.pages.length > 0;
+
+    // уже начатая книга этого источника? — продолжаем её (дозагрузка), а не заводим новую
+    let book = (state.books || []).find(b => b.src && b.src.k === 'grab' && b.src.slug === det.slug && b.src.site === det.site);
+    let bid, cover, addedAt;
+    const done = new Set(book ? (book.src.done || []) : []);
+    const titles = book ? (book.titles || []).slice() : [];
+    if (book) { bid = book.id; cover = book.cover || null; addedAt = book.addedAt || Date.now(); }
+    else {
+      bid = newId('b'); cover = null; addedAt = Date.now();
+      await dbPut('books', {
+        id: bid, title, author, lang: '', annotation: '', year: null, genre: isManga ? 'Манга' : '',
+        addedAt, cover: null, toc: [], count: 0, titles: [], chWords: [],
+        src: { k: 'grab', slug: det.slug, site: det.site, host: det.host, done: [] }, grabbing: true,
+      });
+      invalidateShelfData(); state.books = sortShelf(await dbAll('books')); await renderShelf();
+    }
+    // запись книги после каждой главы — прогресс сохраняется, книга остаётся читаемой на любом шаге
+    const saveRec = async grabbing => {
+      await dbPut('books', {
+        id: bid, title, author, lang: '', annotation: '', year: null, genre: isManga ? 'Манга' : '',
+        addedAt, cover: cover || null, toc: titles.map((tt, k) => ({ t: tt, ch: k })),
+        count: titles.length, titles: titles.slice(), chWords: titles.map(() => 0),
+        src: { k: 'grab', slug: det.slug, site: det.site, host: det.host, done: [...done] }, grabbing,
+      });
+    };
+
+    for (let i = 0; i < chs.length && !stop(); i++) {
+      const ch = chs[i], key = chKey(ch);
+      if (done.has(key)) { job.frac = (i + 1) / total; renderDlList(); continue; }   // уже скачана — пропуск
+      const data = i === 0 ? first : await G.chapter(det, ch);
+      const idx = titles.length;
+      let html = '';
+      if (isManga) {
+        const pages = data.pages || [];
+        const imgs = [], parts = [];
+        for (let p = 0; p < pages.length && !stop(); p++) {
+          try {
+            const got = await dlNative(await G.pageUrl(det, pages[p]), null, { 'Referer': 'https://' + det.host + '/' });
+            const name = 'c' + idx + 'p' + p;
+            imgs.push({ book: bid, name, blob: got.blob });
+            parts.push('<img data-i="' + name + '" alt="">');
+            if (!cover) cover = got.blob;
+          } catch {}
+        }
+        if (stop()) break;
+        if (!imgs.length) { job.frac = (i + 1) / total; renderDlList(); continue; }
+        await dbChunk('images', imgs);   // главу — на диск, память не копим
+        html = parts.join('');
+      } else {
+        html = typeof data.content === 'string' ? data.content : '';
+      }
+      const chTitle = ((ch.volume ? 'Том ' + ch.volume + '. ' : '') + 'Глава ' + ch.number + (ch.name ? '. ' + ch.name : '')).trim() || ('Глава ' + (idx + 1));
+      await dbChunk('chapters', [{ book: bid, idx, title: chTitle, html, plain: '' }]);
+      titles.push(chTitle); done.add(key);
+      await saveRec(done.size < total);
+      if (idx === 0) { invalidateShelfData(); state.books = sortShelf(await dbAll('books')); await renderShelf(); }
+      job.frac = (i + 1) / total; renderDlList(); showProgress(T('grabProg', { title, n: i + 1, t: total }), job.frac);
+    }
+    await saveRec(done.size < total);
+    invalidateShelfData(); state.books = sortShelf(await dbAll('books'));
+    hideToast();
+    setShelfTab('books'); await renderShelf();
+    if (!stop()) showToast(T(done.size >= total ? 'grabDone' : 'grabPartial', { title }));
+  } catch (e) {
+    hideToast();
+    showToast(T('urlFail', { e: (e && e.message) || t('urlBlocked') }));
+  } finally {
+    dlRemove(job); urlBusy = false; renderDlList();
+  }
+  return true;
+}
+
 async function importFromUrl() {
   if (urlBusy || importBusy) return;
   let url = await uiPrompt(t('urlT'), { ph: 'https://…/book.fb2', yes: t('urlGo') });
   if (!url) return;
   if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
   let u; try { u = new URL(url); } catch { showToast(t('urlBad')); return; }
+  // страница-читалка (манга/ранобэ) → свой адаптер: сам определит тип и соберёт CBZ/EPUB
+  if (/(?:^|\.)[a-z]+lib\.(?:me|org|social|top|life|club|in)$/i.test(u.hostname) && await grabImport(url)) return;
   // прямая ссылка на аудио → слушаем ПОТОКОМ, не скачивая в память (аудиокниги большие).
   // расширение проверяем по пути URL, чтобы ?query не мешал.
   let audioUrl = false;
@@ -5478,15 +5632,29 @@ const DL_ICON = {
   url: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>',
 };
 let dlJobs = [], dlSeq = 0;
+// пока в очереди есть незавершённые загрузки — держим нативный foreground-сервис (не даёт
+// процессу умереть в фоне, чтобы загрузка при свёрнутом приложении не оборвалась)
+function syncBgDownload() {
+  const bd = window.AndroidBgDownload;
+  if (!bd) return;
+  const active = dlJobs.filter(j => !j.cancelled);
+  try {
+    if (active.length) bd.start(active.length > 1 ? (active.length + ' загрузок') : ((active[0] && active[0].title) || 'Загрузка'));
+    else bd.stop();
+  } catch {}
+}
 function dlAdd(kind, title, count) {
   const j = { id: ++dlSeq, kind, title: title || '', count: count || 0, done: 0, frac: null, status: 'queued', cancelled: false, abort: null };
-  dlJobs.push(j); renderDlList(); return j;
+  dlJobs.push(j); renderDlList(); syncBgDownload(); return j;
 }
-function dlRemove(j) { if (!j) return; dlJobs = dlJobs.filter(x => x !== j); renderDlList(); }
+function dlRemove(j) { if (!j) return; dlJobs = dlJobs.filter(x => x !== j); renderDlList(); syncBgDownload(); }
 function dlCancel(id) {
   const j = dlJobs.find(x => x.id === +id); if (!j) return;
   j.cancelled = true;                        // активная аудиокнига увидит флаг между треками
-  if (j.abort) { try { j.abort(); } catch {} }   // прервать текущую закачку
+  if (j.abort) { try { j.abort(); } catch {} }   // прервать текущую закачку (web); натив не прервать
+  // каталог: снять «загрузку» с обложки и разблокировать «скачать» СРАЗУ, не дожидаясь,
+  // пока непрерываемая нативная закачка сама доедет до конца (её результат отбросится по cancelled)
+  if (j.catKey) { catBusyKeys.delete(j.catKey); if (typeof catDlRender === 'function') catDlRender(); }
   dlRemove(j);
 }
 function renderDlList() {
@@ -10619,13 +10787,17 @@ function showProgress(msg, frac) {
 // кастомный диалог подтверждения вместо системного confirm() — в стиле приложения.
 // Возвращает Promise<boolean>: true — «да», false — отмена/скрим/Esc/системная «назад».
 let confirmResolve = null;
-function uiConfirm(message, { yes, no, danger = false } = {}) {
+function uiConfirm(message, { yes, no, mid, danger = false, midDanger = false } = {}) {
   const modal = $('#confirm-modal'), scrim = $('#confirm-scrim');
-  const yesBtn = $('#confirm-yes'), noBtn = $('#confirm-no');
+  const yesBtn = $('#confirm-yes'), noBtn = $('#confirm-no'), midBtn = $('#confirm-mid');
   $('#confirm-msg').textContent = message;
   $('#confirm-field').hidden = true;   // обычный вопрос — без поля ввода (его включает uiPrompt)
   yesBtn.textContent = yes || t('dlgOk');
   noBtn.textContent = no || t('dlgCancel');
+  // третья кнопка-действие (между «да» и «нет») — только если передан mid; иначе диалог обычный да/нет
+  if (mid) { midBtn.textContent = mid; midBtn.hidden = false; midBtn.classList.toggle('danger', !!midDanger); }
+  else midBtn.hidden = true;
+  $('#confirm-modal .confirm-actions').classList.toggle('threeway', !!mid);
   yesBtn.classList.toggle('danger', !!danger);
   if (confirmResolve) { const r = confirmResolve; confirmResolve = null; r(false); }
   scrim.hidden = false; modal.hidden = false;
@@ -10695,6 +10867,7 @@ function bindUI() {
   // кастомный диалог подтверждения
   $('#confirm-yes').addEventListener('click', () => closeConfirm(true));
   $('#confirm-no').addEventListener('click', () => closeConfirm(false));
+  $('#confirm-mid').addEventListener('click', () => closeConfirm('mid'));
   $('#confirm-scrim').addEventListener('click', () => closeConfirm(false));
   // Тап по пустому месту закрывает диалог. Слушаем саму модалку: она растянута на весь
   // экран ПОВЕРХ скрима, поэтому до скрима тап просто не доходил. Проверяем, что попали

@@ -25,10 +25,16 @@
     return { site, slug: s[1], host: u.hostname };
   }
 
+  // Токен аккаунта: некоторые разделы не отдают содержимое главы анонимно (список глав приходит,
+  // а страницы — «Not Found»). С токеном те же запросы отвечают нормально. Ставится снаружи.
+  let token = '';
+  const setToken = t => { token = String(t || '').trim(); };
+
   async function apiGet(path, d) {
     const url = API + path;
     const headers = { 'Accept': 'application/json', 'Site-Id': String(d.site), 'User-Agent': UA,
                       'Referer': 'https://' + (d.host || 'mangalib.me') + '/' };
+    if (token) headers['Authorization'] = 'Bearer ' + token;
     if (isNative && capHttp) {
       const r = await capHttp.request({ url, method: 'GET', responseType: 'json', headers,
                                         connectTimeout: 15000, readTimeout: 30000 });
@@ -54,7 +60,12 @@
       try { imgServers = (await apiGet('/constants?fields[]=imageServers', d)).data.imageServers || []; }
       catch { imgServers = []; }
     }
-    const pick = imgServers.find(s => s.id === 'main') || imgServers.find(s => s.id === 'secondary') || imgServers[0];
+    // В ответе перечислены серверы ВСЕХ разделов, и id повторяются (main встречается несколько раз).
+    // Берём только заявленные для нашего раздела (site_ids) — иначе уедем на чужой CDN и получим 403.
+    const mine = imgServers.filter(s => Array.isArray(s.site_ids) ? s.site_ids.includes(d.site) : true);
+    const pool = mine.length ? mine : imgServers;
+    const pick = pool.find(s => s.id === 'main') || pool.find(s => s.id === 'secondary')
+              || pool.find(s => s.id === 'compress') || pool[0];
     return (pick && pick.url) || 'https://img2.imglib.info';
   }
   async function pageUrl(d, page) {
@@ -108,5 +119,5 @@
     return zipSync(files, {});
   }
 
-  window.WebGrab = { detect, info, chapters, chapter, imageBase, pageUrl, buildCbz, buildEpub };
+  window.WebGrab = { detect, info, chapters, chapter, imageBase, pageUrl, buildCbz, buildEpub, setToken };
 })();

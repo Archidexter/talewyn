@@ -10,7 +10,7 @@
 if(th==='auto')th=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <link rel="stylesheet" href="fonts.css?v=9">
-<link rel="stylesheet" href="app.css?v=281">
+<link rel="stylesheet" href="app.css?v=285">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -361,6 +361,12 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     <button class="icon-btn" id="tr-btn" data-i18n-title="trHdrT" title="Перевод главы">
       <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a13.5 13.5 0 0 1 0 18a13.5 13.5 0 0 1 0-18z"/></svg>
     </button>
+    <button class="icon-btn" id="reader-fs-btn" data-i18n-title="fsT" title="Полный экран" aria-label="Полный экран">
+      <!-- ВХОД в фуллскрин — углы наружу (развернуть) -->
+      <svg class="fs-ico fs-ico-open" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+      <!-- ВЫХОД из фуллскрина — углы внутрь (свернуть) -->
+      <svg class="fs-ico fs-ico-close" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></svg>
+    </button>
     <button class="icon-btn" id="reader-settings-btn" data-i18n-title="settingsT" title="Настройки">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
     </button>
@@ -383,13 +389,25 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     <div class="chapter-body" id="chapter-body"></div>
   </article>
 
-  <!-- Навигация по главам вынесена из текста: закреплена внизу экрана, «плавает» над
-       текстом, только стрелки. Прячется вниз при прокрутке вперёд (см. обработчик scroll).
+  <!-- Нижняя панель чтения: стрелки глав по краям держат полосу-перемотку посередине,
+       подальше от скруглённых углов экрана. Весь блок «плавает» над нижней гранью и
+       прячется вниз (класс .hidden) вместе с шапкой и в полноэкранном режиме.
        ID кнопок прежние — к ним обращаются edge-nav и клавиши-стрелки. -->
   <nav class="reader-fabnav" id="reader-fabnav">
     <button class="fabnav-btn" id="prev-btn" data-i18n-title="prevChT" title="Предыдущая глава" aria-label="Предыдущая глава">
       <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
     </button>
+    <!-- Полоса-перемотка по книге (все форматы): тянешь ползунок — прыгаешь по главам.
+         БЕЗ атрибута hidden — он даёт display:none!important (глобальный сброс) и схлопывает
+         flex-слот, отчего правая стрелка прыгала к левой. Полоса всегда в потоке; при скрытии
+         шапки весь док уезжает вниз целиком (.hidden), вместе с полосой. -->
+    <div id="readseek">
+      <div id="readseek-track">
+        <div id="readseek-fill"></div>
+        <div id="readseek-bubble" aria-hidden="true"></div>
+        <div id="readseek-thumb"></div>
+      </div>
+    </div>
     <button class="fabnav-btn" id="next-btn" data-i18n-title="nextChT" title="Следующая глава" aria-label="Следующая глава">
       <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
     </button>
@@ -847,6 +865,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=358"></script>
+<script src="app.js?v=362"></script>
 </body>
 </html>

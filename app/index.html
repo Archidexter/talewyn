@@ -10,7 +10,7 @@
 if(th==='auto')th=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <link rel="stylesheet" href="fonts.css?v=9">
-<link rel="stylesheet" href="app.css?v=279">
+<link rel="stylesheet" href="app.css?v=280">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -394,6 +394,16 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
       <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
     </button>
   </nav>
+
+  <!-- Нижняя полоса-перемотка по главам (только комикс): тянешь ползунок — прыгаешь по книге.
+       Видна, пока показана шапка; в фуллскрине прячется вместе с ней. -->
+  <div id="readseek" hidden>
+    <div id="readseek-track">
+      <div id="readseek-fill"></div>
+      <div id="readseek-bubble" aria-hidden="true"></div>
+      <div id="readseek-thumb"></div>
+    </div>
+  </div>
 </div>
 
 <!-- ══════════ Аудиокнига: плеер ══════════ -->
@@ -847,6 +857,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=355"></script>
+<script src="app.js?v=356"></script>
 </body>
 </html>

@@ -1108,6 +1108,40 @@ pointer-events: none;
 transition: transform .28s ease, opacity .28s ease;
 }
 .reader-fabnav.hidden { transform: translateY(calc(100% + 24px)); opacity: 0; }
+#readseek {
+position: fixed; z-index: 47; left: 0; right: 0;
+bottom: calc(8px + max(env(safe-area-inset-bottom, 0px), var(--sab, 0px)));
+padding: 12px max(16px, max(env(safe-area-inset-left, 0px), var(--sal, 0px)))
+4px max(16px, max(env(safe-area-inset-right, 0px), var(--sar, 0px)));
+touch-action: none;   
+transition: opacity .22s ease, transform .22s ease;
+}
+#readseek[hidden] { display: block; opacity: 0; transform: translateY(14px); pointer-events: none; }
+#readseek-track {
+position: relative; height: 6px; border-radius: 3px;
+background: color-mix(in srgb, var(--elev) 78%, transparent);
+box-shadow: 0 1px 8px rgb(0 0 0 / .4), inset 0 0 0 1px var(--border);
+backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+#readseek-fill {
+position: absolute; left: 0; top: 0; height: 100%; width: 0; border-radius: 3px;
+background: linear-gradient(90deg, var(--accent), var(--accent-hi));
+}
+#readseek-thumb {
+position: absolute; top: 50%; left: 0; width: 15px; height: 15px; border-radius: 50%;
+transform: translate(-50%, -50%); background: var(--accent-hi);
+box-shadow: 0 1px 5px rgb(0 0 0 / .55), 0 0 0 2px var(--bg);
+}
+#readseek.grabbing #readseek-thumb { width: 19px; height: 19px; }
+#readseek-bubble {
+position: absolute; bottom: 100%; left: 0; transform: translate(-50%, -8px);
+padding: 3px 10px; border-radius: 9px; font-size: 12.5px; font-weight: 700;
+line-height: 1.3; color: var(--text); background: var(--elev);
+border: 1px solid var(--border); box-shadow: 0 5px 16px rgb(0 0 0 / .45);
+white-space: nowrap; opacity: 0; transition: opacity .14s; pointer-events: none;
+}
+#readseek-bubble.on { opacity: 1; }
+body.reader-comic .reader-fabnav { display: none; }
 .fabnav-btn {
 pointer-events: auto;
 width: 44px; height: 44px; border-radius: 50%; flex: none;

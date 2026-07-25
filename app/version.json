@@ -1,14 +1,14 @@
 {
-  "web": "1.2.83",
+  "web": "1.2.87",
   "native": "1.2.80",
-  "bundleUrl": "https://github.com/Archidexter/talewyn/releases/download/web-1.2.83/bundle-1.2.83.zip",
+  "bundleUrl": "https://github.com/Archidexter/talewyn/releases/download/web-1.2.87/bundle-1.2.87.zip",
   "apkUrl": "https://github.com/Archidexter/talewyn/releases/download/apk-1.2.80/AD.Talewyn-1.2.80.apk",
   "notes": "",
   "apkSha256": "2a4c0f099e968f0ecef65ab1ad44375ce415ea4db6b4d3f80cbe368d0088e5d7",
   "apkSize": 10726919,
   "bundleUrls": [
-    "https://github.com/Archidexter/talewyn/releases/download/web-1.2.83/bundle-1.2.83.zip",
-    "https://huggingface.co/datasets/Archidexter/talewyn-assets/resolve/main/web/bundle-1.2.83.zip"
+    "https://github.com/Archidexter/talewyn/releases/download/web-1.2.87/bundle-1.2.87.zip",
+    "https://huggingface.co/datasets/Archidexter/talewyn-assets/resolve/main/web/bundle-1.2.87.zip"
   ],
   "apkUrls": [
     "https://github.com/Archidexter/talewyn/releases/download/apk-1.2.80/AD.Talewyn-1.2.80.apk",

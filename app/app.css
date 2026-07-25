@@ -78,16 +78,36 @@ html.t-bordo {
 --shadow-card: 0 2px 4px rgb(0 0 0 / .45), 0 18px 40px -16px rgb(0 0 0 / .62);
 color-scheme: dark;
 }
-html.t-black {
---bg: #151719; --elev: #1c2022; --elev2: #242a2b; --text: #d0d4d7; --dim: #a9afb2;
---faint: #7d8181; --border: #3f4b48; --border-strong: #4e5b57;
---accent: #a9afb2; --accent-hi: #d0d4d7; --accent2: #7d8181; --gild: #b3b8bb;
---accent-soft: rgb(169 175 178 / .18); --accent2-soft: rgb(125 129 129 / .16);
---mark: #2b3233; --danger: #d9736a;
---btn-grad: linear-gradient(180deg, #d0d4d7, #a9afb2);
---btn-ink: #151719;
---shadow-card: 0 2px 4px rgb(0 0 0 / .5), 0 18px 40px -16px rgb(0 0 0 / .7);
+html.t-art {
+--bg: #0d0d0f; --elev: #17171b; --elev2: #202026; --text: #f4f3ee; --dim: #bcbcbb;
+--faint: #83838a; --border: #34343b; --border-strong: #48484f;
+--accent: #e7e3d8; --accent-hi: #f5f2ea; --accent2: #bd8890; --gild: #d8ccb3;
+--accent-soft: rgb(231 227 216 / .14); --accent2-soft: rgb(189 136 144 / .16);
+--mark: #34343c; --danger: #e0796b;
+--btn-grad: linear-gradient(180deg, #efece3, #cfcbbe);
+--btn-ink: #14141a;
+--shadow-card: 0 2px 4px rgb(0 0 0 / .55), 0 18px 40px -16px rgb(0 0 0 / .78);
 color-scheme: dark;
+}
+html.t-ink {
+--bg: #e8e0cd; --elev: #f1ecdc; --elev2: #ddd5bd; --text: #2c2b24; --dim: #5e6a5e;
+--faint: #7c795f; --border: #cabfa1; --border-strong: #b4a985;
+--accent: #4f6b60; --accent-hi: #3d564c; --accent2: #94663f; --gild: #9c7b40;
+--accent-soft: #d6ddd2; --accent2-soft: #e3d9bd; --mark: #d9d39c; --danger: #a8503a;
+--btn-grad: linear-gradient(180deg, #587466, #45604f);
+--btn-ink: #f2ecdd;
+--shadow-card: 0 1px 2px rgb(48 52 42 / .08), 0 10px 28px -14px rgb(48 52 42 / .24);
+color-scheme: light;
+}
+html.t-plush {
+--bg: #f4eaea; --elev: #fbf3f3; --elev2: #eee1e3; --text: #453945; --dim: #8a7290;
+--faint: #a493a8; --border: #e6d4d9; --border-strong: #d6bfc7;
+--accent: #8f6a91; --accent-hi: #74547a; --accent2: #8f96b8; --gild: #d99a3a;
+--accent-soft: #ecdfed; --accent2-soft: #e3e5f1; --mark: #f2dc9e; --danger: #d9737f;
+--btn-grad: linear-gradient(180deg, #9a76a0, #7f5a86);
+--btn-ink: #fbf3f6;
+--shadow-card: 0 1px 2px rgb(88 58 74 / .08), 0 10px 28px -14px rgb(88 58 74 / .2);
+color-scheme: light;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 [hidden] { display: none !important; }
@@ -284,6 +304,7 @@ background: var(--accent); border: 2px solid var(--elev);
 #filter-btn.active svg path,
 #bm-list-btn.active svg path,
 #bm-btn.active svg path { fill: var(--gild); }
+#filter-btn.active, #bm-list-btn.active, #bm-btn.active { color: var(--gild); }
 #review-btn.rated, #ab-review-btn.rated { color: var(--gild); }
 #review-btn.rated svg path, #ab-review-btn.rated svg path { fill: var(--gild); }
 #shelf-continue .cont-card, #tab-audio .cont-card {
@@ -1615,7 +1636,13 @@ transition: color .15s ease, font-size .15s ease;
 .tr-pk-item.sel { color: var(--gild); font-size: 17px; font-weight: 600; }
 .chips { display: flex; gap: 8px; }
 .chips > .chip { flex: 1 1 0; min-width: 0; }
-.themes { display: flex; gap: 2px; justify-content: center; flex-wrap: wrap; }
+.themes {
+display: flex; gap: 8px; flex-wrap: nowrap;
+overflow-x: auto; overscroll-behavior-x: contain; touch-action: pan-x pan-y;
+-webkit-overflow-scrolling: touch; scrollbar-width: none;
+padding: 4px 8px 14px;
+}
+.themes::-webkit-scrollbar { display: none; }
 .themes .swatch { flex: 0 0 auto; }
 .swatch .cap { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .swatch { display: flex; flex-direction: column; align-items: center; gap: 6px; background: none; padding: 6px; }
@@ -1634,7 +1661,9 @@ transition: box-shadow .2s;
 .dot.teal { background: radial-gradient(120% 120% at 30% 25%, #2a464b, #112024); }
 .dot.royal { background: radial-gradient(120% 120% at 30% 25%, #33425a, #161f2b); }
 .dot.bordo { background: radial-gradient(120% 120% at 30% 25%, #46262c, #1c0f12); }
-.dot.black { background: radial-gradient(120% 120% at 30% 25%, #3f4b48, #151719); }
+.dot.art { background: radial-gradient(120% 120% at 30% 25%, #35353c, #0d0d0f); }
+.dot.ink { background: radial-gradient(120% 120% at 30% 25%, #efe8d6, #4d6a5f); }
+.dot.plush { background: linear-gradient(130deg, #b0abc4 0%, #8f6a91 34%, #eea942 70%, #e38893 100%); }
 .chip {
 display: inline-flex; align-items: center; justify-content: center; gap: 7px;
 min-height: 48px; padding: 10px 14px; border-radius: var(--r-md);

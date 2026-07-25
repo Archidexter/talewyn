@@ -10,7 +10,7 @@
 if(th==='auto')th=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <link rel="stylesheet" href="fonts.css?v=9">
-<link rel="stylesheet" href="app.css?v=285">
+<link rel="stylesheet" href="app.css?v=289">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -33,10 +33,12 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
   }
   html.t-light #boot-splash { background: #f3efe3; }
   html.t-sepia #boot-splash { background: #ece0c8; }
+  html.t-ink   #boot-splash { background: #e8e0cd; }
+  html.t-plush #boot-splash { background: #f4eaea; }
   html.t-teal  #boot-splash { background: #142428; }
   html.t-royal #boot-splash { background: #1d2735; }
   html.t-bordo #boot-splash { background: #241417; }
-  html.t-black #boot-splash { background: #151719; }
+  html.t-art   #boot-splash { background: #0d0d0f; }
   #boot-splash.gone { opacity: 0; pointer-events: none; }
   /* Размер и место — ровно как у системной заставки, чтобы переход между ними не читался
      как смена экрана. Система рисует значок на полотне 288dp, у нас поля 24% с каждой
@@ -489,11 +491,13 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     <div class="themes" id="seg-theme">
       <button class="swatch" data-v="light" title="Светлая"><span class="dot light"></span></button>
       <button class="swatch" data-v="sepia" title="Сепия"><span class="dot sepia"></span></button>
+      <button class="swatch" data-v="ink" title="Свиток"><span class="dot ink"></span></button>
+      <button class="swatch" data-v="plush" title="Котики"><span class="dot plush"></span></button>
       <button class="swatch" data-v="dark" title="Тёмная"><span class="dot dark"></span></button>
       <button class="swatch" data-v="teal" title="Витраж"><span class="dot teal"></span></button>
       <button class="swatch" data-v="royal" title="Ночь"><span class="dot royal"></span></button>
       <button class="swatch" data-v="bordo" title="Бордо"><span class="dot bordo"></span></button>
-      <button class="swatch" data-v="black" title="Чёрная"><span class="dot black"></span></button>
+      <button class="swatch" data-v="art" title="Art"><span class="dot art"></span></button>
     </div>
   </div>
 
@@ -865,6 +869,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=365"></script>
+<script src="app.js?v=369"></script>
 </body>
 </html>

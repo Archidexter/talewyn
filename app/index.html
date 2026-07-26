@@ -10,7 +10,7 @@
 if(th==='auto')th=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.className='t-'+th;}catch(e){}})();</script>
 <link rel="stylesheet" href="fonts.css?v=9">
-<link rel="stylesheet" href="app.css?v=289">
+<link rel="stylesheet" href="app.css?v=295">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -269,6 +269,9 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
   </button>
   <button id="fab-fold" class="fab-mini fab-extra fab-fold" data-i18n-title="foldT" title="Объединить в сборник" aria-label="Объединить в сборник">
     <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5a1.5 1.5 0 0 1 1.5-1.5h4l2 2.5h8a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-14A1.5 1.5 0 0 1 3 18z"/></svg>
+  </button>
+  <button id="fab-merge" class="fab-mini fab-extra fab-merge" data-i18n-title="mergeBtn" title="Собрать из двух книг" aria-label="Собрать из двух книг">
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 7l8 4 8-4-8-4z"/><path d="m4 12 8 4 8-4"/><path d="m4 16.5 8 4 8-4"/></svg>
   </button>
   <button id="fab-collect" class="fab-mini fab-extra fab-collect" data-i18n-title="colAddT" title="В коллекцию" aria-label="В коллекцию">
     <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12H9"/><path d="M13 8l-4 4 4 4"/><path d="M5 5v14"/></svg>
@@ -757,6 +760,12 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
   </div>
 </div>
 
+<div id="merge-overlay" class="sheet-scrim" hidden></div>
+<div id="merge-sheet" class="sheet" hidden role="dialog" aria-label="Собрать книгу">
+  <div class="sheet-grip"></div>
+  <div id="merge-body"></div>
+</div>
+
 <div id="annot-overlay" class="sheet-scrim" hidden></div>
 <div id="annot-sheet" class="sheet" hidden role="dialog" aria-label="Описание книги">
   <div class="sheet-grip"></div>
@@ -869,6 +878,6 @@ document.documentElement.className='t-'+th;}catch(e){}})();</script>
     }
   })();
 </script>
-<script src="app.js?v=369"></script>
+<script src="app.js?v=375"></script>
 </body>
 </html>

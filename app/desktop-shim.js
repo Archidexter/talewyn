@@ -148,21 +148,30 @@
   if (document.body) buildTitlebar();
   else document.addEventListener('DOMContentLoaded', buildTitlebar);
 
-  // ── автообновление десктопа (плагин updater): проверяем на старте, при наличии — предлагаем ──
+  // ── автообновление десктопа (плагин updater) ──
+  // Сырые примитивы Tauri-апдейтера кладём в window — их дёргает И стартовый автоопрос (ниже),
+  // И РУЧНАЯ кнопка обновления в шапке (app.js: otaManualCheck на десктопе идёт сюда, а не в веб-OTA).
+  // check() может отклониться (нет сети) — вызывающий сам различает «нет сети» и «нет обновления».
+  window.__tauriUpdate = {
+    check: function () {
+      if (!T.updater || !T.updater.check) return Promise.resolve(null);
+      return T.updater.check();
+    },
+    install: function (update) {
+      return update.downloadAndInstall().then(function () {
+        if (T.process && T.process.relaunch) return T.process.relaunch();
+      });
+    },
+  };
+  // старт: тихо проверяем и, если есть — предлагаем (тем же uiConfirm и текстами, что и ручная кнопка)
   function checkUpdate() {
-    if (!T.updater || !T.updater.check) return;
-    T.updater.check().then(function (update) {
-      if (!update) return;   // обновлений нет
-      var install = function () {
-        update.downloadAndInstall().then(function () {
-          if (T.process && T.process.relaunch) T.process.relaunch();
-        }).catch(function () {});
-      };
+    window.__tauriUpdate.check().then(function (update) {
+      if (!update) return;
       var ver = update.version || '';
-      if (typeof window.uiConfirm === 'function') {
-        window.uiConfirm('Доступно обновление ' + ver + '. Установить сейчас?', { yes: 'Обновить' })
-          .then(function (ok) { if (ok) install(); });
-      } else { install(); }
+      var msg = window.T ? window.T('otaAvailApp', { v: ver }) : 'Доступно обновление ' + ver;
+      var yes = window.t ? window.t('otaInstall') : 'Обновить';
+      var go = (typeof window.uiConfirm === 'function') ? window.uiConfirm(msg, { yes: yes }) : Promise.resolve(true);
+      go.then(function (ok) { if (ok) window.__tauriUpdate.install(update).catch(function () {}); });
     }).catch(function () {});
   }
   setTimeout(checkUpdate, 4000);   // после загрузки приложения (уже есть uiConfirm)

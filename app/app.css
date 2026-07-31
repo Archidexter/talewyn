@@ -256,6 +256,10 @@ line-height: 1.24; overflow-wrap: break-word; text-align: center;
 @media (max-width: 560px) { #book-title { font-size: 22px; } }
 .icon-btn svg, .tool-btn svg, .chip svg, .import-btn svg,
 .nav-btn svg, .primary-btn svg, .ghost-btn svg, .danger-btn svg { display: block; flex: none; }
+img { user-select: none; -webkit-user-select: none; -webkit-user-drag: none; }
+.ic-pc { display: none; }
+html[data-desktop] .ic-phone { display: none; }
+html[data-desktop] .ic-pc { display: block; }
 .lib-subtitle {
 margin: 6px 0 0; color: var(--dim); font-size: 11px;
 text-transform: uppercase; letter-spacing: .2em;

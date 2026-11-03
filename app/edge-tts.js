@@ -6,7 +6,9 @@ var VOICE_LIST_URL = `https://${BASE_URL}/voices/list?trustedclienttoken=${TRUST
 var DEFAULT_VOICE = "en-US-EmmaMultilingualNeural";
 var CHROMIUM_FULL_VERSION = "143.0.3650.75";
 var CHROMIUM_MAJOR_VERSION = CHROMIUM_FULL_VERSION.split(".")[0];
-var SEC_MS_GEC_VERSION = `1-${CHROMIUM_FULL_VERSION}`;
+// Microsoft сменил проверку: префикс версии «2-» и новый формат токена (см. secMsGecV2 ниже).
+// Со старым «1-» и обычным SHA-256 сервер отвечает 403 на рукопожатии — все нейроголоса молчат.
+var SEC_MS_GEC_VERSION = `2-${CHROMIUM_FULL_VERSION}`;
 var BASE_HEADERS = {
   "User-Agent": `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROMIUM_MAJOR_VERSION}.0.0.0 Safari/537.36 Edg/${CHROMIUM_MAJOR_VERSION}.0.0.0`,
   "Accept-Encoding": "gzip, deflate, br, zstd",
@@ -67,6 +69,157 @@ var ValueError = class extends EdgeTTSException {
   }
 };
 
+// src/gec-v2.ts
+// Токен Sec-MS-GEC v2 — порт drm.py из edge-tts (rany2/edge-tts). Формат «<16 hex>-<64 hex>»:
+// модифицированный SHA-256 (свои начальное состояние и константы) + 64-битная сумма CS64.
+// Только 32-битная целочисленная арифметика, без SubtleCrypto — работает и вне https.
+// Если Microsoft сменит алгоритм снова, сервер опять начнёт отвечать 403 — сверяться с
+// https://github.com/rany2/edge-tts/blob/master/src/edge_tts/drm.py
+var G_SHA_INIT = [0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A, 0x510E527F, 0x9B05688C, 0x1F83D9AB, 0x5BE0CD19];
+var G_SHA_STATE = [0xFD9FBEA2, 0x91243CE7, 0xBE499094, 0xCD2E1E0A, 0x6C006F49, 0x04BD35AB, 0xFEB0A7E4, 0x03EFFBD2];
+var G_SHA_SCHED = [0xEB24BF9E, 0x1558691F, 0xA0C09EE2, 0x0CFA32BA, 0xA622EE8C, 0xD1DD9491, 0xC0DD25A0, 0xF9E70AB6, 0xF0C31573, 0x7058CE4E, 0x7188E606, 0x00E5AB33, 0xD258B060, 0x72766564];
+var G_K = [
+  0x428A2F98, 0x71374491, 0xB5C0FBCF, 0xE9B5DBA5, 0x3956C25B, 0x59F111F1, 0x923F82A4, 0xAB1C5ED5, 0xD807AA98, 0x12835B01, 0x243185BE, 0x550C7DC3, 0x72BE5D74, 0x80DEB1FE, 0x9BDC06A7, 0xC19BF174,
+  0xE49B69C1, 0xEFBE4786, 0x0FC19DC6, 0x240CA1CC, 0x2DE92C6F, 0x4A7484AA, 0x5CB0A9DC, 0x76F988DA, 0x983E5152, 0xA831C66D, 0xB00327C8, 0xBF597FC7, 0xC6E00BF3, 0xD5A79147, 0x06CA6351, 0x14292967,
+  0x27B70A85, 0x2E1B2138, 0x4D2C6DFC, 0x53380D13, 0x650A7354, 0x766A0ABB, 0x81C2C92E, 0x92722C85, 0xA2BFE8A1, 0xA81A664B, 0xC24B8B70, 0xC76C51A3, 0xD192E819, 0xD6990624, 0xF40E3585, 0x106AA070,
+  0x19A4C116, 0x1E376C08, 0x2748774C, 0x34B0BCB5, 0x391C0CB3, 0x4ED8AA4A, 0x5B9CCA4F, 0x682E6FF3, 0x748F82EE, 0x78A5636F, 0x84C87814, 0x8CC70208, 0x90BEFFFA, 0xA4506CEB, 0xBEF9A3F7, 0xC67178F2
+];
+var G_SHA_ADJ = 0xC9DC06A7;
+var G_K_BLOCK = G_K.slice();
+G_K_BLOCK[14] = G_SHA_ADJ;
+var G_SIG0_ADJ = 0x059C0B80;
+var G_SIG1_ADJ = 0x000B92C0;
+var G_CS = [[0xE82E91B1, 0xB32700D0], [0x44DE24C6, 0x88DFF51D], [0x3BEB65BC, 0x29514038], [0xC89C5933, 0xB328CBDF], [0x8D1EC211, 0xD405B4D5], [0x314EF5D5, 0x26E55F3C], [0xE92491B1, 0x607801C6], [0xF0A5B9D5, 0x82B2C1FB], [0x06064CF3, 0xFA51A3DA], [0xDA79FA60, 0x207CC464], [0xBED20560, 0x3C3C74F3], [0x89F9C9F8, 0xD2D14B61], [0x35FA38C6, 0xBB04A2C1], [0xCB49E3C6, 0xC5626167]];
+var G_CS_FACTOR = 0x82893933;
+var G_CS_ADJ0 = 0xF2F90B1A;
+var G_CS_ADJ1 = 0x0B1A0000;
+var gU = (x) => x >>> 0;
+var gMul = (a, b) => Math.imul(a, b) >>> 0;
+var gRotr = (x, n) => (x >>> n | x << 32 - n) >>> 0;
+var gRol16 = (x) => (x << 16 | x >>> 16) >>> 0;
+var gSig0 = (x) => (gRotr(x, 7) ^ gRotr(x, 18) ^ x >>> 3) >>> 0;
+var gSig1 = (x) => (gRotr(x, 17) ^ gRotr(x, 19) ^ x >>> 10) >>> 0;
+function gRounds(state, w, first) {
+  let [a, b, c, d, e, f, g, h] = state;
+  const k = first === 14 ? G_K_BLOCK : G_K;
+  for (let i = first; i < 64; i++) {
+    const t1 = gU(h + (gRotr(e, 6) ^ gRotr(e, 11) ^ gRotr(e, 25)) + (g ^ e & (f ^ g)) + k[i] + w[i]);
+    const t2 = gU((gRotr(a, 2) ^ gRotr(a, 13) ^ gRotr(a, 22)) + (a & b | c & (a | b)));
+    h = g;
+    g = f;
+    f = e;
+    e = gU(d + t1);
+    d = c;
+    c = b;
+    b = a;
+    a = gU(t1 + t2);
+  }
+  return [a, b, c, d, e, f, g, h];
+}
+function gExpand(w, from = 16) {
+  for (let i = from; i < 64; i++) w[i] = gU(gSig1(w[i - 2]) + w[i - 7] + gSig0(w[i - 15]) + w[i - 16]);
+}
+var gInitKey = null;
+var gInitVal = null;
+function gShaInit(d7) {
+  const key = d7.join(",");
+  if (gInitKey === key) return gInitVal;
+  const w = new Array(14).fill(0);
+  w.push((d7[0] << 16 | d7[1] << 8 | d7[2]) >>> 0);
+  w.push(gU(d7[3] * 16777216 + (d7[4] << 16) + (d7[5] << 8) + d7[6]));
+  for (let i = 16; i < 30; i++) {
+    let v = G_SHA_SCHED[i - 16];
+    if (i - 2 >= 14) v += i === 16 ? (gSig1(w[i - 2]) ^ G_SIG1_ADJ) >>> 0 : gSig1(w[i - 2]);
+    if (i - 7 >= 14) v += w[i - 7];
+    if (i - 15 >= 14) v += i === 29 ? (gSig0(w[i - 15]) ^ G_SIG0_ADJ) >>> 0 : gSig0(w[i - 15]);
+    w.push(gU(v));
+  }
+  w.push(gU(gSig1(w[28]) + w[23] + gSig0(w[15]) + w[14] + G_SHA_ADJ - G_K[14]));
+  gExpand(w, 31);
+  const working = gRounds(G_SHA_STATE, w, 14);
+  gInitVal = G_SHA_INIT.map((x, i) => gU(x + working[i]));
+  gInitKey = key;
+  return gInitVal;
+}
+function gShaDigest(data) {
+  const length = 57 + data.length;
+  const tail = data.length - 7;
+  const zeros = ((55 - length) % 64 + 64) % 64;
+  const padded = new Uint8Array(tail + 1 + zeros + 8);
+  padded.set(data.subarray(7), 0);
+  padded[tail] = 0x80;
+  const dv = new DataView(padded.buffer);
+  dv.setUint32(padded.length - 8, Math.floor(length * 8 / 4294967296));
+  dv.setUint32(padded.length - 4, length * 8 >>> 0);
+  let state = gShaInit(Array.from(data.subarray(0, 7)));
+  for (let off = 0; off < padded.length; off += 64) {
+    const w = [];
+    for (let i = 0; i < 16; i++) w.push(dv.getUint32(off + i * 4));
+    gExpand(w);
+    const working = gRounds(state, w, 0);
+    state = state.map((x, i) => gU(x + working[i]));
+  }
+  return state;
+}
+function gCs64(data, shaWords) {
+  const bswap = (x) => ((x & 255) << 24 | (x & 65280) << 8 | x >>> 8 & 65280 | x >>> 24) >>> 0;
+  const keyA = (bswap(shaWords[0]) | 1) >>> 0;
+  const keyB = (bswap(shaWords[1]) | 1) >>> 0;
+  const factors = [gMul(keyA, G_CS_FACTOR), gMul(keyB, G_CS_FACTOR)];
+  const terms = G_CS.map(([cf], i) => gMul(cf, factors[i % 2]));
+  const offsets = G_CS.map(([, of]) => of);
+  const buf = new Uint8Array(1 + data.length + (4 - (1 + data.length) % 4) % 4);
+  buf.set(data, 1);
+  const dv = new DataView(buf.buffer);
+  const words = [];
+  for (let i = 0; i < buf.length; i += 4) words.push(dv.getUint32(i, true));
+  if (words.length % 2) words.push(0);
+  words.forEach((word, i) => {
+    let term = gMul(word, i % 2 === 0 ? keyA : keyB);
+    let offset = gMul(gRol16(word), i % 2 === 0 ? 0xEF0569FB : 0xC31713DB);
+    if (i === 0) {
+      term = gU(term + gMul(G_CS_ADJ0, factors[0]));
+      offset = gU(offset + G_CS_ADJ1);
+    }
+    terms.push(term);
+    offsets.push(offset);
+  });
+  let swapAcc = 0, swapLast = 0, state = 0, acc = 0;
+  for (let i = 0; i < terms.length; i += 2) {
+    const x = terms[i], y = terms[i + 1];
+    let t = gRol16(gU(offsets[i] + x));
+    let q = gMul(t, 0x76F50F34);
+    swapAcc = gU(swapAcc + gU(gMul(gRol16(q), 0xC3EFEA97) + q));
+    t = gRol16(gU(offsets[i + 1] + y));
+    q = gMul(t, 0x1881CE3C);
+    swapLast = gU(gMul(gRol16(q), 0x35BD1EC9) + q);
+    swapAcc = gU(swapAcc + swapLast);
+    state = gU(gMul(state, keyA) + x);
+    state = gMul(gRol16(state), 0xCF98B111);
+    state = gMul(gRol16(state), 0x87085B9F);
+    state = gMul(gRol16(state), 0x12CEB96D);
+    state = gMul(gRol16(state), 0x257E1D83);
+    acc = gU(acc + state);
+    t = gU(gMul(state, keyB) + y);
+    t = gMul(gRol16(t), 0xA27416F5);
+    t = gMul(gRol16(t), 0xD38396FF);
+    state = gMul(gRol16(gMul(gRol16(t), 0x7C932B89)), 0xBFA49F69);
+    acc = gU(acc + state);
+  }
+  return [(swapLast ^ state) >>> 0, (swapAcc ^ acc) >>> 0];
+}
+var gHexLE = (x) => [x & 255, x >>> 8 & 255, x >>> 16 & 255, x >>> 24 & 255].map((b) => b.toString(16).padStart(2, "0")).join("");
+var gHexBE = (x) => x.toString(16).padStart(8, "0");
+function secMsGecV2(unixSeconds) {
+  let ticks = unixSeconds + 11644473600;
+  ticks -= ticks % 300;
+  ticks *= 1e9 / 100;
+  const data = new TextEncoder().encode(ticks.toFixed(0) + TRUSTED_CLIENT_TOKEN);
+  const sha = gShaDigest(data);
+  const [c0, c1] = gCs64(data, sha);
+  return (gHexLE(c0) + gHexLE(c1) + "-" + sha.map(gHexBE).join("")).toUpperCase();
+}
+
 // src/browser-drm.ts
 var WIN_EPOCH = 11644473600;
 var S_TO_NS = 1e9;
@@ -100,16 +253,7 @@ var _BrowserDRM = class _BrowserDRM {
     _BrowserDRM.adjClockSkewSeconds(serverDateParsed - clientDate);
   }
   static async generateSecMsGec() {
-    let ticks = _BrowserDRM.getUnixTimestamp();
-    ticks += WIN_EPOCH;
-    ticks -= ticks % 300;
-    ticks *= S_TO_NS / 100;
-    const strToHash = `${ticks.toFixed(0)}${TRUSTED_CLIENT_TOKEN}`;
-    const encoder = new TextEncoder();
-    const data = encoder.encode(strToHash);
-    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+    return secMsGecV2(_BrowserDRM.getUnixTimestamp());
   }
   /**
    * Generates a random MUID (Machine Unique Identifier).
@@ -334,7 +478,14 @@ function browserRemoveIncompatibleCharacters(text) {
   return text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, " ");
 }
 function browserDateToString() {
-  return (/* @__PURE__ */ new Date()).toUTCString().replace("GMT", "GMT+0000 (Coordinated Universal Time)");
+  // JS-стиль, как шлёт сам Edge: «Tue Nov 03 2026 20:27:10 GMT+0000 (Coordinated Universal Time)».
+  // Прежний вариант с запятой («Tue, 03 Nov 2026 … GMT+0000 (…)») сервер теперь отвергает:
+  // рукопожатие проходит, а после сообщения ssml соединение рвётся (1006) без единого байта звука.
+  const d = /* @__PURE__ */ new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${days[d.getUTCDay()]} ${mon[d.getUTCMonth()]} ${p(d.getUTCDate())} ${d.getUTCFullYear()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())} GMT+0000 (Coordinated Universal Time)`;
 }
 function browserMkssml(voice, rate, volume, pitch, escapedText) {
   return `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='${voice}'><prosody pitch='${pitch}' rate='${rate}' volume='${volume}'>${escapedText}</prosody></voice></speak>`;
@@ -546,6 +697,9 @@ var BrowserCommunicate = class {
     const messageQueue = [];
     let resolveMessage = null;
     let timeoutId;
+    // Отказ на рукопожатии (403 и т.п.) раньше не прерывал ожидание открытия — приложение висело
+    // до своего таймаута. Теперь ошибка/закрытие до open сразу отклоняют ожидание.
+    let rejectOpen = null;
     if (this.connectionTimeout) {
       timeoutId = window.setTimeout(() => {
         websocket.close();
@@ -632,6 +786,7 @@ var BrowserCommunicate = class {
       }
       messageQueue.push(new WebSocketError("WebSocket error occurred"));
       if (resolveMessage) resolveMessage();
+      if (rejectOpen) rejectOpen(new WebSocketError("WebSocket handshake failed"));
     };
     websocket.onclose = () => {
       if (timeoutId) {
@@ -640,9 +795,12 @@ var BrowserCommunicate = class {
       }
       messageQueue.push("close");
       if (resolveMessage) resolveMessage();
+      if (rejectOpen) rejectOpen(new WebSocketError("WebSocket closed before open"));
     };
     await new Promise((resolve, reject) => {
+      rejectOpen = reject;
       websocket.onopen = () => {
+        rejectOpen = null;
         if (timeoutId) {
           window.clearTimeout(timeoutId);
           timeoutId = void 0;

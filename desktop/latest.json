@@ -1,11 +1,11 @@
 {
-  "version": "1.3.0",
+  "version": "1.3.1",
   "notes": "",
-  "pub_date": "2026-11-04T15:09:33Z",
+  "pub_date": "2026-11-04T19:10:08Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVHhjZllyUzVWa2Q2M2hPMmc2SW1SYXRXbG5aZm00VzRhKzF5NjZMaTJKTjhPZTQ2UStBa2xZSXFLdXJwZTZ1ZVJSaTNpN2lsZUdpSHFXYWlqUDM2MEFaUHBZRkhiTmdRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODA0OTczCWZpbGU6QUQuVGFsZXd5bl8xLjMuMF94NjQtc2V0dXAuZXhlCnJlUUZJc2JFRFlGOVE1UUpza01sUjh4aXRURHF3Mk15RVZERVlHcmpnMmQ1VUR4T2MzSldQNllCbzNuM1VkbndqUCs1S1FYdWQ3SjRzd2I5T1h5akJ3PT0K",
-      "url": "https://github.com/Archidexter/talewyn/releases/download/desktop-v1.3.0/AD.Talewyn_1.3.0_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVHhjZllyUzVWa1hoR2ZiVHFDVTBnVXlvamJ3aHJsTVRIMUtJamJiZ0lYVTJyQzJnUFUvdy9pdTIrZGRGbmtLME9CZHU0a1UrSlQ4Z3VNSTdPTjY5UU00dEQ1WXAveVFnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzODE5MjYzCWZpbGU6QUQuVGFsZXd5bl8xLjMuMV94NjQtc2V0dXAuZXhlCi9OMTdBNWQwaUJpUlE1VUduL3N0K1FNQmJpNGtnK3NjTVRJbCtUUHdnVlpEM3FHTWl5ZEYrRktBRkhIeXhyaGJEOVU5YTlzbTR2dk1vcFB6d0hIbkNBPT0K",
+      "url": "https://github.com/Archidexter/talewyn/releases/download/desktop-v1.3.1/AD.Talewyn_1.3.1_x64-setup.exe"
     }
   }
 }
